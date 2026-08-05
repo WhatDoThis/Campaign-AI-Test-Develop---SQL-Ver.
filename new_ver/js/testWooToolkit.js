@@ -102,6 +102,7 @@ testWoo.toolkit = (function () {
       argsSummary: _summarizeArgs(args),
       resultSummary: _summarizeResult(result),
       partialScan: !!(result && result.partialScan),
+      schemaLoadFailed: !!(result && result.schemaLoadFailed),
       at: formatDate(new Date(), "%4Y/%2M/%2D %02H:%02N:%02S")
     });
   }
@@ -209,12 +210,19 @@ testWoo.toolkit = (function () {
     };
   }
 
-  // getSchema는 Schema 매핑 객체 → E4X 순회를 위해 XML로 변환.
+  // getSchema는 Schema 클래스 객체이고 공식 메서드는 toDocument 하나뿐이다.
+  // toXMLString은 DOMElement 메서드이므로 Schema에 직접 호출하면 예외가 난다.
+  // Ref Schema(class): https://experienceleague.adobe.com/developer/campaign-api/api/c-Schema.html
+  // Ref toDocument → DOMDocument:
+  //   https://experienceleague.adobe.com/developer/campaign-api/api/m-Schema-toDocument.html
   // 정규식 속성 파싱 금지 (ACC 스키마는 속성 순서가 자유롭고 label 생략 가능).
   function _schemaXml(schemaId) {
     var sch = application.getSchema(schemaId);
     if (!sch) throw new Error("schema not found: " + schemaId);
-    return new XML(String(sch.toXMLString()));
+    var doc = sch.toDocument();
+    if (!doc || !doc.documentElement)
+      throw new Error("schema toDocument failed: " + schemaId);
+    return new XML(String(doc.documentElement.toXMLString()));
   }
 
   // 루트 element의 sqltable만 사용 (정규식 첫 매칭은 하위 element 값을 집을 수 있음)
@@ -301,7 +309,10 @@ testWoo.toolkit = (function () {
       }
       return _capDescribe(id, cols, links);
     } catch (e) {
-      return { error: String(e.message || e) };
+      // 조용한 실패 금지 — 스키마 로드 실패는 로그로 남기고 근거 없음을 명시한다.
+      logWarning("[testWoo.toolkit.describe_schema] schema load failed: " + id +
+        " / " + String(e.message || e));
+      return { error: String(e.message || e), schemaLoadFailed: true };
     }
   }
 
@@ -365,12 +376,10 @@ testWoo.toolkit = (function () {
     }
 
     // 별칭 tw_val 고정 → sqlSelect format 과 1:1 대응 (반환은 XML 객체)
-    var dial = testWoo.probe ? testWoo.probe.dialect() : null;
-    var inner = "SELECT DISTINCT " + columnName + " AS tw_val FROM " + tbl +
-      " WHERE " + columnName + " IS NOT NULL";
-    var sampleQ = dial ?
-      dial.limit(inner, limit) :
-      "SELECT * FROM (" + inner + ") tw_v LIMIT " + limit;
+    // limitSelect 로 서브쿼리 중첩 없이 생성 + ORDER BY 1 로 재현성 확보
+    if (!testWoo.probe) return { ok: false, error: "probe module not loaded" };
+    var sampleQ = testWoo.probe.dialect().limitSelect(
+      "DISTINCT " + columnName + " AS tw_val", tbl, columnName + " IS NOT NULL", limit);
 
     var values = [];
     try {
@@ -423,6 +432,7 @@ testWoo.toolkit = (function () {
     var scanned = 0;
     var totalCandidates = 0;
     var capHit = false;
+    var loadFailed = 0;
 
     for (var ni = 0; ni < namespaces.length; ni++) {
       var schemas = _cachedSchemaList(namespaces[ni]);
@@ -452,15 +462,24 @@ testWoo.toolkit = (function () {
               type: String(a.@type || "string")
             });
           }
-        } catch (eSch) {}
+        } catch (eSch) {
+          // 조용한 실패 금지 — 스키마 로드 실패가 "0건 매칭"으로 위장되면
+          // Triage가 근거 없이 no_column 을 낸다.
+          loadFailed++;
+          logWarning("[testWoo.toolkit.search_columns] schema load failed: " + sid +
+            " / " + String(eSch.message || eSch));
+        }
       }
     }
 
     // partialScan=true 는 "전수 조사 아님" — no_column 확신도를 medium 이하로 제한하는 근거
+    // schemaLoadFailed=true 는 근거 자체가 없다는 뜻 — no_column 판정 금지 근거
     return {
       matches: results,
       scanned: scanned,
       totalCandidates: totalCandidates,
+      schemaLoadFailed: (scanned === 0 && loadFailed > 0),
+      loadFailed: loadFailed,
       partialScan: capHit || scanned < totalCandidates
     };
   }

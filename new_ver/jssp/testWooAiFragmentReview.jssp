@@ -42,8 +42,9 @@ try {
         <where><condition expr={"@id = " + Number(fragmentId)}/></where>
       </queryDef>);
     var res = q.ExecuteQuery();
-    if (!res || !res.testWooAiFragment.length) return null;
-    var f = res.testWooAiFragment[0];
+    // getIfExists 는 엘리먼트 자체를 반환한다(무매치는 빈 엘리먼트). 컬렉션 접근 금지.
+    if (!res || String(res.@id || "") === "") return null;
+    var f = res;
     return {
       id: Number(f.@id),
       name: String(f.@name),

@@ -1,6 +1,7 @@
 # Log
 
 ## Log Index
+76. 2026-08-05 Adobe API 오용 수정 N-1~N-6 + 배포 스모크 (05 리포트 반영)
 75. 2026-08-05 코드 점검 결함 수정 P0~P2 (04 리포트 반영)
 74. 2026-08-05 navtree listdet→list (폼 잘림) + notebook 재등록 안내
 73. 2026-08-05 Fragment 입력폼 단일화 (foundry.xml 삭제)
@@ -78,6 +79,92 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+76. 2026-08-05 Adobe API 오용 수정 N-1~N-6 + 배포 스모크 (05 리포트 반영)
+Purpose: docs/report/05_SQL생성추가_추가3.md 의 신규 결함 6건 교정 — 이 중 N-2 는 로그 #75 의 P2-1(E4X 전환) 과정에서 새로 유입시킨 결함이다 Changes:
+
+**N-1 (P0) getIfExists 반환 파싱 — 큐 처리 전면 불능**
+- 근거: operation 표 "getIfExists: One element is returned. If no match element exists,
+  then an empty element is returned" / select 만 `<xxx-collection>` 으로 감싼다.
+  문서의 존재 판정 관용구도 `if (res.@id != undefined)` 다.
+  https://experienceleague.adobe.com/en/docs/campaign/automation/workflows/advanced-management/javascript-in-workflows
+  https://experienceleague.adobe.com/developer/campaign-api/api/sm-queryDef-ExecuteQuery.html
+- 교정 규칙: 존재 판정 `String(res.@id || "") === ""`, `res` 자체를 행으로 읽음,
+  `<select>` 에 `<node expr="@id"/>` 필수(N-6 동시 해소)
+- **리포트는 2곳(_getQueue/_getFragmentById)만 지목했으나 전수 grep 결과 6곳**:
+  - `testWooFoundry._getQueue` — 큐 조회 전면 실패 (P0)
+  - `testWooLifecycle._getFragmentById` — `@id` 미선택까지 동반(N-6). revoke/hardDelete 가 의존
+  - `testWooRepository.bumpFragmentUsage` — cnt 가 항상 0 → usage_count 가 매번 1 로 리셋
+  - `testWooRepository.getQueueStatus` — Studio 큐 상태 조회가 항상 null
+  - `testWooRepository.upsertGapLog` — 기존 레코드를 못 찾아 **같은 개념이 매번 새 행으로 누적**
+    (request_count 집계가 무의미해지던 원인)
+  - `testWooAiFragmentReview.jssp loadFragment` — 승인 화면 detail 이 항상 null
+  → 뒤 4곳은 #75 이전부터 있던 기존 결함 (리포트 범위 밖에서 추가 발견)
+- 부수: `_isSchemaError` 에서 `"does not exist"` / `"unknown"` 제거 → **XTK-170/171 접두사만**.
+  일반 JS 오류까지 "스키마 미배포"로 치환되어 원인 추적을 막고 있었다
+
+**N-2 (P0) Schema 객체에 toXMLString 없음 — 스키마 조회 전부 조용히 0건**
+- 근거: Schema 클래스의 메서드는 `toDocument` 하나뿐(공식 Methods 표), 반환은 DOMDocument.
+  `toXMLString` 은 DOMElement 메서드다.
+  https://experienceleague.adobe.com/developer/campaign-api/api/c-Schema.html
+  https://experienceleague.adobe.com/developer/campaign-api/api/m-Schema-toDocument.html
+- `_schemaXml`: `new XML(sch.toXMLString())` → `sch.toDocument().documentElement.toXMLString()`
+- **자기 유입 결함**: #75 P2-1 에서 정규식 파싱을 E4X 로 바꿀 때 넣은 코드.
+  `catch (eSch) {}` 가 예외를 삼켜 증상이 "에러"가 아니라 **"모든 스키마 조회 0건"** 으로 나타나
+  Triage 가 근거 없이 no_column 을 내는 거짓 판정으로 이어지던 상태
+- 조용한 실패 제거: `search_columns` / `describe_schema` 의 빈 catch → `logWarning` +
+  `schemaLoadFailed` 를 결과·evidenceLog 에 실어 전파
+- feasibility: `no_column` + `schemaLoadFailed` → `ambiguous` 강등
+  ("컬럼 없음"이 아니라 "확인 불가"). partialScan(확신도 제한)과 구분해 처리
+
+**N-3 (P1) 물리 컬럼명 추정 금지 규약화**
+- 근거: sqlname 미지정 시 물리명은 타입 접두사 + 이름으로 자동 생성(string→s, integer→i…)
+  https://experienceleague.adobe.com/en/docs/campaign-classic/using/configuring-campaign-classic/schema-reference/database-mapping
+- #75 의 queryDef 카운트 방식 유지. `_hasProcessing` 상단에 sqlGetInt 로 되돌리지 말라는
+  방지 주석 + 근거 URL 명시 (ACC 버전·DBMS 별로 sStatus/sstatus/s_status 로 갈림)
+- 가이드 섹션 6 에 규약 신설 (woo:* 커스텀 스키마 물리명 추정 SQL 금지)
+
+**N-4 (P2) dial.limit 이중 서브쿼리 + 샘플 비결정성**
+- `dialect()` 에 `limitSelect(selectList, fromClause, whereSql, n)` 신설 = **유일한 래핑 지점**.
+  항상 `ORDER BY 1` 을 붙인다 (Oracle FETCH FIRST / MSSQL TOP 은 정렬 없으면 비결정적,
+  auditSample 은 승인 근거 자료이므로 재현성 필수)
+- `probe.run` 샘플: 3중 중첩 → 1중 (`limitSelect(kc + " AS tw_key", "(inner) tw_sample", "", lim)`)
+- `_toolProbeValues`: DISTINCT 를 select 절로 올려 **중첩 0** 으로 생성
+- 기존 `limit(sql, n)` 은 `limitSelect` 위임 호출로 남겨 하위 호환 유지
+
+**N-5 (P2) used_fragments 부분 문자열 매칭 오탐**
+- `_parseUsedFragments` + `_usesFragment` 신설 → JSON 파싱 후 **원소 name 정확 비교**
+- `listImpact` 의 `uf.indexOf(needle)` / `revoke` 의 `|| uf.indexOf(f.name)` 삭제
+  (`sub__x` 조회에 `sub__x_v2` 가 걸려 무관한 SQL 이 affected 로 마킹되던 문제)
+- 파싱 실패 레코드는 무시하지 않고 `impact_status="unknown"` + logWarning
+
+**N-6 (P2) getIfExists select 에 @id 누락** — N-1 에서 6곳 전부 처리 완료
+
+**S-1 배포 직후 스모크 (신규)**
+- `new_ver/tools/testWooSmoke.js`: WF JS 액티비티용. checkRhinoSyntax 가 못 잡는
+  **API 시그니처 오용**(N-2 가 정확히 그 사각지대)을 덮는다
+- 1.모듈 14개 전역 정의 / 2.preflight ok / 3.sqlSelect 반환 XML 구조 logInfo /
+  4.describe_schema 속성 비어있지 않음(N-2 회귀) / 5.search_columns 1건+ /
+  6.큐 더미 왕복(N-1 회귀) / 7.PASS·FAIL 요약 + 실패 시 logError
+- 더미 레코드는 finally 삭제, 삭제 실패 시 logError 로 수동 정리 안내. 고객 데이터 미출력
+- `tools/checkRhinoSyntax.js` 검사 대상에 `new_ver/tools` 추가 (19개 파일 전부 통과)
+
+**부수: 조용한 실패 제거 (Foundry 핵심 경로 3곳)**
+- `foundry.runToolLoop` / `feasibility.runTriageLoop` 의 tool args 파싱 실패 → logWarning
+- `foundry.processQueueItem` 의 `missing_slots_json` 파싱 실패는 빈 배열로 삼키면
+  **슬롯 전체를 건너뛴 채 done 으로 종료**되므로 `failed` + `FFDATA` 로 전환
+- 나머지 빈 catch(DBMS 타입 탐지·예산 기본값 등)는 무해한 폴백이라 미변경
+
+**문서**
+- docs/report/01_개발가이드.md: 섹션 6 규약 4건 추가(getIfExists 반환형 · getSchema toDocument ·
+  물리명 추정 금지 · 샘플 재현성 · 빈 catch 금지) + **6) 배포 마지막 단계 스모크** · v1.4.9
+- docs/report/00_ReportIndex.md: `05_SQL생성추가_추가3.md` 등재
+
+**미실행 (환경 필요)**
+- 05 리포트 검증 1~8번은 ACC 배포 후 스모크 실행으로 수행. 특히 3번(describe_schema 속성 육안 확인)
+  과 4번(큐 1건 → processBatch)이 N-2/N-1 회귀 검출 지점
+
+Changed files: new_ver/js/testWoo{Foundry,Lifecycle,Repository,Toolkit,Probe,Feasibility}.js, new_ver/jssp/testWooAiFragmentReview.jssp, new_ver/tools/testWooSmoke.js(신규), tools/checkRhinoSyntax.js, docs/report/{00_ReportIndex,01_개발가이드}.md, docs/log/log.md
 
 75. 2026-08-05 코드 점검 결함 수정 P0~P2 (04 리포트 반영)
 Purpose: docs/report/04_SQL생성추가_추가2.md 의 P0~P2 결함 전수 수정 — sqlSelect format 규약 정합, dedup 구문오류, sql right 프리플라이트, 큐 선점, StageA 재실행, evidence 기계근거화, 툴 예산 요청단위, E4X 파싱 전환 Changes:

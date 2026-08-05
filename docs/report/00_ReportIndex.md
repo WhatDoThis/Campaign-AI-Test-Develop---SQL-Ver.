@@ -5,6 +5,7 @@
 | 파일 | 용도 |
 |---|---|
 | `00_ReportIndex.md` | 리포트 폴더 인덱스 (본 문서) |
+| `05_SQL생성추가_추가3.md` | 신규 결함 N-1~N-6 + 스모크(S-1) — getIfExists 반환형·Schema toDocument·물리명 추정 금지·샘플 재현성·used_fragments 정확 비교 |
 | `04_SQL생성추가_추가2.md` | 코드 점검 결함 수정 요청 P0~P2 (sqlSelect 규약·sql right·큐 선점·E4X 전환) |
 | `03_SQL생성추가_추가1.md` | Feasibility Triage / 불가 보고 / GapLog (Foundry 보강) |
 | `02_SQL생성추가.md` | Fragment Foundry 통합 스펙 (툴킷·dedup·생애주기·큐) |

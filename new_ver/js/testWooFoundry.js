@@ -43,10 +43,11 @@ testWoo.foundry = (function () {
     return formatDate(new Date(), "%4Y/%2M/%2D %02H:%02N:%02S");
   }
 
+  // XTK 스키마 오류만 판정한다. "does not exist"/"unknown" 같은 일반 문구를 넣으면
+  // 평범한 JS 오류까지 "스키마 미배포"로 치환되어 원인 추적을 막는다.
   function _isSchemaError(e) {
     var msg = String((e && e.message) || e || "");
-    return msg.indexOf("XTK-170") >= 0 || msg.indexOf("XTK-171") >= 0 ||
-      msg.indexOf("does not exist") >= 0 || msg.indexOf("unknown") >= 0;
+    return msg.indexOf("XTK-170") >= 0 || msg.indexOf("XTK-171") >= 0;
   }
 
   function _getQueue(id) {
@@ -70,8 +71,9 @@ testWoo.foundry = (function () {
           " (원인: " + String(eQ.message || eQ) + ")");
       throw eQ;
     }
-    if (!res || !res.testWooAiRequestQueue || !res.testWooAiRequestQueue.length) return null;
-    var r = res.testWooAiRequestQueue[0];
+    // getIfExists 는 엘리먼트 자체를 반환한다(무매치는 빈 엘리먼트). 컬렉션 접근 금지.
+    if (!res || String(res.@id || "") === "") return null;
+    var r = res;
     return {
       id: Number(r.@id),
       nl_text: String(r.@nl_text),
@@ -165,6 +167,10 @@ testWoo.foundry = (function () {
   }
 
   // 물리 컬럼명(sStatus 등) 추정 대신 queryDef 로 센다 — 스키마 매핑에만 의존.
+  // 성능 사유로 sqlGetInt("SELECT COUNT(*) FROM <물리테이블> WHERE sStatus=…") 로
+  // 되돌리지 말 것. SQL 물리명은 sqlname 미지정 시 타입 접두사 + 이름으로 자동 생성되어
+  // ACC 버전·DBMS 에 따라 sStatus / sstatus / s_status 로 갈린다.
+  // Ref: https://experienceleague.adobe.com/en/docs/campaign-classic/using/configuring-campaign-classic/schema-reference/database-mapping
   function _hasProcessing() {
     var q = xtk.queryDef.create(
       <queryDef schema={QUEUE_SCHEMA} operation="select" lineCount="1">
@@ -235,7 +241,12 @@ testWoo.foundry = (function () {
           var tc = msg.tool_calls[i];
           var fn = tc.function || {};
           var args = {};
-          try { args = JSON.parse(String(fn.arguments || "{}")); } catch (eA) {}
+          try {
+            args = JSON.parse(String(fn.arguments || "{}"));
+          } catch (eA) {
+            logWarning("[testWoo.foundry] tool args parse failed tool=" +
+              String(fn.name) + " / " + String(eA.message || eA));
+          }
           var out = testWoo.toolkit.invoke(fn.name, args);
           msgs.push({
             role: "tool",
@@ -488,7 +499,23 @@ testWoo.foundry = (function () {
 
     try {
       var missing = [];
-      try { missing = JSON.parse(row.missing_slots_json || "[]"); } catch (eM) {}
+      var missingParsed = true;
+      try {
+        missing = JSON.parse(row.missing_slots_json || "[]");
+      } catch (eM) {
+        // 파싱 실패를 빈 배열로 삼키면 슬롯 전체를 건너뛴 채 done 으로 끝난다.
+        missingParsed = false;
+        logWarning("[testWoo.foundry] missing_slots_json parse failed queueId=" +
+          queueId + " / " + String(eM.message || eM));
+      }
+      if (!missingParsed) {
+        _updateQueue(queueId, {
+          status: "failed",
+          err_id: _errId("FFDATA"),
+          last_error: "missing_slots_json 파싱 실패 — 큐 데이터를 확인하세요."
+        });
+        return { ok: false, reason: "missing_slots_json parse failed" };
+      }
       if (!missing.length) {
         _updateQueue(queueId, { status: "done" });
         return { ok: true, reason: "no missing slots" };

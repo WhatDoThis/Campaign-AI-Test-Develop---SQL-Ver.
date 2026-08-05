@@ -87,7 +87,12 @@ testWoo.feasibility = (function () {
           var tc = msg.tool_calls[i];
           var fn = tc.function || {};
           var args = {};
-          try { args = JSON.parse(String(fn.arguments || "{}")); } catch (eA) {}
+          try {
+            args = JSON.parse(String(fn.arguments || "{}"));
+          } catch (eA) {
+            logWarning("[testWoo.feasibility] tool args parse failed tool=" +
+              String(fn.name) + " / " + String(eA.message || eA));
+          }
           var out = testWoo.toolkit.invoke(fn.name, args);
           messages.push({
             role: "tool",
@@ -126,6 +131,15 @@ testWoo.feasibility = (function () {
     return false;
   }
 
+  // 스키마를 1건도 못 읽었으면 no_column 근거 자체가 없다 (N-2 회귀 방지)
+  function _hasSchemaLoadFailed(log) {
+    var list = log || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].schemaLoadFailed === true) return true;
+    }
+    return false;
+  }
+
   function _selfReportCount(evidence) {
     var n = evidence && evidence.toolCalls != null ? Number(evidence.toolCalls) : -1;
     return isNaN(n) ? -1 : n;
@@ -158,6 +172,12 @@ testWoo.feasibility = (function () {
     }
     if (verdict === "no_column" && !_hasToolCall(log, "search_columns")) {
       verdict = "ambiguous";
+      demoted = true;
+    }
+    // 스키마 로드가 전멸했으면 "컬럼 없음"이 아니라 "확인 불가"다.
+    if (verdict === "no_column" && _hasSchemaLoadFailed(log)) {
+      verdict = "ambiguous";
+      evidence.schemaLoadFailed = true;
       demoted = true;
     }
     if (verdict === "feasible" && log.length === 0) {

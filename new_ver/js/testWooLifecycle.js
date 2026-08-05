@@ -81,14 +81,15 @@ testWoo.lifecycle = (function () {
     var q = xtk.queryDef.create(
       <queryDef schema={FRAG_SCHEMA} operation="getIfExists">
         <select>
-          <node expr="@name"/><node expr="@version"/><node expr="@status"/>
+          <node expr="@id"/><node expr="@name"/><node expr="@version"/><node expr="@status"/>
           <node expr="@is_current"/><node expr="@usage_count"/>
         </select>
         <where><condition expr={"@id = " + Number(id)}/></where>
       </queryDef>);
     var res = q.ExecuteQuery();
-    if (!res || !res.testWooAiFragment || !res.testWooAiFragment.length) return null;
-    var r = res.testWooAiFragment[0];
+    // getIfExists 는 엘리먼트 자체를 반환한다(무매치는 빈 엘리먼트). 컬렉션 접근 금지.
+    if (!res || String(res.@id || "") === "") return null;
+    var r = res;
     return {
       id: Number(r.@id),
       name: String(r.@name),
@@ -185,20 +186,21 @@ testWoo.lifecycle = (function () {
       </queryDef>);
     var res = q.ExecuteQuery();
     for each (var r in res.testWooAiSql) {
-      var uf = String(r.@used_fragments || "");
-      if (uf.indexOf('"' + f.name + '"') >= 0 || uf.indexOf(f.name) >= 0) {
-        var upd = <testWooAiSql xtkschema={SQL_SCHEMA} _operation="update"/>;
-        upd.@id = Number(r.@id);
-        upd.@impact_status = "affected";
-        xtk.session.Write(upd);
-        affected.push({
-          id: Number(r.@id),
-          title: String(r.@title),
-          creator: String(r.@creator),
-          creation_date: String(r.@creation_date),
-          impact_status: "affected"
-        });
+      var arr = _parseUsedFragments(r.@used_fragments);
+      var status = "";
+      if (arr === null) {
+        logWarning("[testWoo.lifecycle.revoke] used_fragments parse failed id=" +
+          String(r.@id));
+        status = "unknown";
+      } else if (_usesFragment(arr, f.name)) {
+        status = "affected";
       }
+      if (!status) continue;
+      var upd = <testWooAiSql xtkschema={SQL_SCHEMA} _operation="update"/>;
+      upd.@id = Number(r.@id);
+      upd.@impact_status = status;
+      xtk.session.Write(upd);
+      affected.push(_sqlRow(r, status));
     }
     return { fragmentId: fragmentId, name: f.name, affected: affected };
   }
@@ -219,6 +221,40 @@ testWoo.lifecycle = (function () {
     if (testWoo.fragments && testWoo.fragments.clearCache) testWoo.fragments.clearCache();
   }
 
+  // used_fragments 는 [{name, version, fragmentId}] JSON. 파싱 불가면 null 을 돌려
+  // 호출부가 "unknown" 으로 표시하게 한다(조용히 무시 금지).
+  function _parseUsedFragments(raw) {
+    var arr;
+    try {
+      arr = JSON.parse(String(raw || "[]"));
+    } catch (e) {
+      return null;
+    }
+    if (Object.prototype.toString.call(arr) !== "[object Array]") return null;
+    return arr;
+  }
+
+  // 부분 문자열 매칭 금지 — "x" 조회에 "x_v2" 가 걸리면 무관한 SQL이 affected 로 마킹된다.
+  function _usesFragment(arr, name) {
+    var target = String(name);
+    for (var i = 0; i < arr.length; i++) {
+      var it = arr[i];
+      var n = (it && it.name != null) ? String(it.name) : String(it);
+      if (n === target) return true;
+    }
+    return false;
+  }
+
+  function _sqlRow(r, status) {
+    return {
+      id: Number(r.@id),
+      title: String(r.@title),
+      creator: String(r.@creator),
+      creation_date: String(r.@creation_date),
+      impact_status: status
+    };
+  }
+
   function listImpact(fragmentName) {
     var out = [];
     var q = xtk.queryDef.create(
@@ -231,16 +267,15 @@ testWoo.lifecycle = (function () {
     var res = q.ExecuteQuery();
     var needle = String(fragmentName || "");
     for each (var r in res.testWooAiSql) {
-      var uf = String(r.@used_fragments || "");
-      if (uf.indexOf(needle) >= 0) {
-        out.push({
-          id: Number(r.@id),
-          title: String(r.@title),
-          creator: String(r.@creator),
-          creation_date: String(r.@creation_date),
-          impact_status: String(r.@impact_status || "ok")
-        });
+      var arr = _parseUsedFragments(r.@used_fragments);
+      if (arr === null) {
+        logWarning("[testWoo.lifecycle.listImpact] used_fragments parse failed id=" +
+          String(r.@id));
+        out.push(_sqlRow(r, "unknown"));
+        continue;
       }
+      if (_usesFragment(arr, needle))
+        out.push(_sqlRow(r, String(r.@impact_status || "ok")));
     }
     return out;
   }

@@ -89,13 +89,16 @@ testWoo.repo = (function () {
       try {
         var q = xtk.queryDef.create(
           <queryDef schema={FRAG_SCHEMA} operation="getIfExists">
-            <select><node expr="@usage_count"/></select>
+            <select><node expr="@id"/><node expr="@usage_count"/></select>
             <where><condition expr={"@id = " + Number(fid)}/></where>
           </queryDef>);
         var res = q.ExecuteQuery();
-        var cnt = 0;
-        for each (var r in res.testWooAiFragment) cnt = Number(r.@usage_count) || 0;
-        doc.@usage_count = cnt + 1;
+        // getIfExists 는 엘리먼트 자체를 반환한다(무매치는 빈 엘리먼트). 컬렉션 접근 금지.
+        if (!res || String(res.@id || "") === "") {
+          logWarning("[testWoo.repo.bumpFragmentUsage] fragment not found id=" + fid);
+          continue;
+        }
+        doc.@usage_count = (Number(res.@usage_count) || 0) + 1;
         xtk.session.Write(doc);
       } catch (eUp) {
         logWarning("[testWoo.repo.bumpFragmentUsage] id=" + fid + " " + eUp.message);
@@ -147,8 +150,9 @@ testWoo.repo = (function () {
         <where><condition expr={"@id = " + Number(queueId)}/></where>
       </queryDef>);
     var res = q.ExecuteQuery();
-    if (!res || !res.testWooAiRequestQueue || !res.testWooAiRequestQueue.length) return null;
-    var r = res.testWooAiRequestQueue[0];
+    // getIfExists 는 엘리먼트 자체를 반환한다(무매치는 빈 엘리먼트). 컬렉션 접근 금지.
+    if (!res || String(res.@id || "") === "") return null;
+    var r = res;
     return {
       queueId: Number(r.@id),
       status: String(r.@status),
@@ -178,16 +182,17 @@ testWoo.repo = (function () {
     var res = q.ExecuteQuery();
     var now = nowStr();
 
-    if (res && res.testWooAiGapLog && res.testWooAiGapLog.length) {
-      var existing = res.testWooAiGapLog[0];
+    // getIfExists 는 엘리먼트 자체를 반환한다(무매치는 빈 엘리먼트). 컬렉션 접근 금지.
+    // 컬렉션으로 읽으면 기존 레코드를 못 찾아 같은 개념이 매번 새 행으로 쌓인다.
+    if (res && String(res.@id || "") !== "") {
       var doc = <testWooAiGapLog xtkschema={GAP_SCHEMA} _operation="update"/>;
-      doc.@id = Number(existing.@id);
-      doc.@request_count = (Number(existing.@request_count) || 0) + 1;
+      doc.@id = Number(res.@id);
+      doc.@request_count = (Number(res.@request_count) || 0) + 1;
       doc.@last_seen_at = now;
       if (rec.verdict) doc.@verdict = rec.verdict;
       if (rec.sampleEvidence) doc.@sample_evidence = rec.sampleEvidence;
       xtk.session.Write(doc);
-      return Number(existing.@id);
+      return Number(res.@id);
     }
 
     var idList = xtk.session.GetNewIds(1);

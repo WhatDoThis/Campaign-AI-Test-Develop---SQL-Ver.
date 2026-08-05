@@ -9,7 +9,7 @@
  * ===========
  * - scan(src) : 토큰 단위 스캔 → {balance, e4xErrors}
  * - checkFile(path) : 파일 1개 검사 결과
- * - main : new_ver/js, new_ver/workflow 전수 검사 후 종료코드 반환
+ * - main : new_ver/js, new_ver/workflow, new_ver/tools 전수 검사 후 종료코드 반환
  *
  * [Dependencies]
  * =========
@@ -21,7 +21,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const TARGET_DIRS = ['new_ver/js', 'new_ver/workflow'];
+const TARGET_DIRS = ['new_ver/js', 'new_ver/workflow', 'new_ver/tools'];
 const PAIRS = { '}': '{', ')': '(', ']': '[' };
 
 // 0. E4X XML 리터럴 구간을 건너뛴다 (내부 `{ … }` 보간은 균형만 확인)

@@ -7,7 +7,8 @@
  * ===========
  * - preflight() → {ok, code, message} : 오퍼레이터 'sql' named right 사전 검증
  * - run(sql, keyColumn, sampleLimit) → {ok, total, distinctKey, nullKey, sample, error, stage}
- * - dialect() → {type, exceptOp, limit}
+ * - dialect() → {type, exceptOp, limitSelect, limit} : limitSelect 가 유일한 래핑 지점,
+ *   ORDER BY 1 로 샘플 재현성 보장(Oracle FETCH FIRST / MSSQL TOP 은 정렬 없으면 비결정적)
  * - staticBlock(sql) → {ok, reason} : SELECT-only 정적 차단(주석 제거 후 금지 구문 검사)
  * - validKeyColumn(name) → boolean : keyColumn 식별자 화이트리스트
  *
@@ -33,20 +34,34 @@ testWoo.probe = (function () {
     return String(s == null ? "" : s).replace(/^\s+|\s+$/g, "");
   }
 
+  // Oracle FETCH FIRST / MSSQL TOP 은 ORDER BY 없으면 결과가 비결정적이다.
+  // auditSample 은 승인 화면의 근거 자료이므로 재현성이 필수 → ORDER BY 1 을 항상 붙인다.
   function dialect() {
     var t = "";
     try { t = String(application.getDBMSType() || "").toLowerCase(); } catch (e) {}
     var exceptOp = (t.indexOf("oracle") >= 0) ? "MINUS" : "EXCEPT";
+    var isOracle = t.indexOf("oracle") >= 0;
+    var isMssql = t.indexOf("mssql") >= 0 || t.indexOf("sqlserver") >= 0;
+
+    // 유일한 limit 래핑 지점. selectList/from/where 를 받아 중첩을 한 겹도 만들지 않는다.
+    function limitSelect(selectList, fromClause, whereSql, n) {
+      var lim = Number(n) || DEFAULT_SAMPLE;
+      var head = isMssql ? ("SELECT TOP " + lim + " ") : "SELECT ";
+      var s = head + selectList + " FROM " + fromClause;
+      if (whereSql) s = s + " WHERE " + whereSql;
+      s = s + " ORDER BY 1";
+      if (isOracle) s = s + " FETCH FIRST " + lim + " ROWS ONLY";
+      else if (!isMssql) s = s + " LIMIT " + lim;
+      return s;
+    }
+
     return {
       type: t,
       exceptOp: exceptOp,
+      limitSelect: limitSelect,
+      // 완성된 SELECT 에 상한을 씌운다(한 겹 래핑). 별칭 지정이 필요하면 limitSelect 를 쓸 것.
       limit: function (sql, n) {
-        var lim = Number(n) || DEFAULT_SAMPLE;
-        if (t.indexOf("oracle") >= 0)
-          return "SELECT * FROM (" + sql + ") tw_lim FETCH FIRST " + lim + " ROWS ONLY";
-        if (t.indexOf("mssql") >= 0 || t.indexOf("sqlserver") >= 0)
-          return "SELECT TOP " + lim + " * FROM (" + sql + ") tw_lim";
-        return "SELECT * FROM (" + sql + ") tw_lim LIMIT " + lim;
+        return limitSelect("*", "(" + sql + ") tw_lim", "", n);
       }
     };
   }
@@ -158,9 +173,9 @@ testWoo.probe = (function () {
     if (lim > 100) lim = 100;
 
     // 샘플: 컬럼 별칭을 tw_key 로 고정해 format 과 1:1 대응시킨다.
+    // limitSelect 로 한 겹만 감싼다(기존 limit 이중 래핑 제거 + ORDER BY 1 결정성).
     var dial = dialect();
-    var sampleInner = "SELECT " + kc + " AS tw_key FROM (" + inner + ") tw_sample";
-    var sampleQ = dial.limit(sampleInner, lim);
+    var sampleQ = dial.limitSelect(kc + " AS tw_key", "(" + inner + ") tw_sample", "", lim);
     var sampR = _safeSqlSelect("row,@tw_key:string", sampleQ);
     var sample = [];
     if (sampR.ok && sampR.xml) {
