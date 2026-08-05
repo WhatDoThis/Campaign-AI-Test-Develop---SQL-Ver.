@@ -2,19 +2,25 @@
  * testWooDedup.js (4단 유사도 dedup · server-side)
  * ==================================================
  * L0 contentHash → L1 jaccard → L2 embedding rerank → L3 set equivalence → L4 LLM 설명(near만).
+ * near 판정 비율의 분모는 모집단 COUNT(cfg.foundry.populationCountSql), 후보 결과 건수가 아니다.
  *
  * [Main Functions]
  * ===========
- * - check(candidate) → {verdict, matches, scores, gateReportDedup}
+ * - check(candidate) → {verdict, matches, scores, symmetricDiff, delegateHuman, reuse}
+ * - tokensOf / jaccard
  *
  * [Dependencies]
  * =========
- * - testWoo.lifecycle, testWoo.probe, testWoo.embedding, testWoo.llm
+ * - testWoo.lifecycle, testWoo.probe, testWoo.embedding, testWoo.llm, testWoo.cfg
+ * - sqlGetInt (모집단 COUNT)
  * - loadLibrary("woo:testWooDedup.js")
  */
 var testWoo = testWoo || {};
 testWoo.dedup = (function () {
   "use strict";
+
+  // near 비율의 분모는 후보 결과 건수가 아니라 모집단 COUNT (check 호출 간 캐시)
+  var _popCache = null;
 
   var SQL_STOP = {
     select: 1, from: 1, where: 1, and: 1, or: 1, not: 1, in: 1, is: 1, null: 1,
@@ -93,15 +99,12 @@ testWoo.dedup = (function () {
           <node expr="@emb_vector"/><node expr="@emb_source_hash"/>
         </select>
         <where>
-          <condition expr={"@key_column = '" + escK + "'"/>
+          <condition expr={"@key_column = '" + escK + "'"}/>
           <condition expr="(@status = 'active' OR @status = 'verified')"/>
           <condition expr="@is_current = 1"/>
         </where>
       </queryDef>);
-    if (sk) {
-      var escS = sk.replace(/'/g, "''");
-      // scope filter applied in memory if nullable mismatch
-    }
+    // scope_key는 nullable 불일치(빈문자 vs null) 때문에 아래 루프에서 메모리 필터로 처리
     var res = q.ExecuteQuery();
     var out = [];
     var candPrefix = _namePrefix(candidate.name);
@@ -147,6 +150,31 @@ testWoo.dedup = (function () {
       logWarning("[testWoo.dedup._symmetricDiffCount] " + e.message);
       return -1;
     }
+  }
+
+  // 모집단 건수 — cfg.foundry.populationCountSql 기준. 0이면 임계 계산 불가.
+  function _population() {
+    if (_popCache != null) return _popCache;
+    var sql = "";
+    try {
+      var cfg = testWoo.cfg.getConfig();
+      sql = String(cfg.foundry.populationCountSql || "");
+    } catch (eC) {
+      sql = "";
+    }
+    if (!sql) {
+      _popCache = 0;
+      return _popCache;
+    }
+    try {
+      _popCache = Number(sqlGetInt(sql));
+    } catch (e) {
+      logWarning("[testWoo.dedup._population] populationCountSql failed: " +
+        String(e.message || e));
+      _popCache = 0;
+    }
+    if (isNaN(_popCache)) _popCache = 0;
+    return _popCache;
   }
 
   function _explainNear(candidate, match, diffCount) {
@@ -225,8 +253,11 @@ testWoo.dedup = (function () {
     var l3candidates = l2scored.slice(0, 3);
     var cfg = testWoo.cfg.getConfig();
     var nearThreshold = cfg.foundry.dedupNearThreshold || 0.01;
+    var population = _population();
+    // probeNew는 후보 SQL 자체 검증용 — population 분모로 쓰지 않는다.
     var probeNew = testWoo.probe.run(candidate.sql_text, candidate.key_column, 5);
-    var population = probeNew.ok ? probeNew.total : 0;
+    report.candidateTotal = probeNew.ok ? probeNew.total : -1;
+    report.population = population;
 
     var bestNear = null;
     var bestDiff = -1;
@@ -250,6 +281,7 @@ testWoo.dedup = (function () {
 
     if (bestNear && bestDiff >= 0 && population > 0) {
       var ratio = bestDiff / population;
+      report.nearRatio = ratio;
       if (ratio > 0 && ratio < nearThreshold) {
         var explanation = _explainNear(candidate, bestNear, bestDiff);
         report.explanation = explanation;
@@ -261,6 +293,17 @@ testWoo.dedup = (function () {
           explanation: explanation
         };
       }
+    }
+
+    // population=0 → 비율 임계를 계산할 수 없으므로 사람 판단으로 넘긴다.
+    if (bestNear && bestDiff >= 0 && population <= 0) {
+      return {
+        verdict: "near",
+        matches: [bestNear],
+        scores: report,
+        symmetricDiff: bestDiff,
+        delegateHuman: true
+      };
     }
 
     if (bestDiff < 0) {

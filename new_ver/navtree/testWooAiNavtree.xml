@@ -12,12 +12,14 @@ Campaign Explorer 탐색기 전용 navtree. uplus:customizing 과 별도 xtk:nav
 [등록]
 Administration > Configuration > Navigation hierarchies > woo:testWooAiNav
 
-[Sample 폴더]
-Input forms: testWooSampleCustomer / testWooSampleSubscription ACC 등록 필수 (연결 오류 방지)
+[Explorer 범위]
+운영 3종: Fragments / Request Queue / SQL History
+- view type=list (목록만). 레코드 더블클릭/Open → 입력폼 전체 창 (listdet 하단 패널은 memo 필드 잘림)
+- 입력폼: form type=notebook 필수 — ACC Input forms 에 로컬 XML 재등록
 
 [배포 전 필수 치환]
 - 아래 views/view/@url 의 __CAMPAIGN_SERVER_URL__ 을 실제 Campaign 서버 베이스 URL 로 바꿀 것.
-- 실제 값은 old_ver/secrets/OLD_VER_SECRETS.md (git 제외) 참조.
+- 실제 값은 new_ver/secrets/NEW_VER_SECRETS.md (git 제외) 참조.
 -->
 <navtree entitySchema="xtk:navtree" img="nl:folders.png" label="[WOO] Test Woo AI"
          name="testWooAiNav" namespace="woo" xtkschema="xtk:navtree">
@@ -27,7 +29,7 @@ Input forms: testWooSampleCustomer / testWooSampleSubscription ACC 등록 필수
 
       <nodeModel hiddenCommands="adbdelete, adbDup, adbDupTo" img="nl:folders.png"
                  label="[WOO] Fragments" name="testWooAiFragment">
-        <view enumImage="@status" name="listdet" schema="woo:testWooAiFragment" type="listdet">
+        <view enumImage="@status" name="list" schema="woo:testWooAiFragment" type="list">
           <columns>
             <node xpath="@name"/>
             <node xpath="@category"/>
@@ -38,31 +40,18 @@ Input forms: testWooSampleCustomer / testWooSampleSubscription ACC 등록 필수
           <orderBy>
             <node expr="@name"/>
           </orderBy>
-        </view>
-      </nodeModel>
-
-      <nodeModel hiddenCommands="adbdelete, adbDup, adbDupTo" img="nl:folders.png"
-                 label="[WOO] Fragments (Verified)" name="testWooAiFragmentVerified">
-        <view enumImage="@status" name="listdet" schema="woo:testWooAiFragment" type="listdet">
-          <columns>
-            <node xpath="@name"/>
-            <node xpath="@category"/>
-            <node xpath="@tags"/>
-            <node xpath="@key_column"/>
-            <node xpath="@status"/>
-          </columns>
-          <orderBy>
-            <node expr="@name"/>
-          </orderBy>
+          <!-- Foundry 스키마 Update 후 sysFilter 주석 해제
           <sysFilter>
             <condition expr="@status = 'verified'"/>
+            <condition boolOperator="AND" expr="@active = 0"/>
           </sysFilter>
+          -->
         </view>
       </nodeModel>
 
       <nodeModel hiddenCommands="adbdelete, adbDup, adbDupTo" img="nl:folders.png"
                  label="[WOO] Request Queue" name="testWooAiRequestQueue">
-        <view enumImage="@status" name="listdet" schema="woo:testWooAiRequestQueue" type="listdet">
+        <view enumImage="@status" name="list" schema="woo:testWooAiRequestQueue" type="list">
           <columns>
             <node xpath="@status"/>
             <node xpath="@nl_text"/>
@@ -79,7 +68,7 @@ Input forms: testWooSampleCustomer / testWooSampleSubscription ACC 등록 필수
 
       <nodeModel hiddenCommands="adbdelete, adbDup, adbDupTo" img="nl:folders.png"
                  label="[WOO] SQL History" name="testWooAiSql">
-        <view enumImage="@status" name="listdet" schema="woo:testWooAiSql" type="listdet">
+        <view enumImage="@status" name="list" schema="woo:testWooAiSql" type="list">
           <columns>
             <node xpath="@title"/>
             <node xpath="@nl_request"/>
@@ -90,40 +79,6 @@ Input forms: testWooSampleCustomer / testWooSampleSubscription ACC 등록 필수
           </columns>
           <orderBy>
             <node expr="@creation_date" desc="true"/>
-          </orderBy>
-        </view>
-      </nodeModel>
-
-      <nodeModel hiddenCommands="adbdelete, adbDup, adbDupTo" img="nl:folders.png"
-                 label="[WOO] Sample Customer" name="testWooSampleCustomer">
-        <view form="woo:testWooSampleCustomer" name="listdet" schema="woo:testWooSampleCustomer" type="listdet">
-          <columns>
-            <node xpath="@customer_id"/>
-            <node label="Customer Name" xpath="@name"/>
-            <node xpath="@age"/>
-            <node xpath="@gender"/>
-            <node xpath="@marketing_consent"/>
-            <node xpath="@email"/>
-          </columns>
-          <orderBy>
-            <node expr="@customer_id"/>
-          </orderBy>
-        </view>
-      </nodeModel>
-
-      <nodeModel hiddenCommands="adbdelete, adbDup, adbDupTo" img="nl:folders.png"
-                 label="[WOO] Sample Subscription" name="testWooSampleSubscription">
-        <view form="woo:testWooSampleSubscription" name="listdet" schema="woo:testWooSampleSubscription" type="listdet">
-          <columns>
-            <node xpath="@customer_id"/>
-            <node xpath="@plan_code"/>
-            <node xpath="@plan_label"/>
-            <node xpath="@status"/>
-            <node xpath="@start_date"/>
-          </columns>
-          <orderBy>
-            <node expr="@customer_id"/>
-            <node expr="@start_date"/>
           </orderBy>
         </view>
       </nodeModel>

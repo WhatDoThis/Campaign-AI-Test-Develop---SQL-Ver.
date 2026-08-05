@@ -2,15 +2,22 @@
  * testWooToolkit.js (내부 툴킷 레지스트리 · server-side)
  * ==========================================================
  * OpenRouter tools용 spec/invoke. probe_values/search_columns + evidenceLog.
+ * 스키마 파싱은 정규식이 아니라 E4X (속성 순서 자유 · label 누락 대응).
  *
  * [Main Functions]
  * ===========
- * - register / specs / invoke / env / resetBudget / getEvidenceLog
+ * - register / specs / invoke / env
+ * - resetRequest(요청 단위 1회) / markPhase(단계 구분자) / resetBudget(deprecated)
+ * - getEvidenceLog / getEvidenceLogSince
  *
  * [Dependencies]
  * =========
  * - testWoo.probe, testWoo.cfg, xtk.queryDef, application.getSchema
  * - loadLibrary("woo:testWooToolkit.js")
+ * Ref sqlSelect(format, query): format="docName,@alias:type", 반환은 XML 객체
+ *   https://experienceleague.adobe.com/developer/campaign-api/api/f-sqlSelect.html
+ * Ref getSchema: 스크립트 종료까지 메모리에 유지 → namespace당 로드 상한 필요
+ *   https://experienceleague.adobe.com/developer/campaign-api/api/m-Application-getSchema.html
  */
 var testWoo = testWoo || {};
 testWoo.toolkit = (function () {
@@ -23,11 +30,19 @@ testWoo.toolkit = (function () {
   var _searchColumnsCalls = 0;
   var _evidenceLog = [];
   var _evidenceSeq = 0;
+  var _schemaListCache = {};
 
   var TOTAL_BUDGET = 20;
   var PROBE_BUDGET = 8;
   var PROBE_VALUES_BUDGET = 6;
   var SEARCH_COLUMNS_BUDGET = 8;
+
+  // getSchema는 스크립트 종료까지 메모리 유지 → namespace당 인스턴스화 상한
+  var SEARCH_SCHEMA_LOAD_CAP = 30;
+  var SEARCH_MATCH_CAP = 20;
+  var SCHEMA_LIST_CAP = 80;
+  var DESCRIBE_ATTR_CAP = 120;
+  var DESCRIBE_JSON_CAP = 4096;
 
   function _budgets() {
     try {
@@ -86,6 +101,7 @@ testWoo.toolkit = (function () {
       tool: name,
       argsSummary: _summarizeArgs(args),
       resultSummary: _summarizeResult(result),
+      partialScan: !!(result && result.partialScan),
       at: formatDate(new Date(), "%4Y/%2M/%2D %02H:%02N:%02S")
     });
   }
@@ -103,17 +119,48 @@ testWoo.toolkit = (function () {
     return out;
   }
 
-  function resetBudget() {
+  // 요청 단위로 1회만 호출한다. 슬롯·단계마다 호출하면 툴 예산이 무력화된다.
+  function resetRequest() {
     _totalCalls = 0;
     _probeCalls = 0;
     _probeValuesCalls = 0;
     _searchColumnsCalls = 0;
     _evidenceLog = [];
     _evidenceSeq = 0;
+    _schemaListCache = {};
+  }
+
+  // 카운터는 유지하고 evidenceLog에 단계 구분자만 넣는다.
+  // 반환값 = 이 단계의 로그 시작 인덱스 (getEvidenceLogSince 인자)
+  function markPhase(phaseName) {
+    _evidenceSeq++;
+    _evidenceLog.push({
+      seq: _evidenceSeq,
+      phase: String(phaseName || ""),
+      marker: true
+    });
+    return _evidenceLog.length;
+  }
+
+  // deprecated — resetRequest의 별칭. 신규 호출부는 resetRequest/markPhase를 쓴다.
+  function resetBudget() {
+    resetRequest();
   }
 
   function getEvidenceLog() {
     return _evidenceLog.slice(0);
+  }
+
+  // startIndex 이후의 실제 툴 호출만 (단계 구분자 제외)
+  function getEvidenceLogSince(startIndex) {
+    var from = Number(startIndex);
+    if (isNaN(from) || from < 0) from = 0;
+    var out = [];
+    for (var i = from; i < _evidenceLog.length; i++) {
+      if (!_evidenceLog[i] || _evidenceLog[i].marker) continue;
+      out.push(_evidenceLog[i]);
+    }
+    return out;
   }
 
   function invoke(name, argsObj) {
@@ -162,13 +209,33 @@ testWoo.toolkit = (function () {
     };
   }
 
-  function _resolveSqlTable(schemaId) {
+  // getSchema는 Schema 매핑 객체 → E4X 순회를 위해 XML로 변환.
+  // 정규식 속성 파싱 금지 (ACC 스키마는 속성 순서가 자유롭고 label 생략 가능).
+  function _schemaXml(schemaId) {
     var sch = application.getSchema(schemaId);
     if (!sch) throw new Error("schema not found: " + schemaId);
-    var xml = sch.toXMLString();
-    var m = /sqltable="([^"]+)"/.exec(String(xml || ""));
-    if (m) return m[1];
-    return schemaId.split(":")[1];
+    return new XML(String(sch.toXMLString()));
+  }
+
+  // 루트 element의 sqltable만 사용 (정규식 첫 매칭은 하위 element 값을 집을 수 있음)
+  function _resolveSqlTable(schemaId) {
+    var xml = _schemaXml(schemaId);
+    var rootName = String(xml.@name || "");
+    var tbl = "";
+    for each (var el in xml.element) {
+      if (String(el.@name) === rootName) {
+        tbl = String(el.@sqltable || "");
+        break;
+      }
+    }
+    if (!tbl) {
+      for each (var el0 in xml.element) {
+        tbl = String(el0.@sqltable || "");
+        break;
+      }
+    }
+    if (!tbl) throw new Error("sqltable not resolvable for " + schemaId);
+    return tbl;
   }
 
   function _sqlGetIntSafe(query) {
@@ -217,32 +284,39 @@ testWoo.toolkit = (function () {
     var allowed = _allowedNamespaces();
     if (!allowed[ns]) return { error: "namespace not allowed" };
     try {
-      var sch = application.getSchema(id);
-      if (!sch) return { error: "schema not found" };
-      var xml = sch.toXMLString();
-      var summary = _summarizeSchemaXml(xml);
-      if (summary.length > 4096)
-        return { truncated: true, summary: summary.substring(0, 4096) + "...[truncated]" };
-      return { summary: summary };
+      var xml = _schemaXml(id);
+      var cols = [];
+      for each (var a in xml..attribute) {
+        cols.push({
+          name: String(a.@name),
+          label: String(a.@label || ""),
+          type: String(a.@type || "string")
+        });
+        if (cols.length >= DESCRIBE_ATTR_CAP) break;
+      }
+      var links = [];
+      for each (var l in xml..element) {
+        if (String(l.@type) !== "link") continue;
+        links.push({ name: String(l.@name), target: String(l.@target || "") });
+      }
+      return _capDescribe(id, cols, links);
     } catch (e) {
       return { error: String(e.message || e) };
     }
   }
 
-  function _summarizeSchemaXml(xml) {
-    var s = String(xml || "");
-    var out = [];
-    var reAttr = /<attribute[^>]*name="([^"]*)"[^>]*label="([^"]*)"[^>]*type="([^"]*)"/g;
-    var m;
-    while ((m = reAttr.exec(s)) !== null) {
-      out.push("attr:" + m[1] + " type=" + m[3] + " label=" + m[2]);
+  // 직렬화 4KB 초과 시 attribute를 잘라내고 truncated 표시 (LLM 컨텍스트 보호)
+  function _capDescribe(id, cols, links) {
+    var truncated = false;
+    var out = { schemaId: id, columns: cols, links: links, truncated: false };
+    while (cols.length > 1 && JSON.stringify(out).length > DESCRIBE_JSON_CAP) {
+      var keep = cols.length - 10;
+      cols = cols.slice(0, keep > 1 ? keep : 1);
+      truncated = true;
+      out = { schemaId: id, columns: cols, links: links, truncated: true };
     }
-    var reLink = /<element[^>]*name="([^"]*)"[^>]*label="([^"]*)"[^>]*target="([^"]*)"/g;
-    while ((m = reLink.exec(s)) !== null) {
-      out.push("link:" + m[1] + " -> " + m[3]);
-    }
-    if (!out.length) return s.substring(0, 4096);
-    return out.join("\n");
+    out.truncated = truncated;
+    return out;
   }
 
   function _toolProbeSql(args) {
@@ -290,8 +364,9 @@ testWoo.toolkit = (function () {
       };
     }
 
+    // 별칭 tw_val 고정 → sqlSelect format 과 1:1 대응 (반환은 XML 객체)
     var dial = testWoo.probe ? testWoo.probe.dialect() : null;
-    var inner = "SELECT DISTINCT " + columnName + " FROM " + tbl +
+    var inner = "SELECT DISTINCT " + columnName + " AS tw_val FROM " + tbl +
       " WHERE " + columnName + " IS NOT NULL";
     var sampleQ = dial ?
       dial.limit(inner, limit) :
@@ -299,11 +374,9 @@ testWoo.toolkit = (function () {
 
     var values = [];
     try {
-      var rows = sqlSelect("probe_values", sampleQ);
-      for (var i = 0; i < rows.length; i++) {
-        var row = rows[i];
-        if (row && row.length) values.push(row[0]);
-        else if (row && row[columnName] != null) values.push(row[columnName]);
+      var xml = sqlSelect("row,@tw_val:string", sampleQ);
+      for each (var r in xml.row) {
+        values.push(String(r.@tw_val));
       }
     } catch (eS) {
       return { ok: false, error: String(eS.message || eS) };
@@ -316,6 +389,16 @@ testWoo.toolkit = (function () {
       truncated: distinctCount > values.length,
       highCardinality: false
     };
+  }
+
+  // 스키마 목록은 요청 단위 캐시 (동일 namespace queryDef 재조회 방지)
+  function _cachedSchemaList(namespace) {
+    var key = String(namespace);
+    if (_schemaListCache[key]) return _schemaListCache[key];
+    var list = _toolListSchemas({ namespace: namespace, limit: SCHEMA_LIST_CAP });
+    if (!list.schemas) return null;
+    _schemaListCache[key] = list.schemas;
+    return list.schemas;
   }
 
   function _toolSearchColumns(args) {
@@ -337,33 +420,49 @@ testWoo.toolkit = (function () {
     if (!namespaces.length) return { error: "no allowed namespaces" };
 
     var results = [];
-    var max = 20;
-    for (var ni = 0; ni < namespaces.length && results.length < max; ni++) {
-      var list = _toolListSchemas({ namespace: namespaces[ni], limit: 80 });
-      if (!list.schemas) continue;
-      for (var si = 0; si < list.schemas.length && results.length < max; si++) {
-        var sid = list.schemas[si].id;
+    var scanned = 0;
+    var totalCandidates = 0;
+    var capHit = false;
+
+    for (var ni = 0; ni < namespaces.length; ni++) {
+      var schemas = _cachedSchemaList(namespaces[ni]);
+      if (!schemas) continue;
+      totalCandidates += schemas.length;
+      var loaded = 0;
+      for (var si = 0; si < schemas.length; si++) {
+        if (loaded >= SEARCH_SCHEMA_LOAD_CAP || results.length >= SEARCH_MATCH_CAP) {
+          capHit = true;
+          break;
+        }
+        var sid = schemas[si].id;
         try {
-          var sch = application.getSchema(sid);
-          var xml = sch.toXMLString();
-          var reAttr = /<attribute[^>]*name="([^"]*)"[^>]*label="([^"]*)"[^>]*type="([^"]*)"/g;
-          var m;
-          while ((m = reAttr.exec(xml)) !== null && results.length < max) {
-            var an = m[1].toLowerCase();
-            var al = m[2].toLowerCase();
-            if (an.indexOf(keyword) >= 0 || al.indexOf(keyword) >= 0) {
-              results.push({
-                schemaId: sid,
-                columnName: m[1],
-                label: m[2],
-                type: m[3]
-              });
-            }
+          var xml = _schemaXml(sid);
+          loaded++;
+          scanned++;
+          for each (var a in xml..attribute) {
+            if (results.length >= SEARCH_MATCH_CAP) break;
+            var an = String(a.@name || "");
+            var al = String(a.@label || "");
+            if (an.toLowerCase().indexOf(keyword) < 0 &&
+                al.toLowerCase().indexOf(keyword) < 0) continue;
+            results.push({
+              schemaId: sid,
+              columnName: an,
+              label: al,
+              type: String(a.@type || "string")
+            });
           }
         } catch (eSch) {}
       }
     }
-    return { matches: results };
+
+    // partialScan=true 는 "전수 조사 아님" — no_column 확신도를 medium 이하로 제한하는 근거
+    return {
+      matches: results,
+      scanned: scanned,
+      totalCandidates: totalCandidates,
+      partialScan: capHit || scanned < totalCandidates
+    };
   }
 
   register("list_schemas", {
@@ -436,7 +535,10 @@ testWoo.toolkit = (function () {
     specs: specs,
     invoke: invoke,
     env: env,
+    resetRequest: resetRequest,
+    markPhase: markPhase,
     resetBudget: resetBudget,
-    getEvidenceLog: getEvidenceLog
+    getEvidenceLog: getEvidenceLog,
+    getEvidenceLogSince: getEvidenceLogSince
   };
 })();

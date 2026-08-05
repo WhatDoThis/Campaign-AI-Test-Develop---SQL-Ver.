@@ -2,7 +2,12 @@
 response.setContentType("application/json;charset=utf-8");
 /*
  * testWooAiFragmentReview.jssp — verified fragment 승인/반려 API
- * payload action: list | approve | reject | revoke | listImpact
+ * payload action: list | detail | approve | reject | revoke | listImpact
+ *
+ * dedupVerdict === "near" 인 항목은 needsDedupReview=true + dedupWarning 문구를 실어 보낸다.
+ * detail 은 유사 fragment(dedupMatchId)의 sqlText 를 similar 로 함께 반환하여
+ * 화면에서 sqlText 나란히 비교 + "기존 fragment 사용" 선택이 가능하게 한다.
+ * (HTML 승인 화면은 미구현 — 현재는 Explorer + 본 JSON API)
  */
 try {
   TW_RESPONSE = response;
@@ -16,6 +21,47 @@ try {
   var p = readPayload();
   var action = String(p.action || "list");
 
+  var DEDUP_WARN = "유사한 기존 fragment 가 있습니다 (차이 {N}건). " +
+    "신규 등록 대신 기존 사용을 검토하세요.";
+
+  function dedupWarning(diffCount) {
+    var n = (diffCount == null || diffCount < 0) ? "?" : String(diffCount);
+    return DEDUP_WARN.replace("{N}", n);
+  }
+
+  function loadFragment(fragmentId) {
+    var q = xtk.queryDef.create(
+      <queryDef schema="woo:testWooAiFragment" operation="getIfExists">
+        <select>
+          <node expr="@id"/><node expr="@name"/><node expr="@version"/><node expr="@label"/>
+          <node expr="@description"/><node expr="@sql_text"/><node expr="@key_column"/>
+          <node expr="@scope_key"/><node expr="@gate_report"/><node expr="@audit_sample"/>
+          <node expr="@status"/><node expr="@dedup_verdict"/><node expr="@dedup_match_id"/>
+          <node expr="@dedup_diff_count"/>
+        </select>
+        <where><condition expr={"@id = " + Number(fragmentId)}/></where>
+      </queryDef>);
+    var res = q.ExecuteQuery();
+    if (!res || !res.testWooAiFragment.length) return null;
+    var f = res.testWooAiFragment[0];
+    return {
+      id: Number(f.@id),
+      name: String(f.@name),
+      version: Number(f.@version),
+      label: String(f.@label),
+      description: String(f.@description),
+      sqlText: String(f.@sql_text),
+      keyColumn: String(f.@key_column),
+      scopeKey: String(f.@scope_key),
+      gateReport: String(f.@gate_report),
+      auditSample: String(f.@audit_sample),
+      status: String(f.@status),
+      dedupVerdict: String(f.@dedup_verdict || "novel"),
+      dedupMatchId: Number(f.@dedup_match_id) || 0,
+      dedupDiffCount: Number(f.@dedup_diff_count)
+    };
+  }
+
   if (action === "list") {
     var q = xtk.queryDef.create(
       <queryDef schema="woo:testWooAiFragment" operation="select" lineCount="100">
@@ -23,6 +69,7 @@ try {
           <node expr="@id"/><node expr="@name"/><node expr="@version"/><node expr="@label"/>
           <node expr="@status"/><node expr="@key_column"/><node expr="@scope_key"/>
           <node expr="@gate_report"/><node expr="@audit_sample"/><node expr="@description"/>
+          <node expr="@dedup_verdict"/><node expr="@dedup_match_id"/><node expr="@dedup_diff_count"/>
         </select>
         <where><condition expr="@status = 'verified'"/></where>
         <orderBy><node expr="@name"/></orderBy>
@@ -30,6 +77,8 @@ try {
     var res = q.ExecuteQuery();
     var rows = [];
     for each (var r in res.testWooAiFragment) {
+      var dv = String(r.@dedup_verdict || "novel");
+      var dc = Number(r.@dedup_diff_count);
       rows.push({
         id: Number(r.@id),
         name: String(r.@name),
@@ -37,7 +86,12 @@ try {
         label: String(r.@label),
         status: String(r.@status),
         keyColumn: String(r.@key_column),
-        scopeKey: String(r.@scope_key)
+        scopeKey: String(r.@scope_key),
+        dedupVerdict: dv,
+        dedupMatchId: Number(r.@dedup_match_id) || 0,
+        dedupDiffCount: isNaN(dc) ? -1 : dc,
+        needsDedupReview: dv === "near",
+        dedupWarning: dv === "near" ? dedupWarning(dc) : ""
       });
     }
     jsonOut({ ok: true, fragments: rows });
@@ -61,34 +115,17 @@ try {
     var list = testWoo.lifecycle.listImpact(String(p.fragmentName || ""));
     jsonOut({ ok: true, affected: list });
   } else if (action === "detail") {
-    var dq = xtk.queryDef.create(
-      <queryDef schema="woo:testWooAiFragment" operation="getIfExists">
-        <select>
-          <node expr="@id"/><node expr="@name"/><node expr="@version"/><node expr="@label"/>
-          <node expr="@description"/><node expr="@sql_text"/><node expr="@key_column"/>
-          <node expr="@scope_key"/><node expr="@gate_report"/><node expr="@audit_sample"/>
-          <node expr="@status"/>
-        </select>
-        <where><condition expr={"@id = " + Number(p.fragmentId)}/></where>
-      </queryDef>);
-    var dres = dq.ExecuteQuery();
-    if (!dres.testWooAiFragment.length) throw new Error("fragment not found");
-    var fr = dres.testWooAiFragment[0];
+    var fr = loadFragment(Number(p.fragmentId));
+    if (!fr) throw new Error("fragment not found");
+    var needsReview = fr.dedupVerdict === "near";
+    var similar = null;
+    if (needsReview && fr.dedupMatchId) similar = loadFragment(fr.dedupMatchId);
     jsonOut({
       ok: true,
-      fragment: {
-        id: Number(fr.@id),
-        name: String(fr.@name),
-        version: Number(fr.@version),
-        label: String(fr.@label),
-        description: String(fr.@description),
-        sqlText: String(fr.@sql_text),
-        keyColumn: String(fr.@key_column),
-        scopeKey: String(fr.@scope_key),
-        gateReport: String(fr.@gate_report),
-        auditSample: String(fr.@audit_sample),
-        status: String(fr.@status)
-      }
+      fragment: fr,
+      needsDedupReview: needsReview,
+      dedupWarning: needsReview ? dedupWarning(fr.dedupDiffCount) : "",
+      similar: similar
     });
   } else {
     throw new Error("unknown action: " + action);

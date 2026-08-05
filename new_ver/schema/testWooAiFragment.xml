@@ -14,6 +14,8 @@ woo:testWooAiFragment (Test Woo AI Condition Fragment · Foundry 확장)
 - name + version (unique), isCurrent, contentHash
 - status: draft|verified|active|deprecated|revoked|rejected
 - origin: manual|foundry
+- dedup_verdict: novel|near|equivalent|exact (+ dedup_match_id / dedup_diff_count)
+  near 는 publish 하되 운영 승인 화면에서 기존 fragment 와 비교 검토 대상
 
 [Dependencies]
 =========
@@ -32,6 +34,12 @@ woo:testWooAiFragment (Test Woo AI Condition Fragment · Foundry 확장)
   <enumeration basetype="string" default="manual" name="fragmentOrigin">
     <value label="Manual"  name="manual"/>
     <value label="Foundry" name="foundry"/>
+  </enumeration>
+  <enumeration basetype="string" default="novel" name="fragmentDedupVerdict">
+    <value label="Novel"      name="novel"/>
+    <value label="Near"       name="near"/>
+    <value label="Equivalent" name="equivalent"/>
+    <value label="Exact"      name="exact"/>
   </enumeration>
 
   <element autopk="true" label="Test Woo AI Condition Fragment" name="testWooAiFragment" sqltable="testWooAiFragment">
@@ -89,5 +97,8 @@ woo:testWooAiFragment (Test Woo AI Condition Fragment · Foundry 확장)
     <attribute label="Embedding Dim"     name="emb_dim"          type="short"/>
     <attribute label="Emb Source Hash"   length="64"  name="emb_source_hash"  type="string"/>
     <attribute label="Emb Updated At"    name="emb_updated_at"   type="datetime"/>
+    <attribute enum="fragmentDedupVerdict" label="Dedup Verdict" length="16" name="dedup_verdict" type="string"/>
+    <attribute label="Dedup Match ID"    name="dedup_match_id"   type="long"/>
+    <attribute label="Dedup Diff Count"  name="dedup_diff_count" type="long"/>
   </element>
 </srcSchema>

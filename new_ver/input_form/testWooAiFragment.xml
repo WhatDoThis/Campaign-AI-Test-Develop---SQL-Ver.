@@ -1,6 +1,17 @@
 <!--
-woo:testWooAiFragment (Test Woo AI Condition Fragment Form · Foundry 확장)
-listdet 하단 잘림 방지: form type=notebook 탭 분리 (Adobe xtk:form 권장)
+woo:testWooAiFragment (Test Woo AI Condition Fragment Form · Foundry)
+=====================================================================
+woo:testWooAiFragment 스키마(Foundry 확장) 와 1:1. ACC Input forms name 동일.
+
+[전제]
+Data schemas > woo:testWooAiFragment 최신본 Save + Update database structure
+(스키마 없이 폼만 등록하면 version/active 등 xpath XML-110013)
+
+[listdet → list]
+Explorer 는 listdet 대신 list + 더블클릭/Open. ACC Input forms 에 아래 XML 전체(type=notebook 포함) 재등록 필수.
+
+[Dependencies]
+entity-schema: woo:testWooAiFragment
 -->
 <form _cs="Test Woo AI Condition Fragment" entity-schema="woo:testWooAiFragment" img="xtk:form.png"
       label="Test Woo AI Condition Fragment" name="testWooAiFragment" namespace="woo" type="notebook"
@@ -40,5 +51,10 @@ listdet 하단 잘림 방지: form type=notebook 탭 분리 (Adobe xtk:form 권�
     <input xpath="@revoked_reason"/>
     <input xpath="@gate_report"/>
     <input xpath="@audit_sample"/>
+  </container>
+  <container label="Dedup">
+    <input xpath="@dedup_verdict"/>
+    <input xpath="@dedup_match_id"/>
+    <input xpath="@dedup_diff_count"/>
   </container>
 </form>

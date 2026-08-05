@@ -73,7 +73,9 @@ testWoo.env = (function () {
      * maxNewFragments: 요청당 신규 INSERT 상한. 초과 시 needs_human_design
      * namespaces: toolkit list_schemas/probe_values 허용 ns (쉼표)
      * tokenBudget / dailyBudget: 비용 가드 (현재 Foundry에서 부분 미적용)
-     * gateRetries: fragment 게이트 실패 시 LLM 재시도. 권장 2
+     * gateRetries: fragment 게이트 실패 시 LLM 자가수정 재시도. 권장 2
+     * staleProcessingMinutes: processing 정체 레코드를 queued 로 되돌리는 기준(분).
+     *   권장 30. WF 실행이 비정상 종료된 큐를 배치 시작 시 1회 복구
      * ------------------------------------------------------------------ */
     foundry: {
       enabled: false,
@@ -83,7 +85,8 @@ testWoo.env = (function () {
       namespaces: "nms,cus,woo",
       tokenBudget: 60000,
       dailyBudget: 500000,
-      gateRetries: 2
+      gateRetries: 2,
+      staleProcessingMinutes: 30
     },
 
     /* ------------------------------------------------------------------

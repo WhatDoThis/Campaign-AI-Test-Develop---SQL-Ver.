@@ -2,14 +2,21 @@
  * testWooFoundry.js (Fragment Foundry + Triage · server-side)
  * =============================================================
  * 슬롯별 triage → feasible만 SQL 생성. infeasible은 정상 종료(재시도 제외).
+ * 진입 시 'sql' named right 프리플라이트, 배치 단위 단일 실행 가드, 스테일 큐 복구.
  *
  * [Main Functions]
  * ===========
- * - processQueueItem / processBatch / generateFragmentForSlot
+ * - processBatch : 프리플라이트 → 스테일 복구 → 단일 실행 가드 → queued 순차 처리
+ * - processQueueItem : 슬롯별 triage → 생성(게이트 자가수정) → dedup → publish
+ * - generateFragmentForSlot : tool 루프 + 게이트 실패 되먹임 재생성
+ * - runToolLoop : LLM tool calling 루프 (예산 초기화는 하지 않음)
  *
  * [Dependencies]
  * =========
  * - testWoo.feasibility, testWoo.toolkit, testWoo.llm, testWoo.repo
+ * - testWoo.probe(preflight), testWoo.dedup, testWoo.lifecycle, testWoo.gates
+ * - testWoo.fragments(publish 후 Stage A 재검색), testWoo.compiler(부분 실행 미리보기)
+ * - testWoo.cfg / testWoo.env, xtk.queryDef / xtk.session#Write
  * - loadLibrary("woo:testWooFoundry.js")
  */
 var testWoo = testWoo || {};
@@ -17,32 +24,52 @@ testWoo.foundry = (function () {
   "use strict";
 
   var QUEUE_SCHEMA = "woo:testWooAiRequestQueue";
+  var STALE_SCAN_LIMIT = 50;
+  var DEFAULT_STALE_MS = 30 * 60 * 1000;
+  var SCHEMA_HINT = "스키마 배포가 선행되지 않았습니다. " +
+    "woo:testWooAiRequestQueue 재등록 → Update database structure 후 다시 실행하세요.";
 
   function _trim(s) {
     return String(s == null ? "" : s).replace(/^\s+|\s+$/g, "");
   }
 
-  function _errId() {
-    return "FF" + String(new Date().getTime()) + String(Math.floor(Math.random() * 1000));
+  // prefix로 오류 계열을 구분한다. FFPERM = 'sql' named right 미보유.
+  function _errId(prefix) {
+    return String(prefix || "FF") + String(new Date().getTime()) +
+      String(Math.floor(Math.random() * 1000));
   }
 
   function nowStr() {
     return formatDate(new Date(), "%4Y/%2M/%2D %02H:%02N:%02S");
   }
 
+  function _isSchemaError(e) {
+    var msg = String((e && e.message) || e || "");
+    return msg.indexOf("XTK-170") >= 0 || msg.indexOf("XTK-171") >= 0 ||
+      msg.indexOf("does not exist") >= 0 || msg.indexOf("unknown") >= 0;
+  }
+
   function _getQueue(id) {
-    var q = xtk.queryDef.create(
-      <queryDef schema={QUEUE_SCHEMA} operation="getIfExists">
-        <select>
-          <node expr="@id"/><node expr="@nl_text"/><node expr="@slots_json"/>
-          <node expr="@missing_slots_json"/><node expr="@plan_json"/>
-          <node expr="@status"/><node expr="@attempt_count"/>
-          <node expr="@tokens_used"/><node expr="@created_by"/><node expr="@workflow_id"/>
-          <node expr="@slot_results"/><node expr="@evidence_log"/><node expr="@partial_preview"/>
-        </select>
-        <where><condition expr={"@id = " + Number(id)}/></where>
-      </queryDef>);
-    var res = q.ExecuteQuery();
+    var res;
+    try {
+      var q = xtk.queryDef.create(
+        <queryDef schema={QUEUE_SCHEMA} operation="getIfExists">
+          <select>
+            <node expr="@id"/><node expr="@nl_text"/><node expr="@slots_json"/>
+            <node expr="@missing_slots_json"/><node expr="@plan_json"/>
+            <node expr="@status"/><node expr="@attempt_count"/>
+            <node expr="@tokens_used"/><node expr="@created_by"/><node expr="@workflow_id"/>
+            <node expr="@slot_results"/><node expr="@evidence_log"/><node expr="@partial_preview"/>
+          </select>
+          <where><condition expr={"@id = " + Number(id)}/></where>
+        </queryDef>);
+      res = q.ExecuteQuery();
+    } catch (eQ) {
+      if (_isSchemaError(eQ))
+        throw new Error("[testWoo.foundry._getQueue] " + SCHEMA_HINT +
+          " (원인: " + String(eQ.message || eQ) + ")");
+      throw eQ;
+    }
     if (!res || !res.testWooAiRequestQueue || !res.testWooAiRequestQueue.length) return null;
     var r = res.testWooAiRequestQueue[0];
     return {
@@ -78,6 +105,79 @@ testWoo.foundry = (function () {
     xtk.session.Write(doc);
   }
 
+  // 'sql' named right 프리플라이트 (sqlGetInt / sqlSelect 둘 다 확인)
+  function _preflight() {
+    if (!testWoo.probe || !testWoo.probe.preflight) {
+      return {
+        ok: false,
+        code: "NO_PROBE",
+        message: "testWooProbe.js 가 로드되지 않았습니다 (loadLibrary 순서 확인)."
+      };
+    }
+    return testWoo.probe.preflight();
+  }
+
+  function _staleMs() {
+    try {
+      var E = testWoo.env.getEnv();
+      var m = Number(E.foundry.staleProcessingMinutes);
+      if (!isNaN(m) && m > 0) return m * 60 * 1000;
+    } catch (e) {}
+    return DEFAULT_STALE_MS;
+  }
+
+  // queryDef 렌더 형식(YYYY-MM-DD / YYYY/MM/DD, 구분자 공백 또는 T) 모두 수용
+  function _parseAccDate(s) {
+    var m = String(s || "").match(
+      /^(\d{4})[\/\-](\d{2})[\/\-](\d{2})[T\s](\d{2}):(\d{2}):(\d{2})/);
+    if (!m) return null;
+    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]),
+      Number(m[4]), Number(m[5]), Number(m[6]));
+  }
+
+  // processing 상태로 장시간 정체된 레코드를 queued 로 되돌린다 (배치 시작 시 1회).
+  function _recoverStale() {
+    var limit = _staleMs();
+    var q = xtk.queryDef.create(
+      <queryDef schema={QUEUE_SCHEMA} operation="select" lineCount={String(STALE_SCAN_LIMIT)}>
+        <select><node expr="@id"/><node expr="@updated_at"/></select>
+        <where><condition expr="@status = 'processing'"/></where>
+        <orderBy><node expr="@updated_at"/></orderBy>
+      </queryDef>);
+    var res = q.ExecuteQuery();
+    var now = new Date().getTime();
+    var n = 0;
+    for each (var r in res.testWooAiRequestQueue) {
+      var d = _parseAccDate(String(r.@updated_at || ""));
+      if (!d) {
+        logWarning("[testWoo.foundry._recoverStale] updated_at 파싱 실패 id=" +
+          String(r.@id) + " value=" + String(r.@updated_at || ""));
+        continue;
+      }
+      if ((now - d.getTime()) < limit) continue;
+      _updateQueue(Number(r.@id), {
+        status: "queued",
+        last_error: "stale processing recovered (>" + Math.round(limit / 60000) + "min)"
+      });
+      n++;
+    }
+    return n;
+  }
+
+  // 물리 컬럼명(sStatus 등) 추정 대신 queryDef 로 센다 — 스키마 매핑에만 의존.
+  function _hasProcessing() {
+    var q = xtk.queryDef.create(
+      <queryDef schema={QUEUE_SCHEMA} operation="select" lineCount="1">
+        <select><node expr="@id"/></select>
+        <where><condition expr="@status = 'processing'"/></where>
+      </queryDef>);
+    var res = q.ExecuteQuery();
+    for each (var r in res.testWooAiRequestQueue) return true;
+    return false;
+  }
+
+  // 재조회 검증은 유지하되, 완전한 원자성은 WF 단일 인스턴스 설정에 의존한다.
+  // (docs/report/01_개발가이드.md 섹션 6 — 동시 실행 금지 설정)
   function _claimQueue(id) {
     var row = _getQueue(id);
     if (!row || row.status !== "queued") return { ok: false, prevAttempt: 0 };
@@ -102,10 +202,12 @@ testWoo.foundry = (function () {
     return { ok: true, prevAttempt: prevAttempt };
   }
 
+  // 예산 초기화는 요청 단위(processQueueItem)에서만 한다. 여기서 초기화하면
+  // 슬롯·단계마다 예산이 리셋되어 툴 호출 상한이 무력화된다.
   function runToolLoop(cfg, messages, specs, maxTurns) {
     var turns = maxTurns != null ? Number(maxTurns) : cfg.foundry.maxTurns;
-    testWoo.toolkit.resetBudget();
     var msgs = messages || [];
+    var tokensUsed = 0;
     var maxTok = (testWoo.env && testWoo.env.getEnv) ?
       testWoo.env.getEnv().llm.foundryMaxTokens : 16384;
     for (var t = 0; t < turns; t++) {
@@ -122,6 +224,8 @@ testWoo.foundry = (function () {
       var wrap = testWoo.llm.postChat(cfg, body);
       if (!wrap || !wrap.choices || !wrap.choices.length)
         throw new Error("[testWoo.foundry.runToolLoop] empty choices");
+      if (wrap.usage && wrap.usage.total_tokens != null)
+        tokensUsed += Number(wrap.usage.total_tokens) || 0;
       var ch = wrap.choices[0];
       var msg = ch.message || {};
       msgs.push(msg);
@@ -141,7 +245,7 @@ testWoo.foundry = (function () {
         }
         continue;
       }
-      return { messages: msgs, wrap: wrap, content: msg.content };
+      return { messages: msgs, wrap: wrap, content: msg.content, tokensUsed: tokensUsed };
     }
     throw new Error("[testWoo.foundry] tool loop 한도 초과");
   }
@@ -158,7 +262,28 @@ testWoo.foundry = (function () {
     ].join("\n");
   }
 
-  function generateFragmentForSlot(cfg, nlText, slotText, queueId) {
+  function _parseFragmentJson(content) {
+    var text = String(content || "");
+    var start = text.indexOf("{");
+    var end = text.lastIndexOf("}");
+    if (start < 0 || end <= start)
+      throw new Error("[testWoo.foundry] fragment JSON missing");
+    return JSON.parse(text.substring(start, end + 1));
+  }
+
+  function _gateFeedback(gate) {
+    var results = (gate && gate.results) ? gate.results : [];
+    return "GATE_FAILED " + JSON.stringify({ gateFailed: true, results: results }) +
+      "\n위 게이트 실패 항목을 고친 fragment를 다시 만드세요. " +
+      "probe_sql 로 재검증한 뒤 최종 JSON만 출력합니다. 같은 SQL을 반복 제출하지 마세요.";
+  }
+
+  // 게이트 실패 시 실패 근거를 같은 대화에 넣어 LLM 자가수정을 요청한다.
+  // OpenAI 호환 API는 role="tool" 메시지가 직전 tool_calls에 1:1 대응해야 하므로
+  // (대응 tool_call 없는 tool 메시지는 400) 되먹임은 role="user"로 넣는다.
+  function generateFragmentForSlot(cfg, nlText, slotText, queueId, slotId) {
+    // 요청 단위 로그에 슬롯 구분자만 남긴다 (예산은 resetRequest 시점 기준으로 유지)
+    if (testWoo.toolkit.markPhase) testWoo.toolkit.markPhase("generate:" + String(slotId || "?"));
     var userBlock = "<user_request>" + String(slotText || "") + "</user_request>\nNL context:\n" +
       String(nlText || "");
     var messages = [
@@ -166,13 +291,28 @@ testWoo.foundry = (function () {
       { role: "user", content: userBlock }
     ];
     var specs = testWoo.toolkit.specs();
-    var loop = runToolLoop(cfg, messages, specs, cfg.foundry.maxTurns);
-    var content = String(loop.content || "");
-    var start = content.indexOf("{");
-    var end = content.lastIndexOf("}");
-    if (start < 0 || end <= start)
-      throw new Error("[testWoo.foundry] fragment JSON missing");
-    return JSON.parse(content.substring(start, end + 1));
+    var retries = cfg.foundry.gateRetries != null ? Number(cfg.foundry.gateRetries) : 2;
+    if (isNaN(retries) || retries < 0) retries = 0;
+
+    var lastGate = null;
+    var attempts = 0;
+    var tokensUsed = 0;
+    for (var attempt = 0; attempt <= retries; attempt++) {
+      attempts++;
+      var loop = runToolLoop(cfg, messages, specs, cfg.foundry.maxTurns);
+      messages = loop.messages;
+      tokensUsed += Number(loop.tokensUsed) || 0;
+      var fragDoc = _fragDocFromLlm(_parseFragmentJson(loop.content), queueId);
+      var gate = testWoo.gates.validateFragment(fragDoc);
+      lastGate = gate;
+      if (gate.pass) {
+        return { fragDoc: fragDoc, gate: gate, attempts: attempts, tokensUsed: tokensUsed };
+      }
+      logWarning("[testWoo.foundry] gate failed attempt=" + attempts +
+        " slot=" + String(slotId || "?"));
+      if (attempt < retries) messages.push({ role: "user", content: _gateFeedback(gate) });
+    }
+    return { fragDoc: null, gate: lastGate, attempts: attempts, tokensUsed: tokensUsed };
   }
 
   function _fragDocFromLlm(frag, queueId) {
@@ -210,21 +350,80 @@ testWoo.foundry = (function () {
     };
   }
 
-  function _runGateWithRetry(cfg, fragDoc) {
-    var retries = cfg.foundry.gateRetries != null ? cfg.foundry.gateRetries : 2;
-    var last = null;
-    for (var attempt = 0; attempt <= retries; attempt++) {
-      var gate = testWoo.gates.validateFragment(fragDoc);
-      if (gate.pass) return gate;
-      last = gate;
-    }
-    return last;
+  // GapLog 집계 키 — "최근 3개월 내 가입" / "최근 3개월내 가입" 이 같은 레코드가 되도록
+  // 공백·구두점·말미 조사를 제거한다. 기존 레코드는 마이그레이션하지 않고 신규부터 적용.
+  function _normalizeConcept(text) {
+    var t = String(text || "");
+    t = t.replace(/\s+/g, "");
+    t = t.replace(/[.,!?~·\-_\/()\[\]]/g, "");
+    t = t.replace(/(을|를|이|가|은|는|의|에|에서|으로|로|와|과|한|인)$/g, "");
+    t = t.toLowerCase();
+    if (t.length > 128) t = t.substring(0, 128);
+    return t;
   }
 
-  function _normalizeConcept(text) {
-    var s = _trim(text).toLowerCase();
-    if (s.length > 128) s = s.substring(0, 128);
-    return s;
+  // publish 직후 남은 슬롯이 새 fragment로 커버되는지 Stage A로 재검색한다.
+  // Foundry 신규 fragment는 status=verified(active 아님)이므로 verified 까지 포함해 검색한다.
+  function _resolveRemainingBySearch(pending, slotResults) {
+    if (!pending.length) return { pending: pending, resolved: 0 };
+    if (testWoo.fragments && testWoo.fragments.clearCache) testWoo.fragments.clearCache();
+    var stillMissing = [];
+    var resolved = 0;
+    for (var k = 0; k < pending.length; k++) {
+      var hit = null;
+      try {
+        hit = testWoo.fragments.searchSlots([pending[k]], null, ["active", "verified"]);
+      } catch (eS) {
+        logWarning("[testWoo.foundry._resolveRemainingBySearch] " + String(eS.message || eS));
+      }
+      var cands = (hit && hit.length && hit[0].candidates) ? hit[0].candidates : [];
+      if (!cands.length) {
+        stillMissing.push(pending[k]);
+        continue;
+      }
+      resolved++;
+      slotResults.push({
+        slotId: pending[k].id,
+        slotText: pending[k].text,
+        verdict: "feasible",
+        confidence: "medium",
+        narrative: "직전에 생성된 fragment(" + String(cands[0].name) + ")가 이 조건을 커버합니다.",
+        evidence: {},
+        alternatives: [],
+        resolvedBy: "reuse_after_publish",
+        fragmentName: String(cands[0].name),
+        fragmentId: null,
+        needsDedupReview: false
+      });
+    }
+    return { pending: stillMissing, resolved: resolved };
+  }
+
+  // missing_slots_json 항목(문자열 또는 객체)을 {id, text, searchKeywords} 로 통일
+  function _normalizeSlots(missing) {
+    var out = [];
+    var list = missing || [];
+    for (var i = 0; i < list.length; i++) {
+      var mo = list[i];
+      var isObj = (mo != null && typeof mo === "object");
+      out.push({
+        id: (isObj && mo.id) ? String(mo.id) : ("m" + i),
+        text: isObj ? String(mo.text || mo) : String(mo),
+        hintedCategory: isObj ? String(mo.hintedCategory || "") : "",
+        searchKeywords: (isObj && mo.searchKeywords) ? mo.searchKeywords : []
+      });
+    }
+    return out;
+  }
+
+  // 요청 단위 evidenceLog 전체 (단계 구분자 포함) — 중복 누적 없이 1회 수집
+  function _collectEvidence() {
+    if (!testWoo.toolkit || !testWoo.toolkit.getEvidenceLog) return [];
+    try {
+      return testWoo.toolkit.getEvidenceLog();
+    } catch (e) {
+      return [];
+    }
   }
 
   function _buildPartialPreview(cfg, planJson, excludedSlots) {
@@ -244,7 +443,8 @@ testWoo.foundry = (function () {
     }
   }
 
-  function _finalizeInfeasible(queueId, prevAttempt, slotResults, evidenceLog, status, partialPreview) {
+  function _finalizeInfeasible(queueId, prevAttempt, slotResults, evidenceLog, status,
+                               partialPreview, tokensUsed) {
     _updateQueue(queueId, {
       status: status,
       slot_results: JSON.stringify(slotResults),
@@ -252,7 +452,8 @@ testWoo.foundry = (function () {
       partial_preview: partialPreview || "",
       missing_slots_json: "[]",
       last_error: "",
-      attempt_count: prevAttempt
+      attempt_count: prevAttempt,
+      tokens_used: tokensUsed != null ? tokensUsed : 0
     });
   }
 
@@ -262,14 +463,28 @@ testWoo.foundry = (function () {
       logInfo("[testWoo.foundry] disabled — skip queueId=" + queueId);
       return { ok: false, reason: "foundry disabled" };
     }
+
+    // 'sql' named right 없으면 프로브·게이트가 조용히 실패하므로 진입 시 차단
+    var pf = _preflight();
+    if (!pf.ok) {
+      var permErrId = _errId("FFPERM");
+      logError("[testWoo.foundry][" + permErrId + "] " + pf.message);
+      _updateQueue(queueId, { status: "failed", last_error: pf.message, err_id: permErrId });
+      return { ok: false, reason: pf.code, errId: permErrId };
+    }
+
     var claim = _claimQueue(queueId);
     if (!claim.ok) return { ok: false, reason: "claim failed or not queued" };
 
     var row = _getQueue(queueId);
     if (!row) return { ok: false, reason: "queue row missing" };
 
+    // 툴 예산은 요청 단위로 1회만 초기화한다 (슬롯·단계별 초기화 금지)
+    if (testWoo.toolkit.resetRequest) testWoo.toolkit.resetRequest();
+
     var allEvidence = [];
     var slotResults = [];
+    var tokensUsed = row.tokens_used || 0;
 
     try {
       var missing = [];
@@ -281,23 +496,18 @@ testWoo.foundry = (function () {
 
       var created = 0;
       var maxNew = cfg.foundry.maxNewFragments;
-      var remaining = missing.slice(0);
       var feasibleCount = 0;
       var infeasibleCount = 0;
+      var needsDedupReview = false;
+      var pending = _normalizeSlots(missing);
 
-      for (var si = 0; si < remaining.length; si++) {
-        var slotObj = remaining[si];
-        var slotText = typeof slotObj === "string" ? slotObj :
-          (slotObj.text || String(slotObj));
-        var slotId = typeof slotObj === "object" && slotObj.id ? slotObj.id : ("m" + si);
+      while (pending.length) {
+        var slot = pending.shift();
+        var slotId = slot.id;
+        var slotText = slot.text;
 
         var triageResult = testWoo.feasibility.triage(
           { id: slotId, text: slotText }, cfg, row.nl_text);
-
-        if (triageResult.evidenceLog && triageResult.evidenceLog.length) {
-          for (var ei = 0; ei < triageResult.evidenceLog.length; ei++)
-            allEvidence.push(triageResult.evidenceLog[ei]);
-        }
 
         if (!triageResult.canProceed) {
           infeasibleCount++;
@@ -319,53 +529,64 @@ testWoo.foundry = (function () {
               sampleEvidence: JSON.stringify(triageResult.evidence)
             });
           }
-          remaining.splice(si, 1);
-          si--;
           continue;
         }
 
         feasibleCount++;
+        // maxNewFragments 는 실제 publish 건수만 센다
         if (created >= maxNew) {
           _updateQueue(queueId, {
             status: "needs_human_design",
             last_error: "요청이 과도하게 복잡하거나 fragment 라이브러리 재설계가 필요합니다.",
-            missing_slots_json: JSON.stringify(remaining),
+            missing_slots_json: JSON.stringify([slot].concat(pending)),
             slot_results: JSON.stringify(slotResults),
-            evidence_log: JSON.stringify(allEvidence)
+            evidence_log: JSON.stringify(_collectEvidence()),
+            tokens_used: tokensUsed
           });
           return { ok: false, reason: "needs_human_design" };
         }
 
-        var llmFrag = generateFragmentForSlot(cfg, row.nl_text, slotText, queueId);
-        if (testWoo.toolkit.getEvidenceLog) {
-          var genLog = testWoo.toolkit.getEvidenceLog();
-          for (var gi = 0; gi < genLog.length; gi++) allEvidence.push(genLog[gi]);
-        }
-
-        var fragDoc = _fragDocFromLlm(llmFrag, queueId);
-        var gateResult = _runGateWithRetry(cfg, fragDoc);
-        if (!gateResult || !gateResult.pass) {
+        var gen = generateFragmentForSlot(cfg, row.nl_text, slotText, queueId, slotId);
+        tokensUsed += Number(gen.tokensUsed) || 0;
+        if (!gen.fragDoc || !gen.gate || !gen.gate.pass) {
+          var gateResults = (gen.gate && gen.gate.results) ? gen.gate.results : [];
           _updateQueue(queueId, {
             status: "failed",
-            last_error: "gate failed: " + JSON.stringify(gateResult.results),
+            last_error: "gate failed after " + gen.attempts + " attempt(s): " +
+              JSON.stringify(gateResults),
             err_id: _errId(),
             slot_results: JSON.stringify(slotResults),
-            evidence_log: JSON.stringify(allEvidence)
+            evidence_log: JSON.stringify(_collectEvidence()),
+            tokens_used: tokensUsed
           });
           return { ok: false, reason: "gate failed" };
         }
-        fragDoc.gate_report = JSON.stringify(gateResult.results);
-        fragDoc.audit_sample = JSON.stringify(gateResult.auditSample || {});
+
+        var fragDoc = gen.fragDoc;
+        fragDoc.gate_report = JSON.stringify(gen.gate.results);
+        fragDoc.audit_sample = JSON.stringify(gen.gate.auditSample || {});
 
         var dedup = testWoo.dedup.check(fragDoc);
+        var dedupMatchId = (dedup.matches && dedup.matches.length && dedup.matches[0]) ?
+          Number(dedup.matches[0].id) : 0;
+        fragDoc.dedup_verdict = String(dedup.verdict || "novel");
+        fragDoc.dedup_match_id = dedupMatchId;
+        fragDoc.dedup_diff_count = dedup.symmetricDiff != null ?
+          Number(dedup.symmetricDiff) : -1;
+
         var fragmentId = null;
+        var slotNeedsReview = false;
+        var published = false;
         if (dedup.verdict === "exact" || dedup.verdict === "equivalent") {
-          logInfo("[testWoo.foundry] dedup reuse " + dedup.verdict);
-          fragmentId = dedup.matchId || null;
+          logInfo("[testWoo.foundry] dedup reuse " + dedup.verdict + " id=" + dedupMatchId);
+          fragmentId = dedupMatchId || null;
         } else {
+          // near 도 publish 하되(status=verified 유지) 운영 승인 화면에서 비교 검토하게 표시
           if (dedup.verdict === "near") {
+            slotNeedsReview = true;
+            needsDedupReview = true;
             fragDoc.gate_report = JSON.stringify({
-              results: gateResult.results,
+              results: gen.gate.results,
               dedup: dedup.scores,
               explanation: dedup.explanation || ""
             });
@@ -373,10 +594,8 @@ testWoo.foundry = (function () {
           fragmentId = testWoo.lifecycle.publish(fragDoc);
           if (testWoo.embedding) testWoo.embedding.ensureEmbedding(fragDoc);
           created++;
+          published = true;
         }
-
-        if (testWoo.fragments && testWoo.fragments.clearCache)
-          testWoo.fragments.clearCache();
 
         slotResults.push({
           slotId: slotId,
@@ -386,15 +605,26 @@ testWoo.foundry = (function () {
           narrative: triageResult.narrative,
           evidence: triageResult.evidence,
           alternatives: [],
-          fragmentId: fragmentId
+          fragmentId: fragmentId,
+          dedupVerdict: fragDoc.dedup_verdict,
+          dedupMatchId: dedupMatchId,
+          dedupDiffCount: fragDoc.dedup_diff_count,
+          needsDedupReview: slotNeedsReview
         });
 
-        remaining.splice(si, 1);
-        si--;
+        // 앞서 만든 fragment가 남은 슬롯을 커버하면 추가 생성을 건너뛴다 (Stage A 재실행)
+        if (published) {
+          var reuse = _resolveRemainingBySearch(pending, slotResults);
+          pending = reuse.pending;
+          feasibleCount += reuse.resolved;
+        }
       }
 
+      allEvidence = _collectEvidence();
+
       if (infeasibleCount > 0 && feasibleCount === 0) {
-        _finalizeInfeasible(queueId, claim.prevAttempt, slotResults, allEvidence, "infeasible", "");
+        _finalizeInfeasible(queueId, claim.prevAttempt, slotResults, allEvidence,
+          "infeasible", "", tokensUsed);
         return { ok: true, status: "infeasible", slotResults: slotResults };
       }
 
@@ -407,7 +637,7 @@ testWoo.foundry = (function () {
         }
         var preview = _buildPartialPreview(cfg, row.plan_json, excluded);
         _finalizeInfeasible(queueId, claim.prevAttempt, slotResults, allEvidence,
-          "partially_infeasible", preview);
+          "partially_infeasible", preview, tokensUsed);
         return { ok: true, status: "partially_infeasible", slotResults: slotResults };
       }
 
@@ -415,39 +645,67 @@ testWoo.foundry = (function () {
         _updateQueue(queueId, {
           status: "awaiting_approval",
           missing_slots_json: "[]",
-          last_error: "",
+          last_error: needsDedupReview ?
+            "유사한 기존 fragment가 있습니다 — 운영 승인 화면에서 비교 검토가 필요합니다." : "",
           slot_results: JSON.stringify(slotResults),
-          evidence_log: JSON.stringify(allEvidence)
+          evidence_log: JSON.stringify(allEvidence),
+          tokens_used: tokensUsed
         });
-        return { ok: true, created: created, status: "awaiting_approval" };
+        return {
+          ok: true, created: created, status: "awaiting_approval",
+          needsDedupReview: needsDedupReview, slotResults: slotResults
+        };
       }
 
       _updateQueue(queueId, {
         status: "done",
         slot_results: JSON.stringify(slotResults),
-        evidence_log: JSON.stringify(allEvidence)
+        evidence_log: JSON.stringify(allEvidence),
+        tokens_used: tokensUsed
       });
       return { ok: true, status: "done" };
     } catch (e) {
-      var errId = _errId();
       var msg = String(e.message || e);
+      // 402/429 는 문자열 검색이 아니라 HTTP 상태코드로 판정 (SQL 오류 메시지 오탐 방지)
+      var throttled = !!(e && (e.isRateLimited === true || e.isOutOfCredit === true));
+      var errId = _errId(throttled ? "FFTHR" : "FF");
       logError("[testWoo.foundry][" + errId + "] " + msg);
-      var status = "failed";
-      if (msg.indexOf("402") >= 0 || msg.indexOf("429") >= 0) status = "throttled";
-      _updateQueue(queueId, {
-        status: status,
+      var patch = {
+        status: throttled ? "throttled" : "failed",
         last_error: msg,
         err_id: errId,
         slot_results: JSON.stringify(slotResults),
-        evidence_log: JSON.stringify(allEvidence)
-      });
-      return { ok: false, reason: msg, errId: errId };
+        evidence_log: JSON.stringify(_collectEvidence()),
+        tokens_used: tokensUsed
+      };
+      // throttled 는 자동 재시도 금지 원칙에 따라 attempt_count 를 증가시키지 않는다
+      if (throttled) patch.attempt_count = claim.prevAttempt;
+      _updateQueue(queueId, patch);
+      return { ok: false, reason: msg, errId: errId, throttled: throttled };
     }
   }
 
   function processBatch() {
     var cfg = testWoo.cfg.getConfig();
     if (!cfg.foundry.enabled) return { processed: 0 };
+
+    // 프리플라이트 실패 시 큐 상태를 바꾸지 않고 배치 전체를 중단한다 (재시도 가능)
+    var pf = _preflight();
+    if (!pf.ok) {
+      logError("[testWoo.foundry][" + _errId("FFPERM") + "] " + pf.message);
+      return { processed: 0, blocked: true, reason: pf.code };
+    }
+
+    var recovered = _recoverStale();
+    if (recovered > 0)
+      logInfo("[testWoo.foundry] stale processing → queued: " + recovered + "건");
+
+    // 단일 실행 가드. 완전한 원자성은 WF 동시 실행 금지 설정에 의존한다.
+    if (_hasProcessing()) {
+      logInfo("[testWoo.foundry] 이전 배치 처리중 — 스킵");
+      return { processed: 0, skipped: true };
+    }
+
     var batch = cfg.foundry.batchSize;
     var q = xtk.queryDef.create(
       <queryDef schema={QUEUE_SCHEMA} operation="select" lineCount={String(batch)}>
@@ -456,12 +714,10 @@ testWoo.foundry = (function () {
         <orderBy><node expr="@created_at"/></orderBy>
       </queryDef>);
     var res = q.ExecuteQuery();
-    var n = 0;
-    for each (var r in res.testWooAiRequestQueue) {
-      processQueueItem(Number(r.@id));
-      n++;
-    }
-    return { processed: n };
+    var ids = [];
+    for each (var r in res.testWooAiRequestQueue) ids.push(Number(r.@id));
+    for (var i = 0; i < ids.length; i++) processQueueItem(ids[i]);
+    return { processed: ids.length, recovered: recovered };
   }
 
   return {

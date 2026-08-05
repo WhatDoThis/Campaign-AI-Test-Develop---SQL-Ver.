@@ -1,6 +1,7 @@
 <!--
 woo:testWooAiSql (Test Woo AI Generated SQL Form)
-listdet 하단 잘림 방지: form type=notebook 탭 분리
+listdet 하단 잘림 방지: form type=notebook + navtree type=list(더블클릭 Open)
+ACC Input forms 에 본 XML 전체 재등록(type=notebook 줄 확인)
 -->
 <form _cs="Test Woo AI Generated SQL" entity-schema="woo:testWooAiSql" img="xtk:form.png"
       label="Test Woo AI Generated SQL" name="testWooAiSql" namespace="woo" type="notebook"

@@ -2,6 +2,7 @@
  * testWooLifecycle.js (fragment 생애주기 · server-side)
  * =======================================================
  * contentHash, 버전 발행, revoke, hardDelete, impact 조회.
+ * publish는 dedup 판정(dedup_verdict/dedup_match_id/dedup_diff_count)도 함께 기록한다.
  *
  * [Main Functions]
  * ===========
@@ -110,7 +111,7 @@ testWoo.lifecycle = (function () {
       <queryDef schema={FRAG_SCHEMA} operation="select" lineCount="10">
         <select><node expr="@id"/></select>
         <where>
-          <condition expr={"@name = '" + esc + "'"/>
+          <condition expr={"@name = '" + esc + "'"}/>
           <condition expr="@is_current = 1"/>
         </where>
       </queryDef>);
@@ -150,6 +151,10 @@ testWoo.lifecycle = (function () {
     doc.@gate_report = fragDoc.gate_report || "";
     doc.@audit_sample = fragDoc.audit_sample || "";
     doc.@usage_count = 0;
+    doc.@dedup_verdict = fragDoc.dedup_verdict || "novel";
+    doc.@dedup_match_id = fragDoc.dedup_match_id != null ? Number(fragDoc.dedup_match_id) : 0;
+    doc.@dedup_diff_count = fragDoc.dedup_diff_count != null ?
+      Number(fragDoc.dedup_diff_count) : -1;
     if (fragDoc.supersedes_id) doc.@supersedes_id = fragDoc.supersedes_id;
     xtk.session.Write(doc);
     if (testWoo.fragments && testWoo.fragments.clearCache) testWoo.fragments.clearCache();

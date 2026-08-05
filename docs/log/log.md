@@ -1,6 +1,14 @@
 # Log
 
 ## Log Index
+75. 2026-08-05 코드 점검 결함 수정 P0~P2 (04 리포트 반영)
+74. 2026-08-05 navtree listdet→list (폼 잘림) + notebook 재등록 안내
+73. 2026-08-05 Fragment 입력폼 단일화 (foundry.xml 삭제)
+72. 2026-08-05 Fragment 입력폼 섹션2 호환 + Foundry 교체용 분리
+71. 2026-08-05 시크릿 보관소 버전별 분리 (new_ver/secrets 신설) + 형식 간소화
+70. 2026-08-05 Fragments navtree 기본 sysFilter (verified·승인대기)
+69. 2026-08-05 navtree Fragments Verified 폴더 제거 (단일 목록)
+68. 2026-08-05 navtree Sample 폴더 제거 (Explorer 운영 범위만)
 67. 2026-08-05 입력폼 notebook 탭 + Sample 폴더 연결·스크롤 개선
 66. 2026-08-05 navtree·로그 내부 호스트명 placeholder 치환 (공개 저장소 대응)
 65. 2026-08-05 신규 구축(new_ver) ACC 적용 현황·이슈·잔여 작업 정리
@@ -70,6 +78,194 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+75. 2026-08-05 코드 점검 결함 수정 P0~P2 (04 리포트 반영)
+Purpose: docs/report/04_SQL생성추가_추가2.md 의 P0~P2 결함 전수 수정 — sqlSelect format 규약 정합, dedup 구문오류, sql right 프리플라이트, 큐 선점, StageA 재실행, evidence 기계근거화, 툴 예산 요청단위, E4X 파싱 전환 Changes:
+
+**P0-1 E4X 리터럴 미종료 (파일 전체 로드 실패)**
+- testWooDedup.js `_loadCandidates`: `expr={... + "'"/>` → `"'"}/>`, 죽은 `if (sk)` 블록 제거
+- **추가 발견**: 동일 결함이 testWooLifecycle.js `publish`(line 113)에도 있어 함께 수정
+  → 두 파일 모두 loadLibrary 시점에 파싱 실패 상태였음 (testWoo.dedup / testWoo.lifecycle undefined)
+
+**P0-2 sqlSelect 호출 규약 (Adobe 공식문서 불일치)**
+- 근거: `sqlSelect(format, query [, dataSource])` — 1번째 인자는 라벨이 아니라 결과 XML 스키마이고
+  반환은 XML 객체(배열 아님). https://experienceleague.adobe.com/developer/campaign-api/api/f-sqlSelect.html
+- testWooProbe.js: `_safeSqlSelect(label,…)` → `_safeSqlSelect(format,…)`, 반환 `{ok, xml}` (rows 제거)
+  - 존재 검증 format `"row"` / 샘플은 `AS tw_key` 별칭 + `"row,@tw_key:string"` + `for each` 순회
+- testWooToolkit.js `_toolProbeValues`: `AS tw_val` 별칭 + `"row,@tw_val:string"` + E4X
+- 전수 grep 결과 위 2곳 외 sqlSelect 호출부 없음 (sqlGetInt는 규약 영향 없음)
+
+**P0-3 'sql' named right 프리플라이트**
+- 근거: sqlGetInt 문서 "The operator must have the 'sql' right…"
+  https://experienceleague.adobe.com/developer/campaign-api/api/f-sqlGetInt.html
+- testWooProbe.js `preflight()` 신규 (sqlGetInt + sqlSelect 각각 확인) → export
+- Foundry `processBatch()` 진입 시 1회: 실패면 큐 상태 미변경 + logError + 배치 중단(재시도 가능)
+- `processQueueItem()` 진입 시: 실패면 큐 `failed` + message 를 last_error 기록
+- 일반 SQL 오류와 구분되는 errId 접두사 `FFPERM` (throttled 은 `FFTHR`)
+
+**P0-4 큐 선점 동시성**
+- `processBatch()`: 스테일 복구 → `processing` 존재 시 `skipped:true` 로 중단
+- **설계 판단**: 물리 컬럼명(`sStatus` 등) 추정 SQL 대신 **queryDef** 로 센다.
+  리포트도 "물리명은 sqltable 기준으로 확정할 것"으로 미확정이었고, queryDef 는 스키마 매핑에만
+  의존하므로 컬럼명 추정 실패 위험이 없다 (sqlGetInt COUNT 미사용)
+- 스테일 복구: `processing` + updated_at 30분 초과 → `queued` (testWooEnv `foundry.staleProcessingMinutes`)
+  updated_at 파싱 실패 레코드는 건드리지 않고 logWarning (오복구로 인한 중복 처리 방지)
+- `_claimQueue` 주석에 "완전한 원자성은 WF 단일 인스턴스 설정에 의존" 명시
+
+**P1-1 순차 생성 후 Stage A 재실행**
+- `splice + si--` 패턴 제거 → `pending.shift()` + `_resolveRemainingBySearch()`
+- publish 성공 직후에만 clearCache + 남은 슬롯 재검색, 커버되면 `resolvedBy:"reuse_after_publish"`
+- `maxNewFragments` 는 실제 publish 건수만 증가 (기존과 동일하게 유지)
+- **연쇄 수정**: Stage A 는 `@status='active'` 만 검색해 신규 publish(`verified`)를 못 찾으므로
+  `searchBySlot/searchSlots` 에 3번째 인자 `statuses` 추가(기본 `["active"]` = 기존 동작 유지,
+  Foundry 재사용 판정만 `["active","verified"]`). 화이트리스트 정규화로 주입 차단
+  → 이 보강 없이는 P1-1 재검색이 항상 0건이 되어 무의미했음
+
+**P1-2 게이트 재시도 — A안 채택 (LLM 자가수정)**
+- 근거: B안(1회 판정 후 즉시 failed)은 게이트 실패 원인이 프롬프트로 교정 가능한 경우까지
+  큐를 죽인다. A안은 실패 근거를 같은 대화에 넣어 재생성하므로 설계 의도(자가수정)와 일치
+- `_runGateWithRetry` 삭제 → `generateFragmentForSlot(cfg, nl, slotText, queueId, slotId)` 가
+  게이트까지 소유하고 `{fragDoc, gate, attempts, tokensUsed}` 반환
+- **리포트 스니펫 수정**: 실패 근거를 `role:"tool"` 로 push 하면 OpenAI 호환 API 가 400 을 낸다
+  (tool 메시지는 직전 assistant `tool_calls` 에 1:1 대응 필수). 마지막 턴은 content 응답이라
+  대응 tool_call 이 없으므로 `role:"user"` 로 되먹임
+- `cfg.foundry.gateRetries`(기본 2) 유지, runToolLoop 이 `usage.total_tokens` 합산 → `tokens_used` 저장
+
+**P1-3 dedup verdict near publish**
+- 스키마 `woo:testWooAiFragment`: `dedup_verdict`(enum novel|near|equivalent|exact, 16) ·
+  `dedup_match_id`(long) · `dedup_diff_count`(long) — attribute 는 dbindex 하단 배치
+- input_form 에 Dedup 탭 추가 / `testWooLifecycle.publish` 가 3필드 기록
+- Foundry: publish 전 fragDoc 에 dedup 판정 채움, near 는 publish(status=verified) 하되
+  큐 `awaiting_approval` + slotResults `needsDedupReview:true` + last_error 에 검토 안내
+- **버그 동반 수정**: 재사용 분기가 존재하지 않는 `dedup.matchId` 를 참조해 fragmentId 가 항상 null
+  → `dedup.matches[0].id` 로 교정
+- FragmentReview.jssp: list/detail 에 `dedupVerdict/dedupMatchId/dedupDiffCount/needsDedupReview/dedupWarning`,
+  detail 은 유사 fragment 를 `similar` 로 함께 반환(sqlText 나란히 비교용)
+  ※ HTML 승인 화면은 여전히 미구현 — 배너는 이 JSON 계약을 소비하는 UI 구현 시점에 렌더
+
+**P1-4 dedup population 계산 오류**
+- `_popCache` 모듈 스코프 + `_population()` 신규 → `cfg.foundry.populationCountSql` 기준 sqlGetInt
+- `ratio = bestDiff / _population()`, population 0 이면 `near` + `delegateHuman:true`
+- `probeNew` 는 후보 SQL 자체 검증 용도로만 유지(`scores.candidateTotal`), 분모로 사용 안 함
+
+**P1-5 Triage evidence 기계 근거화**
+- `applyDemotionRules(raw, toolCallCount)` → `applyDemotionRules(raw, toolLog)`
+- `_hasToolCall(log,name)` 기준 강등: no_value↔probe_values, no_column↔search_columns,
+  feasible↔툴 0회, feasible+low
+- `evidence.toolCalls` 를 toolLog.length 로 **덮어쓰고**, LLM 자기신고와 불일치 시
+  `evidence.selfReportMismatch=true` + narrative 부기
+- 슬롯별 phase 슬라이스(`markPhase`/`getEvidenceLogSince`)로 **이전 슬롯 근거 전용 차단**
+
+**P1-6 resetBudget 중복 호출**
+- toolkit: `resetRequest()`(카운터+로그 초기화) / `markPhase(name)`(구분자만, 인덱스 반환) 분리,
+  `resetBudget` 은 deprecated 별칭 유지, `getEvidenceLogSince(idx)` 추가
+- `feasibility.runTriageLoop` / `foundry.runToolLoop` 내부 초기화 호출 삭제
+- `foundry.processQueueItem()` 진입 시 `resetRequest()` 1회 / triage·generate 는 markPhase
+- evidence 수집을 `_collectEvidence()` 1회로 통합 (초기화 제거로 발생할 중복 누적 제거)
+- 단계 슬라이스 소비처는 triage 뿐이므로 Foundry 의 markPhase 는 **구분자 기록 전용**
+  (반환 인덱스를 쓰지 않아 `phaseStart` 는 반환 객체에서 제거). fragment 의 `audit_sample` 은
+  evidenceLog 가 아니라 게이트의 `auditSample` 에서 나오므로 단계 슬라이스가 필요 없다
+
+**구문 검증 도구 (신규)**
+- `tools/checkRhinoSyntax.js`: E4X XML 리터럴·문자열·주석·정규식을 건너뛰며 괄호 균형과
+  **E4X 보간(`attr={…}`) 미종료** 를 검사. P0-1 이 ACC 배포 전까지 발견되지 않은 원인이
+  "로드 전 구문 확인 수단 없음" 이었으므로 추가
+- 검증: 수정 전 커밋(`git show HEAD:`) 기준 실행 시 testWooDedup.js:96 / testWooLifecycle.js:113
+  두 결함을 정확히 재현 검출, 현재 코드는 18개 파일 전부 통과 (검출력 확인된 도구)
+- 실행: `node tools/checkRhinoSyntax.js` (저장소 루트)
+
+**P2-1 XML 파싱 정규식 → E4X**
+- `_schemaXml(id)` 신규: `application.getSchema()` 는 Schema 매핑 객체이므로
+  `new XML(sch.toXMLString())` 로 변환 후 E4X 순회 (리포트의 `sch..attribute` 직접 접근은
+  getSchema 반환형이 E4X XML 이 아니라 성립하지 않음)
+- `describe_schema`: `xml..attribute` / `xml..element[@type='link']` → `{columns, links}` JSON,
+  4KB 초과 시 attribute 절단 + `truncated:true`
+- `_resolveSqlTable`: 루트 element(`@name == 스키마 @name`)의 `@sqltable` 만 사용, 없으면 예외
+- `search_columns`: E4X 순회 (한글 label / 영문 name 부분일치 유지)
+
+**P2-2 search_columns 스키마 대량 로드**
+- 근거: getSchema 는 스크립트 종료까지 메모리 유지
+- `SEARCH_SCHEMA_LOAD_CAP=30`(namespace당) · 스키마 목록 요청 단위 캐시(`_schemaListCache`)
+- 반환에 `{scanned, totalCandidates, partialScan}` → evidenceLog 에 `partialScan` 플래그 기록
+- feasibility: `no_column` + partialScan 이면 confidence 를 medium 이하로 제한
+
+**P2-3 402/429 판정을 HTTP 상태코드로**
+- testWooLlm `_httpError(msg, code)`: `err.httpStatus/isRateLimited/isOutOfCredit` 부착
+- `_postJson` 비2xx·empty body·urlPermission 경로 모두 상태코드 보존, 200+본문 error 봉투도 처리
+- Foundry catch: `msg.indexOf("402")` 문자열 검색 폐기 → `e.isRateLimited || e.isOutOfCredit`
+- `throttled` 은 `attempt_count` 를 claim 이전 값으로 되돌려 **미증가**(자동 재시도 금지 원칙)
+
+**P2-4 GapLog 개념 정규화**
+- `_normalizeConcept`: 공백 전부 제거 → 구두점 제거 → 말미 조사 제거 → 소문자 (128자 절단)
+- 기존 GapLog 레코드는 마이그레이션하지 않고 신규부터 적용
+
+**P2-5 스키마 배포 선행**
+- 전수 점검 결과 Queue/Sql 필드는 모두 존재, Fragment 의 dedup 3필드만 누락 → 추가(P1-3)
+- `_getQueue` queryDef 를 try/catch 로 감싸 XTK 스키마 오류를 "스키마 배포가 선행되지 않았습니다" 로 치환
+- 가이드에 배포 순서 명시: 스키마 재등록 → DB 구조 업데이트 → JS library → JSSP → navtree
+
+**문서**
+- docs/report/01_개발가이드.md: **섹션 6 신규** (sql named right, WF 동시 실행 금지 절차,
+  배포 순서, Foundry 확장 필드 점검표, ACC 읽기 SQL 규약 표) · v1.4.8
+- docs/report/00_ReportIndex.md: `04_SQL생성추가_추가2.md` 등재
+- testWooEnv.js: `foundry.staleProcessingMinutes: 30` 추가 (+ Config 노출)
+
+**미실행 (환경 필요)**
+- 04 리포트 P0-2(d) 실측: `sqlSelect("row,@x:string","SELECT 1 AS x")` 반환 XML 구조 logInfo 확인
+  → 공식 예제(`res.publicUrl.@sstringValue`)와 동일 구조를 가정해 `xml.row` / `@tw_key` 로 구현.
+  실제 루트/노드명이 다르면 `_safeSqlSelect` 소비부 2곳만 조정하면 됨
+- 검증 절차 1~12번(loadLibrary·preflight·probe·triage 강등·dedup·배치 동시성·throttled)은 ACC 배포 후 수행
+
+Changed files: new_ver/js/testWoo{Probe,Dedup,Lifecycle,Toolkit,Feasibility,Foundry,Fragments,Llm,Env,Config}.js, new_ver/schema/testWooAiFragment.xml, new_ver/input_form/testWooAiFragment.xml, new_ver/jssp/testWooAiFragmentReview.jssp, tools/checkRhinoSyntax.js(신규), docs/report/{00_ReportIndex,01_개발가이드}.md, docs/log/log.md
+
+74. 2026-08-05 navtree listdet→list (폼 잘림) + notebook 재등록 안내
+Purpose: listdet 하단 고정 높이로 memo 필드 잘림 — ACC에 notebook 미반영 상태 확인 Changes:
+
+navtree 3종 view type=listdet → list (더블클릭/Open 전체 폼)
+입력폼 주석: ACC type=notebook 재등록 필수
+Changed files: new_ver/navtree/testWooAiNavtree.xml, new_ver/input_form/testWooAi{Fragment,Sql,RequestQueue}.xml, docs/log/log.md
+
+73. 2026-08-05 Fragment 입력폼 단일화 (foundry.xml 삭제)
+Purpose: testWooAiFragment.xml / .foundry.xml 이중 파일 혼선 제거 — Foundry 본편 1개만 유지 Changes:
+
+testWooAiFragment.xml = Foundry+notebook (ACC 등록본과 동일)
+testWooAiFragment.foundry.xml 삭제
+Changed files: new_ver/input_form/testWooAiFragment.xml, docs/log/log.md
+
+72. 2026-08-05 Fragment 입력폼 섹션2 호환 + Foundry 교체용 분리
+Purpose: ACC 구 스키마에 없는 Foundry xpath 로 testWooAiFragment 폼 저장 실패(XML-110013) Changes:
+
+testWooAiFragment.xml — 섹션2 필드만(notebook 5탭)
+testWooAiFragment.foundry.xml — 스키마 Update 후 교체용
+navtree Fragments sysFilter Foundry 전까지 주석 처리
+Changed files: new_ver/input_form/testWooAiFragment.xml, testWooAiFragment.foundry.xml, new_ver/navtree/testWooAiNavtree.xml, docs/log/log.md
+
+71. 2026-08-05 시크릿 보관소 버전별 분리 (new_ver/secrets 신설) + 형식 간소화
+Purpose: new_ver 코드의 민감값이 old_ver 보관소에 섞여 있던 문제 해소 및 조회 편의를 위한 형식 정리 Changes:
+
+new_ver/secrets/NEW_VER_SECRETS.md 신설 — navtree view @url 2건 이관
+old_ver/secrets/OLD_VER_SECRETS.md — old_ver 항목만 유지
+두 파일 형식 통일: `// 출처파일` + `변수 = 원래값` 코드블록만 (표·설명문 제거)
+.gitignore 에 new_ver/secrets/ 추가, navtree 헤더 참조 경로 갱신
+Changed files: new_ver/secrets/NEW_VER_SECRETS.md, old_ver/secrets/OLD_VER_SECRETS.md, .gitignore, new_ver/navtree/testWooAiNavtree.xml, docs/log/log.md
+
+70. 2026-08-05 Fragments navtree 기본 sysFilter (verified·승인대기)
+Purpose: Verified 전용 폴더 대신 단일 Fragments 목록에 Adobe sysFilter 기본값으로 승인 대기만 표시 Changes:
+
+testWooAiFragment view: @status='verified' AND @active=0 sysFilter
+Changed files: new_ver/navtree/testWooAiNavtree.xml, docs/log/log.md
+
+69. 2026-08-05 navtree Fragments Verified 폴더 제거 (단일 목록)
+Purpose: Fragment 전체·Verified 승인대기를 폴더 2개로 나눌 실익 없음 — status 컬럼·Filters 로 충분 Changes:
+
+testWooAiNavtree.xml 에서 testWooAiFragmentVerified nodeModel 삭제
+Changed files: new_ver/navtree/testWooAiNavtree.xml, docs/log/log.md
+
+68. 2026-08-05 navtree Sample 폴더 제거 (Explorer 운영 범위만)
+Purpose: 샘플 mart 스키마는 E2E·probe용이며 Explorer 노출 불필요 — 운영 navtree 는 Fragment/Queue/SQL 만 유지 Changes:
+
+testWooAiNavtree.xml 에서 Sample Customer/Subscription nodeModel 삭제
+Changed files: new_ver/navtree/testWooAiNavtree.xml, docs/log/log.md
 
 67. 2026-08-05 입력폼 notebook 탭 + Sample 폴더 연결·스크롤 개선
 Purpose: listdet 하단 폼 잘림 해소 및 Sample Customer/Subscription Explorer 연결 오류 대응 Changes:

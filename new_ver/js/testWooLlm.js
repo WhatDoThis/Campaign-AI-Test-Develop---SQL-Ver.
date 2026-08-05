@@ -9,6 +9,8 @@
  * - decomposeSlots (Pass 0)
  * - selectPlan (Pass 1 → CNF)
  * - generatePlan (Pass0→StageA→Pass1)
+ * - postChat / postEmbedding — 오류에 httpStatus/isRateLimited/isOutOfCredit 부착
+ * - explainDedupDiff (dedup near 판정 차이 설명 · 실패해도 판정에 영향 없음)
  *
  * [Dependencies]
  * =========
@@ -229,11 +231,19 @@ testWoo.llm = (function () {
   function postChat(cfg, bodyObj) {
     var adapter = _provider(cfg);
     var raw = _postJson(cfg.llm, bodyObj, adapter.headers(cfg.llm.apiKey));
+    var wrap;
     try {
-      return JSON.parse(String(raw));
+      wrap = JSON.parse(String(raw));
     } catch (e) {
       throw new Error("[testWoo.llm.postChat] JSON parse failed: " + e.message);
     }
+    // HTTP 200 + 본문 error 봉투도 상태코드를 실어 던진다 (throttled 분기용)
+    if (wrap && wrap.error) {
+      var em = wrap.error.message || wrap.error.code || "unknown";
+      throw _httpError("[testWoo.llm.postChat] API error: " + em,
+        _numOrNull(wrap.error.code));
+    }
+    return wrap;
   }
 
   function postEmbedding(cfg, inputArray) {
@@ -330,6 +340,32 @@ testWoo.llm = (function () {
     return "";
   }
 
+  // 오류에 HTTP 상태코드를 실어 보낸다. 호출부는 문자열("402" 포함 여부) 대신
+  // e.httpStatus / e.isRateLimited / e.isOutOfCredit 로 분기한다.
+  function _httpError(message, code) {
+    var err = new Error(message);
+    if (code != null) {
+      err.httpStatus = Number(code);
+      err.isRateLimited = (Number(code) === 429);
+      err.isOutOfCredit = (Number(code) === 402);
+    }
+    return err;
+  }
+
+  function _numOrNull(v) {
+    if (v == null) return null;
+    var n = Number(v);
+    return isNaN(n) ? null : n;
+  }
+
+  function _statusOf(e) {
+    if (e == null) return null;
+    try {
+      if (e.httpStatus != null) return Number(e.httpStatus);
+    } catch (ignore) {}
+    return null;
+  }
+
   // MemoryBuffer UTF-8 + 동기 execute만.
   // 금지: HttpClientRequest.wait — Java 브리지에서 typeof==function 이어도 호출 실패함.
   function _postJson(llm, body, headerMap) {
@@ -363,19 +399,21 @@ testWoo.llm = (function () {
       var resBody = _readResponseBody(res);
       if (code < 200 || code >= 300) {
         var preview = resBody.length > 400 ? resBody.substring(0, 400) + "..." : resBody;
-        throw new Error("HTTP " + code + " host=" + host + " body=" + preview);
+        throw _httpError("HTTP " + code + " host=" + host + " body=" + preview, code);
       }
-      if (!resBody) throw new Error("empty body HTTP " + code + " host=" + host);
+      if (!resBody) throw _httpError("empty body HTTP " + code + " host=" + host, code);
       return resBody;
     } catch (e) {
       var msg = _errText(e);
+      var status = _statusOf(e);
       if (msg.indexOf("urlPermission") >= 0 || msg.indexOf("JST-310026") >= 0) {
-        throw new Error(
+        throw _httpError(
           "[testWoo.llm._postJson] urlPermission blocked host=" + host +
-          " — allow https://" + host + " in serverConf.xml urlPermission. detail=" + msg
+          " — allow https://" + host + " in serverConf.xml urlPermission. detail=" + msg,
+          status
         );
       }
-      throw new Error("[testWoo.llm._postJson] failed host=" + host + ": " + msg);
+      throw _httpError("[testWoo.llm._postJson] failed host=" + host + ": " + msg, status);
     }
   }
 
@@ -392,7 +430,7 @@ testWoo.llm = (function () {
 
       if (wrap.error) {
         var errMsg = wrap.error.message || wrap.error.code || text.substring(0, 200);
-        throw new Error("[testWoo.llm] API error: " + errMsg);
+        throw _httpError("[testWoo.llm] API error: " + errMsg, _numOrNull(wrap.error.code));
       }
 
       if (wrap.choices && wrap.choices.length) {

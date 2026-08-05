@@ -1,6 +1,7 @@
 # --- 민감정보 (커밋 금지) ---
 docs/main/(민감)Info.md
 old_ver/secrets/
+new_ver/secrets/
 
 # 일반적인 비밀 파일 패턴
 *.env

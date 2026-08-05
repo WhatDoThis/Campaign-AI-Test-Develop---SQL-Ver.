@@ -3,14 +3,16 @@
  * =======================================================
  * Foundry SQL 생성 전 슬롯별 feasible 여부 판정. 증거 없으면 ambiguous 강등.
  *
+ * 강등 근거는 LLM 자기신고(evidence)가 아니라 toolkit 실호출 로그(toolLog)만 신뢰한다.
+ *
  * [Main Functions]
  * ===========
  * - triage(slot, cfg, nlContext)
- * - applyDemotionRules / normalizeVerdict
+ * - applyDemotionRules(raw, toolLog) / meetsConfidence
  *
  * [Dependencies]
  * =========
- * - testWoo.toolkit, testWoo.llm, testWoo.cfg
+ * - testWoo.toolkit(markPhase/getEvidenceLogSince), testWoo.llm, testWoo.cfg
  * - loadLibrary("woo:testWooFeasibility.js")
  */
 var testWoo = testWoo || {};
@@ -49,8 +51,8 @@ testWoo.feasibility = (function () {
     ].join("\n");
   }
 
+  // 예산 초기화는 요청 단위(foundry.processQueueItem)에서만. 여기서는 구분자만 삽입한다.
   function runTriageLoop(cfg, slotText, slotId, nlContext) {
-    testWoo.toolkit.resetBudget();
     var userBlock = "<user_request>" + String(slotText || "") + "</user_request>\nNL:\n" +
       String(nlContext || "");
     var messages = [
@@ -106,8 +108,32 @@ testWoo.feasibility = (function () {
     throw new Error("[testWoo.feasibility] triage tool loop exceeded");
   }
 
-  function applyDemotionRules(raw, toolCallCount) {
+  // toolLog에 해당 이름의 실제 호출이 있는지 (LLM 자기신고 무시)
+  function _hasToolCall(log, name) {
+    var list = log || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && String(list[i].tool) === name) return true;
+    }
+    return false;
+  }
+
+  // 전수 조사가 아니었으면 no_column 확신도를 medium 이하로 제한
+  function _hasPartialScan(log) {
+    var list = log || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].partialScan === true) return true;
+    }
+    return false;
+  }
+
+  function _selfReportCount(evidence) {
+    var n = evidence && evidence.toolCalls != null ? Number(evidence.toolCalls) : -1;
+    return isNaN(n) ? -1 : n;
+  }
+
+  function applyDemotionRules(raw, toolLog) {
     var out = raw || {};
+    var log = toolLog || [];
     var verdict = _trim(out.verdict || "ambiguous");
     if (!VERDICTS[verdict]) verdict = "ambiguous";
     var confidence = _trim(out.confidence || "low");
@@ -117,22 +143,24 @@ testWoo.feasibility = (function () {
     if (!evidence.schemasScanned) evidence.schemasScanned = [];
     if (!evidence.columnsConsidered) evidence.columnsConsidered = [];
     if (!evidence.valueProbes) evidence.valueProbes = [];
-    evidence.toolCalls = toolCallCount != null ? toolCallCount : (evidence.toolCalls || 0);
+
+    // evidence.toolCalls는 LLM 값이 아니라 실제 호출 수로 덮어쓴다.
+    var claimed = _selfReportCount(evidence);
+    evidence.toolCalls = log.length;
+    evidence.selfReportMismatch = (claimed >= 0 && claimed !== log.length);
 
     var narrative = String(out.narrative || "");
     var demoted = false;
 
-    if (verdict === "no_value" && (!evidence.valueProbes || !evidence.valueProbes.length)) {
+    if (verdict === "no_value" && !_hasToolCall(log, "probe_values")) {
       verdict = "ambiguous";
       demoted = true;
     }
-    if (verdict === "no_column" &&
-        (!evidence.columnsConsidered || !evidence.columnsConsidered.length) &&
-        evidence.toolCalls < 1) {
+    if (verdict === "no_column" && !_hasToolCall(log, "search_columns")) {
       verdict = "ambiguous";
       demoted = true;
     }
-    if (verdict === "feasible" && evidence.toolCalls === 0) {
+    if (verdict === "feasible" && log.length === 0) {
       verdict = "ambiguous";
       demoted = true;
     }
@@ -145,6 +173,17 @@ testWoo.feasibility = (function () {
       confidence = "low";
       if (narrative.indexOf("\uADDC\uAC70 \uBD80\uC871") < 0)
         narrative = narrative + " (\uADDC\uAC70 \uBD80\uC871\uC73C\uB85C \uD655\uC815\uB418\uC9C0 \uC54A\uC74C)";
+    }
+
+    if (verdict === "no_column" && confidence === "high" && _hasPartialScan(log)) {
+      confidence = "medium";
+      evidence.partialScan = true;
+      narrative = narrative + " (\uC2A4\uD0A4\uB9C8 \uC804\uC218 \uC870\uC0AC \uC544\uB2D8)";
+    }
+
+    if (evidence.selfReportMismatch) {
+      narrative = narrative + " (LLM \uC790\uAE30\uC2E0\uACE0 \uD234 \uD638\uC218 " + claimed +
+        "\uD68C \u2260 \uC2E4\uC81C " + log.length + "\uD68C)";
     }
 
     return {
@@ -184,11 +223,14 @@ testWoo.feasibility = (function () {
       };
     }
 
+    // 이 슬롯 triage 단계에서 발생한 툴 호출만 강등 근거로 쓴다(이전 슬롯 근거 전용 차단).
+    var phaseStart = testWoo.toolkit.markPhase ?
+      testWoo.toolkit.markPhase("triage:" + slotId) : 0;
     var raw = runTriageLoop(cfg, slotText, slotId, nlContext);
     raw.slotId = raw.slotId || slotId;
-    var toolLog = testWoo.toolkit.getEvidenceLog ? testWoo.toolkit.getEvidenceLog() : [];
-    var toolCalls = toolLog.length;
-    var result = applyDemotionRules(raw, toolCalls);
+    var toolLog = testWoo.toolkit.getEvidenceLogSince ?
+      testWoo.toolkit.getEvidenceLogSince(phaseStart) : [];
+    var result = applyDemotionRules(raw, toolLog);
     result.slotText = slotText;
     result.evidenceLog = toolLog;
     result.canProceed = result.verdict === "feasible" && meetsConfidence(cfg, result.confidence);

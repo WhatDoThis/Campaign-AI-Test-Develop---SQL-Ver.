@@ -10,6 +10,7 @@
  * ===========
  * - getByName : name 단건 (sql_text 포함, lineCount=1)
  * - searchBySlot / searchSlots : Stage A (메타만, 페이지 스캔)
+ *   3번째 인자 statuses 기본 ["active"] — Foundry 재사용 판정만 verified 포함
  *   ACC Rhino 호환: Array.map/forEach 미사용 (for 루프)
  * - listCategories : Catalog용 (sql_text 없이 페이지)
  * - toCard / clearCache
@@ -75,18 +76,21 @@ testWoo.fragments = (function () {
   }
 
   // 3. Stage A — 슬롯 1개 (DB 필터 + 페이지 스코어, sql_text 미로드)
-  function searchBySlot(slot, topN) {
+  // statuses: 기본 ["active"]. Foundry 내부 재사용 판정만 verified 를 함께 본다
+  // (신규 publish fragment는 승인 전 status=verified 이므로 active 필터로는 잡히지 않음).
+  function searchBySlot(slot, topN, statuses) {
     if (!slot || (!slot.text && !(slot.searchKeywords && slot.searchKeywords.length))) return [];
     var cfg = testWoo.cfg.getConfig().search;
     var n = topN || cfg.stageATopN;
     var pageSize = cfg.queryPageSize;
     var maxPages = cfg.maxSearchPages;
+    var stat = _normStatuses(statuses);
     // 검색어: Pass0이 준 searchKeywords 우선. 없으면 범용 분할만 (도메인 규칙 없음)
     var tokens = _keywordsFromSlot(slot);
     if (!tokens.length) return [];
     var hint = String(slot.hintedCategory || "").toLowerCase();
-    var scored = _searchPages(tokens, hint, pageSize, maxPages);
-    if (!scored.length && hint) scored = _searchPages(tokens, "", pageSize, maxPages);
+    var scored = _searchPages(tokens, hint, pageSize, maxPages, stat);
+    if (!scored.length && hint) scored = _searchPages(tokens, "", pageSize, maxPages, stat);
     scored.sort(function (a, b) { return b.score - a.score; });
     // ACC Rhino: Array.map 없음
     var cards = [];
@@ -96,7 +100,7 @@ testWoo.fragments = (function () {
   }
 
   // 4. Stage A — 다슬롯
-  function searchSlots(slots, topN) {
+  function searchSlots(slots, topN, statuses) {
     var out = [];
     var list = slots || [];
     for (var i = 0; i < list.length; i++) {
@@ -104,7 +108,7 @@ testWoo.fragments = (function () {
       out.push({
         id: s.id, text: s.text, hintedCategory: s.hintedCategory || "",
         searchKeywords: s.searchKeywords || [],
-        candidates: searchBySlot(s, topN)
+        candidates: searchBySlot(s, topN, statuses)
       });
     }
     return out;
@@ -150,11 +154,33 @@ testWoo.fragments = (function () {
   function clearCache() { _byNameCache = {}; }
 
   // --- internal ---
-  function _searchPages(tokens, hintCat, pageSize, maxPages) {
+  // 허용 status 목록 정규화 (화이트리스트 — 임의 문자열 주입 차단)
+  function _normStatuses(statuses) {
+    var allow = { active: 1, verified: 1 };
+    var out = [];
+    var list = _isArray(statuses) ? statuses : null;
+    if (list) {
+      for (var i = 0; i < list.length; i++) {
+        var s = String(list[i] || "").toLowerCase();
+        if (allow[s]) out.push(s);
+      }
+    }
+    if (!out.length) out.push("active");
+    return out;
+  }
+
+  function _statusCondition(stat) {
+    if (stat.length === 1) return "<condition expr=\"@status = '" + stat[0] + "'\"/>";
+    var ors = [];
+    for (var i = 0; i < stat.length; i++) ors.push("@status = '" + stat[i] + "'");
+    return "<condition expr=\"(" + ors.join(" OR ") + ")\"/>";
+  }
+
+  function _searchPages(tokens, hintCat, pageSize, maxPages, stat) {
     var scored = [];
     var start = 0;
     for (var page = 0; page < maxPages; page++) {
-      var q = _buildSearchQuery(tokens, hintCat, start, pageSize);
+      var q = _buildSearchQuery(tokens, hintCat, start, pageSize, stat);
       var res = q.ExecuteQuery();
       var count = 0;
       for each (var r in res.testWooAiFragment) {
@@ -169,8 +195,8 @@ testWoo.fragments = (function () {
     return scored;
   }
 
-  function _buildSearchQuery(tokens, hintCat, startLine, pageSize) {
-    var parts = ["<condition expr=\"@status = 'active'\"/>"];
+  function _buildSearchQuery(tokens, hintCat, startLine, pageSize, stat) {
+    var parts = [_statusCondition(_normStatuses(stat))];
     if (hintCat) {
       parts.push("<condition expr=\"@category = '" + _escLit(hintCat) + "'\"/>");
     }

@@ -1,6 +1,7 @@
 <!--
 woo:testWooAiRequestQueue (Foundry 큐 입력 폼)
-listdet 하단 잘림 방지: form type=notebook 탭 분리
+listdet 하단 잘림 방지: form type=notebook + navtree type=list(더블클릭 Open)
+ACC Input forms 에 본 XML 전체 재등록(type=notebook 줄 확인)
 -->
 <form _cs="Test Woo AI Request Queue" entity-schema="woo:testWooAiRequestQueue" img="xtk:form.png"
       label="Test Woo AI Request Queue" name="testWooAiRequestQueue" namespace="woo" type="notebook"

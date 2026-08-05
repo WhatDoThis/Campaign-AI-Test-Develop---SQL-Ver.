@@ -75,6 +75,7 @@ testWoo.cfg = (function () {
         tokenBudget: E.foundry.tokenBudget,
         dailyBudget: E.foundry.dailyBudget,
         gateRetries: E.foundry.gateRetries,
+        staleProcessingMinutes: E.foundry.staleProcessingMinutes,
         dedupNearThreshold: E.dedup.nearThreshold,
         populationCountSql: E.populationCountSql
       },
