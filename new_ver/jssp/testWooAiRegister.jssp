@@ -1,0 +1,78 @@
+<%
+response.setContentType("application/json;charset=utf-8");
+/*
+ * testWooAiRegister.jssp — plan 재컴파일 + usedFragments/compileHash 필수
+ */
+try {
+  TW_RESPONSE = response;
+  TW_REQUEST = request;
+  TW_DOCUMENT = document;
+  loadLibrary("woo:testWooCommon.js");
+  requireRight("testWooAiSqlRegister");
+  requireStudioCsrf();
+
+  var p = readPayload();
+  if (!p.plan) throw new Error("plan missing");
+
+  loadLibrary("woo:testWooConfig.js");
+  loadLibrary("woo:testWooFragments.js");
+  loadLibrary("woo:testWooCompiler.js");
+  loadLibrary("woo:testWooGates.js");
+  loadLibrary("woo:testWooLifecycle.js");
+  loadLibrary("woo:testWooRepository.js");
+
+  var compiled = testWoo.compiler.compile(p.plan);
+  var results = testWoo.gates.runAll(p.plan, compiled.sql);
+  var passed = true;
+  for (var i = 0; i < results.length; i++) {
+    if (!results[i].ok) { passed = false; break; }
+  }
+  if (!passed) {
+    jsonOut({
+      ok: true,
+      passed: false,
+      results: results,
+      sql: compiled.sql,
+      summary: compiled.summary,
+      plan: p.plan,
+      chips: testWoo.compiler.chipsFromPlan(p.plan),
+      error: "validation failed — not registered"
+    });
+  } else {
+    var used = testWoo.compiler.collectUsedFragments(p.plan);
+    if (!used.length) throw new Error("[Register] usedFragments empty");
+    var compileHash = testWoo.lifecycle.compileHash(p.plan, compiled.sql);
+
+    var title = String(p.title || "");
+    if (typeof TW_TITLE_MAX !== "undefined" && title.length > TW_TITLE_MAX)
+      title = title.substring(0, TW_TITLE_MAX);
+
+    var id = testWoo.repo.saveAiSql({
+      title: title,
+      creator: currentLogin(),
+      nl_request: p.nl_request,
+      plan_json: JSON.stringify(p.plan),
+      used_fragments: JSON.stringify(used),
+      compile_hash: compileHash,
+      sql_query: compiled.sql,
+      summary_ko: compiled.summary || p.summary,
+      target_count: p.target_count != null ? p.target_count : 0,
+      workflow_id: p.workflow_id || 0,
+      excluded_slots: p.excluded_slots ? JSON.stringify(p.excluded_slots) : "",
+      status: "registered"
+    });
+    jsonOut({
+      ok: true,
+      passed: true,
+      ai_sql_id: id,
+      status: "registered",
+      sql: compiled.sql,
+      summary: compiled.summary,
+      usedFragments: used,
+      compileHash: compileHash
+    });
+  }
+} catch (e) {
+  handleApiError(e);
+}
+%>

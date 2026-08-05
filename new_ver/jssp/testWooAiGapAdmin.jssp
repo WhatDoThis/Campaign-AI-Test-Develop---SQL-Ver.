@@ -1,0 +1,30 @@
+<%
+response.setContentType("application/json;charset=utf-8");
+/*
+ * testWooAiGapAdmin.jssp — GapLog 대시보드 API
+ * payload: { action: "list"|"update", id?, status?, note? }
+ */
+try {
+  TW_RESPONSE = response;
+  TW_REQUEST = request;
+  TW_DOCUMENT = document;
+  loadLibrary("woo:testWooCommon.js");
+  loadLibrary("woo:testWooRepository.js");
+  requireRight("testWooAiLibraryManage");
+
+  var p = readPayload();
+  var action = String(p.action || "list").toLowerCase();
+
+  if (action === "update") {
+    if (!p.id) throw new Error("id missing");
+    if (!p.status) throw new Error("status missing");
+    testWoo.repo.updateGapLogStatus(Number(p.id), String(p.status), p.note || "");
+    jsonOut({ ok: true, id: Number(p.id), status: p.status });
+  } else {
+    var rows = testWoo.repo.listGapLog(p.limit || 100);
+    jsonOut({ ok: true, gaps: rows });
+  }
+} catch (e) {
+  handleApiError(e);
+}
+%>

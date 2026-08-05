@@ -1,0 +1,45 @@
+<!--
+woo:testWooAiSql (Test Woo AI Generated SQL History · Foundry 확장)
+====================================================================
+NL → plan_json → SQL 이력. usedFragments/compileHash/impactStatus.
+
+[Dependencies]
+=========
+- testWooRepository.js, testWooLifecycle.js
+-->
+<srcSchema _cs="Test Woo AI Generated SQL (woo)" mappingType="sql" name="testWooAiSql" namespace="woo"
+           label="Test Woo AI Generated SQL" labelSingular="Test Woo AI Generated SQL" xtkschema="xtk:srcSchema">
+  <enumeration basetype="string" default="draft" name="sqlHistoryStatus">
+    <value label="Draft"      name="draft"/>
+    <value label="Validated"  name="validated"/>
+    <value label="Registered" name="registered"/>
+    <value label="Rejected"   name="rejected"/>
+  </enumeration>
+  <enumeration basetype="string" default="ok" name="sqlImpactStatus">
+    <value label="OK"        name="ok"/>
+    <value label="Affected"  name="affected"/>
+    <value label="Blocked"   name="blocked"/>
+  </enumeration>
+
+  <element autopk="true" label="Test Woo AI Generated SQL" name="testWooAiSql" sqltable="testWooAiSql">
+    <dbindex name="idx_wf">
+      <keyfield xpath="@workflow_id"/>
+    </dbindex>
+
+    <attribute label="Title"           length="200" name="title"         type="string"/>
+    <attribute label="Creator"         length="64"  name="creator"       type="string"/>
+    <attribute label="NL Request"      name="nl_request"    type="memo"/>
+    <attribute label="Plan JSON"       name="plan_json"     type="memo"/>
+    <attribute label="Used Fragments"  name="used_fragments" type="memo"/>
+    <attribute label="Compile Hash"    length="64"  name="compile_hash"  type="string"/>
+    <attribute label="Generated SQL"   name="sql_query"     type="memo"/>
+    <attribute label="Summary KO"      length="500" name="summary_ko"    type="string"/>
+    <attribute label="Target Count"    name="target_count"  type="long"/>
+    <attribute label="Workflow ID"     name="workflow_id"   type="long"/>
+    <attribute label="Excluded Slots"  name="excluded_slots" type="memo"/>
+    <attribute label="Has Exclusion"   name="has_exclusion" type="boolean" default="false"/>
+    <attribute enum="sqlHistoryStatus" label="Status" length="16" name="status" type="string"/>
+    <attribute enum="sqlImpactStatus" label="Impact Status" length="16" name="impact_status" type="string"/>
+    <attribute label="Creation Date"   name="creation_date" type="datetime"/>
+  </element>
+</srcSchema>

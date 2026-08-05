@@ -1,0 +1,52 @@
+<!--
+woo:testWooSampleSubscription (Test Woo 샘플 가입)
+=================================================
+섹션5 E2E·요금제/가입일 fragment 검증용 가입 이력.
+
+[Main Functions]
+===========
+- 고객 100명 기준 가입 150건
+- 동일 고객·동일 plan_code 중복 금지
+- 탈퇴 후 재가입 시 다른 요금제·start_date >= 이전 end_date
+
+[Model: table structure]
+=======================
+- name=sqltable=testWooSampleSubscription
+- customer_id / plan_code / plan_label / start_date / status / end_date
+
+[Dependencies]
+=========
+- Adobe Campaign xtk:srcSchema (mappingType=sql)
+- 연계: woo:testWooSampleCustomer (@customer_id)
+- 시드: new_ver/workflow/testWooSampleSeed.js (WF JavaScript code activity)
+-->
+<srcSchema _cs="Test Woo Sample Subscription (woo)" mappingType="sql" name="testWooSampleSubscription" namespace="woo"
+           label="Test Woo Sample Subscription" labelSingular="Test Woo Sample Subscription" xtkschema="xtk:srcSchema">
+  <enumeration basetype="string" default="active" name="sampleSubStatus">
+    <value label="Active"  name="active"/>
+    <value label="Churned" name="churned"/>
+  </enumeration>
+
+  <element autopk="true" label="Test Woo Sample Subscription" name="testWooSampleSubscription" sqltable="testWooSampleSubscription">
+    <dbindex name="idx_cust_start">
+      <keyfield xpath="@customer_id"/>
+      <keyfield xpath="@start_date"/>
+    </dbindex>
+    <dbindex name="idx_plan_status">
+      <keyfield xpath="@plan_code"/>
+      <keyfield xpath="@status"/>
+    </dbindex>
+    <!-- 동일 고객·동일 요금제 중복 가입 금지 -->
+    <key name="byCustPlan">
+      <keyfield xpath="@customer_id"/>
+      <keyfield xpath="@plan_code"/>
+    </key>
+
+    <attribute label="Customer ID"  length="32"  name="customer_id" type="string"/>
+    <attribute label="Plan Code"    length="32"  name="plan_code"   type="string"/>
+    <attribute label="Plan Label"   length="64"  name="plan_label"  type="string"/>
+    <attribute label="Start Date"   name="start_date"  type="date"/>
+    <attribute enum="sampleSubStatus" label="Status" length="16" name="status" type="string"/>
+    <attribute label="End Date"     name="end_date"    type="date"/>
+  </element>
+</srcSchema>

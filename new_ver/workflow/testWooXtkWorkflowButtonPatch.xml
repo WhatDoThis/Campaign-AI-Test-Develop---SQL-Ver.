@@ -1,0 +1,30 @@
+<!--
+  testWooXtkWorkflowButtonPatch.xml (canvas 'AI Generate' button patch · testing)
+  ==============================================================================
+  Inserts a Test Woo AI Generate button between the workflow toolbar and property panel.
+  Restrict the OOTB xtk:workflow form change to this single insert point.
+
+  [Before apply]
+  - Backup original xtk:workflow form → workflow/backup/xtk_workflow_ORIGINAL.xml
+  - Add to upgrade checklist (form may be overwritten on Adobe upgrade)
+
+  [Apply]
+  1) Console: Administration > Configuration > Input forms → xtk:workflow
+  2) Insert the block below between run toolbar and property panel
+  3) Click opens Test Woo AI Studio with current workflow id
+-->
+<container type="visibleGroup" name="testWooAiGenerateBar" label="Test Woo AI">
+  <static type="button" name="btnTestWooAiGenerate" label="AI Generate" img="xtk:ai.png">
+    <enter>
+      <![CDATA[
+        // TODO(env): confirm how to read current workflow id in console form context
+        var wfId = document.value ? document.value.@id : "";
+        var activity = "customActivity";
+        var url = "/woo/testWooAiStudio.jssp?workflowId=" + encodeURIComponent(wfId) +
+                  "&activity=" + encodeURIComponent(activity);
+        // TODO(env): confirm console window-open API
+        window.open(url, "testWooAiStudio", "width=1000,height=800");
+      ]]>
+    </enter>
+  </static>
+</container>

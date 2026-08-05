@@ -1,0 +1,99 @@
+<%
+response.setContentType("application/json;charset=utf-8");
+/*
+ * testWooAiFragmentReview.jssp — verified fragment 승인/반려 API
+ * payload action: list | approve | reject | revoke | listImpact
+ */
+try {
+  TW_RESPONSE = response;
+  TW_REQUEST = request;
+  TW_DOCUMENT = document;
+  loadLibrary("woo:testWooCommon.js");
+  loadLibrary("woo:testWooRepository.js");
+  loadLibrary("woo:testWooLifecycle.js");
+  requireRight("testWooAiLibraryManage");
+
+  var p = readPayload();
+  var action = String(p.action || "list");
+
+  if (action === "list") {
+    var q = xtk.queryDef.create(
+      <queryDef schema="woo:testWooAiFragment" operation="select" lineCount="100">
+        <select>
+          <node expr="@id"/><node expr="@name"/><node expr="@version"/><node expr="@label"/>
+          <node expr="@status"/><node expr="@key_column"/><node expr="@scope_key"/>
+          <node expr="@gate_report"/><node expr="@audit_sample"/><node expr="@description"/>
+        </select>
+        <where><condition expr="@status = 'verified'"/></where>
+        <orderBy><node expr="@name"/></orderBy>
+      </queryDef>);
+    var res = q.ExecuteQuery();
+    var rows = [];
+    for each (var r in res.testWooAiFragment) {
+      rows.push({
+        id: Number(r.@id),
+        name: String(r.@name),
+        version: Number(r.@version),
+        label: String(r.@label),
+        status: String(r.@status),
+        keyColumn: String(r.@key_column),
+        scopeKey: String(r.@scope_key)
+      });
+    }
+    jsonOut({ ok: true, fragments: rows });
+  } else if (action === "approve") {
+    requireStudioCsrf();
+    testWoo.repo.approveFragment(Number(p.fragmentId), currentLogin());
+    if (p.queueId) testWoo.repo.completeQueue(Number(p.queueId), "done");
+    jsonOut({ ok: true, status: "active" });
+  } else if (action === "reject") {
+    requireStudioCsrf();
+    if (!p.reason) throw new Error("reject reason required");
+    testWoo.repo.rejectFragment(Number(p.fragmentId), String(p.reason));
+    if (p.queueId) testWoo.repo.completeQueue(Number(p.queueId), "failed");
+    jsonOut({ ok: true, status: "rejected" });
+  } else if (action === "revoke") {
+    requireStudioCsrf();
+    if (!p.reason) throw new Error("revoke reason required");
+    var impact = testWoo.lifecycle.revoke(Number(p.fragmentId), String(p.reason), currentLogin());
+    jsonOut({ ok: true, impact: impact });
+  } else if (action === "listImpact") {
+    var list = testWoo.lifecycle.listImpact(String(p.fragmentName || ""));
+    jsonOut({ ok: true, affected: list });
+  } else if (action === "detail") {
+    var dq = xtk.queryDef.create(
+      <queryDef schema="woo:testWooAiFragment" operation="getIfExists">
+        <select>
+          <node expr="@id"/><node expr="@name"/><node expr="@version"/><node expr="@label"/>
+          <node expr="@description"/><node expr="@sql_text"/><node expr="@key_column"/>
+          <node expr="@scope_key"/><node expr="@gate_report"/><node expr="@audit_sample"/>
+          <node expr="@status"/>
+        </select>
+        <where><condition expr={"@id = " + Number(p.fragmentId)}/></where>
+      </queryDef>);
+    var dres = dq.ExecuteQuery();
+    if (!dres.testWooAiFragment.length) throw new Error("fragment not found");
+    var fr = dres.testWooAiFragment[0];
+    jsonOut({
+      ok: true,
+      fragment: {
+        id: Number(fr.@id),
+        name: String(fr.@name),
+        version: Number(fr.@version),
+        label: String(fr.@label),
+        description: String(fr.@description),
+        sqlText: String(fr.@sql_text),
+        keyColumn: String(fr.@key_column),
+        scopeKey: String(fr.@scope_key),
+        gateReport: String(fr.@gate_report),
+        auditSample: String(fr.@audit_sample),
+        status: String(fr.@status)
+      }
+    });
+  } else {
+    throw new Error("unknown action: " + action);
+  }
+} catch (e) {
+  handleApiError(e);
+}
+%>

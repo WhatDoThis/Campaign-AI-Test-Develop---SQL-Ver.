@@ -1,0 +1,16 @@
+<!--
+woo:testWooAiGolden (골든 테스트 입력 폼)
+-->
+<form _cs="Test Woo AI Golden Test" entity-schema="woo:testWooAiGolden" img="xtk:form.png"
+      label="Test Woo AI Golden Test" name="testWooAiGolden" namespace="woo" type="default"
+      xtkschema="xtk:form">
+  <container type="frame" label="Golden">
+    <input xpath="@nl_text"/>
+    <input xpath="@expected_fragments"/>
+    <input xpath="@expected_count_min"/>
+    <input xpath="@expected_count_max"/>
+    <input xpath="@note"/>
+    <input xpath="@last_result"/>
+    <input xpath="@last_run_at"/>
+  </container>
+</form>

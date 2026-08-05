@@ -1,0 +1,105 @@
+<%/*
+ * testWooAiAuthDebug.jssp (인증 진단 · 임시)
+ * =========================================
+ * login / cookies / Cookie 헤더 / security token / IP 를 JSON으로 반환.
+ * 가정 검증용 — 운영에서는 비활성·삭제 권장.
+ *
+ * [Endpoint]
+ * =======================
+ * GET /woo/testWooAiAuthDebug.jssp
+ * → { login, cookies, cookieHeaderLen, sessionTokenPresent, ip, … }
+ *
+ * [Dependencies]
+ * =========
+ * - 공식 logon(sessionToken)
+ */
+response.setContentType("application/json;charset=utf-8");
+
+var o = {
+  login: "",
+  loginAfterLogon: "",
+  cookies: [],
+  cookieHeaderLen: 0,
+  cookieHeaderNames: [],
+  sessionTokenPresent: false,
+  secHeader: "",
+  secParam: "",
+  ip: "",
+  logonError: "",
+  hint: ""
+};
+
+try { o.login = String(application.operator.login || ""); }
+catch (e0) { o.login = "ERR:" + e0.message; }
+
+try { o.ip = String(request.getRemoteAddr()); } catch (e1) {}
+
+try { o.secHeader = String(request.getHeader("X-Security-Token") || ""); } catch (e2) {}
+try {
+  o.secParam = String(
+    request.getParameter("__securitytoken") ||
+    request.getParameter("securitytoken") || ""
+  );
+} catch (e3) {}
+
+var tok = "";
+
+// 1. request.cookies API
+try {
+  var cs = request.cookies;
+  if (cs && cs.length != null) {
+    for (var i = 0; i < cs.length; i++) {
+      var n = String(cs[i].name);
+      o.cookies.push(n);
+      if (n === "__sessiontoken") {
+        tok = String(cs[i].value || "");
+        o.sessionTokenPresent = !!tok;
+      }
+    }
+  }
+} catch (e4) {
+  o.cookies.push("ERR:" + e4.message);
+}
+
+// 2. Cookie 헤더 항상 파싱 (API가 빈 배열이어도)
+try {
+  var hdr = String(request.getHeader("Cookie") || "");
+  o.cookieHeaderLen = hdr.length;
+  if (hdr) {
+    var parts = hdr.split(";");
+    for (var j = 0; j < parts.length; j++) {
+      var p = parts[j].replace(/^\s+/, "");
+      var eq = p.indexOf("=");
+      if (eq < 0) continue;
+      var name = p.substring(0, eq);
+      o.cookieHeaderNames.push(name);
+      if (name === "__sessiontoken" && !tok) {
+        tok = p.substring(eq + 1);
+        o.sessionTokenPresent = !!tok;
+      }
+    }
+  }
+} catch (e5) {
+  o.cookieHeaderNames.push("ERR:" + e5.message);
+}
+
+if (!o.login && tok) {
+  try {
+    logon(tok);
+    o.loginAfterLogon = String(application.operator.login || "");
+  } catch (eLogon) {
+    o.logonError = String(eLogon.message || eLogon);
+  }
+} else {
+  o.loginAfterLogon = o.login;
+}
+
+if (!o.sessionTokenPresent && o.cookieHeaderLen === 0)
+  o.hint = "NO_COOKIE — first open /nl/jsp/logon.jsp then retry AuthDebug same browser";
+else if (o.sessionTokenPresent && !o.loginAfterLogon)
+  o.hint = "COOKIE_OK_LOGIN_EMPTY — logon(sessionToken) failed; see logonError";
+else if (o.loginAfterLogon)
+  o.hint = "BOUND_OK";
+
+document.write(JSON.stringify(o));
+%>

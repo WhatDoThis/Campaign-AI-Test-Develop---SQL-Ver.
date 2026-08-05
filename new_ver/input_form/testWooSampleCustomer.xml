@@ -1,0 +1,30 @@
+<!--
+woo:testWooSampleCustomer (Test Woo Sample Customer Form)
+========================================================
+샘플 고객 조회/수정 콘솔 폼.
+
+[Dependencies]
+=========
+- entity-schema: woo:testWooSampleCustomer
+-->
+<form _cs="Test Woo Sample Customer" entity-schema="woo:testWooSampleCustomer" img="xtk:form.png"
+      label="Test Woo Sample Customer" name="testWooSampleCustomer" namespace="woo" type="default"
+      xtkschema="xtk:form">
+  <container type="frame" label="Identity">
+    <input xpath="@customer_id"/>
+    <input xpath="@name"/>
+    <input xpath="@age"/>
+    <input xpath="@gender"/>
+    <input xpath="@birth_date"/>
+  </container>
+  <container type="frame" label="Profile">
+    <input xpath="@region"/>
+    <input xpath="@email"/>
+    <input xpath="@status"/>
+    <input xpath="@created_date"/>
+  </container>
+  <container type="frame" label="Consent">
+    <input xpath="@marketing_consent"/>
+    <input xpath="@sms_consent"/>
+  </container>
+</form>

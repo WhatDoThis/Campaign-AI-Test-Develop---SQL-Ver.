@@ -1,0 +1,55 @@
+<!--
+woo:testWooAiRequestQueue (Foundry 비동기 요청 큐 · Triage 확장)
+================================================================
+미매칭 슬롯 NL → Triage → Foundry. slotResults/evidenceLog 저장.
+
+[Model: table structure]
+=======================
+- plan_json, slot_results, evidence_log, clarify_answers, partial_preview
+- status: infeasible, partially_infeasible, awaiting_clarification
+
+[Dependencies]
+=========
+- testWooRepository.js, testWooFoundry.js, testWooFeasibility.js
+-->
+<srcSchema _cs="Test Woo AI Request Queue (woo)" mappingType="sql" name="testWooAiRequestQueue" namespace="woo"
+           label="Test Woo AI Request Queue" labelSingular="Test Woo AI Request Queue" xtkschema="xtk:srcSchema">
+  <enumeration basetype="string" default="queued" name="requestQueueStatus">
+    <value label="Queued"                  name="queued"/>
+    <value label="Processing"              name="processing"/>
+    <value label="Awaiting Approval"       name="awaiting_approval"/>
+    <value label="Awaiting Clarification"  name="awaiting_clarification"/>
+    <value label="Infeasible"              name="infeasible"/>
+    <value label="Partially Infeasible"    name="partially_infeasible"/>
+    <value label="Done"                    name="done"/>
+    <value label="Failed"                  name="failed"/>
+    <value label="Needs Human Design"      name="needs_human_design"/>
+    <value label="Throttled"               name="throttled"/>
+  </enumeration>
+
+  <element autopk="true" label="Test Woo AI Request Queue" name="testWooAiRequestQueue" sqltable="testWooAiRequestQueue">
+    <dbindex name="idx_status_created">
+      <keyfield xpath="@status"/>
+      <keyfield xpath="@created_at"/>
+    </dbindex>
+
+    <attribute label="NL Text"            name="nl_text"             type="memo"/>
+    <attribute label="Slots JSON"         name="slots_json"          type="memo"/>
+    <attribute label="Missing Slots JSON" name="missing_slots_json"  type="memo"/>
+    <attribute label="Plan JSON"          name="plan_json"           type="memo"/>
+    <attribute label="Slot Results"       name="slot_results"        type="memo"/>
+    <attribute label="Evidence Log"       name="evidence_log"        type="memo"/>
+    <attribute label="Clarify Answers"    name="clarify_answers"     type="memo"/>
+    <attribute label="Partial Preview"    name="partial_preview"     type="memo"/>
+    <attribute enum="requestQueueStatus" label="Status" length="24" name="status" type="string"/>
+    <attribute label="Attempt Count"      name="attempt_count"       type="short" default="0"/>
+    <attribute label="Last Error"         name="last_error"          type="memo"/>
+    <attribute label="Error ID"           length="32"  name="err_id"            type="string"/>
+    <attribute label="Tokens Used"        name="tokens_used"         type="long" default="0"/>
+    <attribute label="Cost Estimate"      name="cost_estimate"       type="double"/>
+    <attribute label="Created By"         length="64"  name="created_by"        type="string"/>
+    <attribute label="Workflow ID"        name="workflow_id"         type="long"/>
+    <attribute label="Created At"         name="created_at"          type="datetime"/>
+    <attribute label="Updated At"         name="updated_at"          type="datetime"/>
+  </element>
+</srcSchema>

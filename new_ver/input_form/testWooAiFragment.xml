@@ -1,0 +1,43 @@
+<!--
+woo:testWooAiFragment (Test Woo AI Condition Fragment Form · Foundry 확장)
+-->
+<form _cs="Test Woo AI Condition Fragment" entity-schema="woo:testWooAiFragment" img="xtk:form.png"
+      label="Test Woo AI Condition Fragment" name="testWooAiFragment" namespace="woo" type="default"
+      xtkschema="xtk:form">
+  <container type="frame" label="Basic">
+    <input xpath="@name"/>
+    <input xpath="@version"/>
+    <input xpath="@is_current"/>
+    <input xpath="@label"/>
+    <input xpath="@category"/>
+    <input xpath="@tags"/>
+    <input xpath="@status"/>
+    <input xpath="@active"/>
+    <input xpath="@origin"/>
+  </container>
+  <container type="frame" label="Grain / Scope">
+    <input xpath="@key_column"/>
+    <input xpath="@scope_key"/>
+  </container>
+  <container type="frame" label="SQL Text (SELECT)">
+    <input xpath="@sql_text"/>
+  </container>
+  <container type="frame" label="Params / Domain (JSON)">
+    <input xpath="@params"/>
+    <input xpath="@param_domain"/>
+  </container>
+  <container type="frame" label="Search / LLM Hints">
+    <input xpath="@description"/>
+    <input xpath="@sample_questions"/>
+    <input xpath="@synonyms"/>
+  </container>
+  <container type="frame" label="Lifecycle">
+    <input xpath="@content_hash"/>
+    <input xpath="@usage_count"/>
+    <input xpath="@approved_by"/>
+    <input xpath="@approved_at"/>
+    <input xpath="@revoked_reason"/>
+    <input xpath="@gate_report"/>
+    <input xpath="@audit_sample"/>
+  </container>
+</form>

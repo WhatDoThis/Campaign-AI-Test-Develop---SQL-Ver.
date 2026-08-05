@@ -1,0 +1,18 @@
+<!--
+woo:testWooAiRequestQueue (Foundry 큐 입력 폼)
+-->
+<form _cs="Test Woo AI Request Queue" entity-schema="woo:testWooAiRequestQueue" img="xtk:form.png"
+      label="Test Woo AI Request Queue" name="testWooAiRequestQueue" namespace="woo" type="default"
+      xtkschema="xtk:form">
+  <container type="frame" label="Queue">
+    <input xpath="@nl_text"/>
+    <input xpath="@status"/>
+    <input xpath="@attempt_count"/>
+    <input xpath="@last_error"/>
+    <input xpath="@missing_slots_json"/>
+    <input xpath="@created_by"/>
+    <input xpath="@workflow_id"/>
+    <input xpath="@created_at"/>
+    <input xpath="@updated_at"/>
+  </container>
+</form>

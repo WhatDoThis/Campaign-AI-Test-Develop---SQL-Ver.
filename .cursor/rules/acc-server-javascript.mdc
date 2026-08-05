@@ -1,0 +1,37 @@
+---
+description: Adobe Campaign server JavaScript (Rhino) rules for testWoo libraries
+globs: new_ver/js/**,new_ver/jssp/**,new_ver/workflow/**
+alwaysApply: false
+---
+
+# ACC Server JavaScript
+
+## Runtime
+
+Rhino on Campaign server — **not** browser ES6. Reference: `.cursor/skills/campaign-ai-studio/acc-rhino-constraints.md`
+
+## Hard bans
+
+```javascript
+// ❌ map/forEach/filter, Promise, async, =>, ``, const/let, HttpClientRequest.wait
+// ❌ woo.cfg — use testWoo.cfg
+// ❌ response.body.toString("utf-8") — use toString() with int CODEPAGE
+```
+
+## Required patterns
+
+- `loadLibrary("woo:testWoo….js")` — name must match Campaign JS code entity
+- `for` loops for array iteration; `.push`, `.length`, `.slice`, `.join`
+- LLM: sync `HttpClientRequest.execute(useProxy)` only
+- queryDef: `lineCount` ≤ 5000; never bulk-load `sql_text` in Stage A
+- Errors: include `[testWoo.module.function]` prefix + `logWarning` for external calls
+
+## JSSP
+
+- Auth: cookie → `logon(sessionToken)` → `requireRight`
+- Input: `getUTF8Parameter("payload")` for JSON
+- Output: use `testWoo.common.jsonOut` pattern from `testWooCommon.js`
+
+## Sync rule
+
+Edit `new_ver/html/testWooAiStudio.js` **and** `new_ver/jssp/testWooAiStudioJs.jssp` together when changing Studio UI.

@@ -1,0 +1,177 @@
+<operation _cs="[LGU+] LLM 활용 캠페인 템플릿 (OP39)" budget-id="0" fcpGroup-id="0" id="17030"
+           internalName="OP39" isModel="0" label="[LGU+] LLM 활용 캠페인 템플릿" linkedOperation-id="0"
+           messageType="127" owner-id="4000" periodCovered="0" status="1" type="0"
+           xtkschema="nms:operation">
+  <process>
+    <target priority="0"/>
+    <messagePreparation forecasted="0" priority="0"/>
+  </process>
+  <controlGroup type="3">
+    <where filteringSchema=""/>
+  </controlGroup>
+  <seedList insertMode="0">
+    <where filteringSchema="nms:seedMember"/>
+  </seedList>
+  <parameter assignEdition="0" disableNotification="0" externalValidation="0" sandboxMode="0"
+             useBudget="0" useBudgetValidation="0" useContentValidation="0" useControlGroup="0"
+             useDeliveryOutline="0" useDocument="0" useExtractionValidation="0" useFCPEmailValidation="0"
+             useFCPPaperValidation="0" useFCPPhoneValidation="0" useFCPSMSValidation="0"
+             useFCPValidation="0" useLinkedDeliveryValidation="0" useSeedMember="0"
+             useTargetValidation="0" useValidation="1" useWorkflow="1" validationMode="0">
+    <target>
+      <validation delay="259200" type="0"/>
+    </target>
+    <content>
+      <validation delay="259200" type="0"/>
+    </content>
+    <budget>
+      <validation delay="259200" type="0"/>
+    </budget>
+    <extraction>
+      <validation delay="259200" type="0"/>
+    </extraction>
+    <forecast>
+      <validation delay="259200" type="0"/>
+    </forecast>
+    <starting>
+      <validation delay="259200" type="0"/>
+    </starting>
+    <edition>
+      <validation delay="259200" type="0"/>
+    </edition>
+    <external>
+      <validation delay="259200" type="0"/>
+    </external>
+  </parameter>
+  <budgetParameters budgetStatus="0" commitmentLevel="0" computationState="0" computedCost="0"
+                    estimatedCost="0" fixedCost="0" lastComputed="" realCost="0"/>
+  <program fullName="/iBank/Campaign/"/>
+  <owner _cs="양성호 (shyang)" id="4000" type="0"/>
+  <workflow _cs="Default workflow (WKF89)" aggregate-id="0" background="xtk:backgrounds/neolane.png"
+            builtIn="0" created="2026-07-30 09:18:30.684Z" createdBy-id="4000" disabled="0"
+            errorLimit="0" expiration="" failed="0" folder-id="1104" folderProcess-id="0"
+            form="" history="30" hostname="" id="26021" inProcess="0" internalName="WKF89"
+            isModel="0" label="Default workflow" lastModified="2026-07-30 09:18:30.671Z"
+            lastStart="" modelName="wfEmptyTemplate_CUSTOM" modifiedBy-id="4000"
+            nextProcessingAfn="" nextProcessingDate="" nextProcessingHost="" onError="0"
+            operation-id="17030" order="0" port="0" processDate="" processId="0"
+            production="0" recurrentMdl="0" routingOperation-id="0" scenario-cs="Notification of the workflow supervisor (notifySupervisor)"
+            scenario-id="1757" schema="nms:recipient" state="0" status="0" supervisor-id="0"
+            timezone="_inherit_" unlockedCount="0">
+    <activities>
+      <start collision="0" img="xtk:activities/start.png" label="Start" mask="0"
+             name="start" onError="0" runOnSimulation="true" timezone="_inherit_"
+             x="94" y="94">
+        <transitions>
+          <initial enabled="true" name="initial" target="customActivity" x="0" y="0"/>
+        </transitions>
+      </start>
+      <changeDataSource collision="0" extAccount-cs="FDA" extAccount-id="16600" img="nms:activities/changeDataSource.png"
+                        label="Change Data Source" mask="0" name="changeDataSource"
+                        onError="0" timezone="_inherit_" x="412" y="94">
+        <transitions>
+          <done enabled="true" label="Ok" name="done" target="enrich"/>
+        </transitions>
+        <configuration dataSource="nms:extAccount:fda" outboundDataSource="1"/>
+      </changeDataSource>
+      <enrich collision="0" img="nms:activities/enrich.png" keepAllExtraData="true"
+              label="+Recipients" mainSet="changeDataSource" mask="0" name="enrich"
+              noAutoPkFilter="false" onError="0" runOnSimulation="true" timezone="_inherit_"
+              x="582" y="93">
+        <transitions>
+          <result enabled="true" label="Result" name="result" target="changeAxis"/>
+        </transitions>
+      </enrich>
+      <extract collision="0" img="nms:activities/piechart.png" label="제외조건" mask="0"
+               name="extract" onError="0" runOnSimulation="true" schema="nms:recipient"
+               timezone="_inherit_" x="240" y="208">
+        <transitions>
+          <extractOutput enabled="true" label="Subset" name="extractOutput" schema="temp:changeAxis"
+                         schemaOverride="true" target="extract2">
+            <limiter defaultLimit="100" percent="10" type="percent"/>
+            <filter enabled="true">
+              <where displayFilter="(디캠)CJVOD월정액여부 of [제외기준] 가입번호 기준 equal to 'Y'"
+                     filterName="backGroundFilterFrm" id="3367370900">
+                <condition compositeKey="" dependkey="" enabledIf="" expr="[target/EXCEPTION_ENTR/@column_68] = 'Y'"
+                           internalId="4257945392"/>
+              </where>
+              <humanCond>Query: (디캠)CJVOD월정액여부 of [제외기준] 가입번호 기준 equal to 'Y'</humanCond>
+            </filter>
+          </extractOutput>
+          <done enabled="false" label="Result" name="done"/>
+          <remainder enabled="0" label="Complement" name="remainder"/>
+        </transitions>
+      </extract>
+      <extract collision="0" img="nms:activities/piechart.png" label="피로도" mainSet=""
+               mask="0" name="extract3" onError="0" runOnSimulation="true" schema="nms:recipient"
+               timezone="_inherit_" x="576" y="208">
+        <transitions>
+          <extractOutput enabled="true" label="Subset" name="extractOutput" recipientLink=""
+                         schema="nms:recipient" target="extract4" x="0" y="0">
+            <limiter defaultLimit="100" percent="10" type="percent"/>
+            <filter enabled="true"/>
+          </extractOutput>
+          <done enabled="false" label="Result" name="done"/>
+          <remainder enabled="0" label="Complement" name="remainder"/>
+        </transitions>
+      </extract>
+      <extract collision="0" img="nms:activities/piechart.png" label="블로킹" mainSet=""
+               mask="0" name="extract2" onError="0" runOnSimulation="true" schema="nms:recipient"
+               timezone="_inherit_" x="409" y="209">
+        <transitions>
+          <extractOutput enabled="true" label="Subset" name="extractOutput" recipientLink=""
+                         schema="nms:recipient" target="extract3" x="0" y="0">
+            <limiter defaultLimit="100" percent="10" type="percent"/>
+            <filter enabled="true"/>
+          </extractOutput>
+          <done enabled="false" label="Result" name="done"/>
+          <remainder enabled="0" label="Complement" name="remainder"/>
+        </transitions>
+      </extract>
+      <extract collision="0" img="nms:activities/piechart.png" label="Split 4" mainSet=""
+               mask="0" name="extract4" onError="0" runOnSimulation="true" schema="nms:recipient"
+               timezone="_inherit_" x="744" y="208">
+        <transitions>
+          <extractOutput enabled="true" label="Seg1" name="extractOutput" recipientLink=""
+                         schema="nms:recipient" x="973" y="189">
+            <limiter defaultLimit="100" percent="10" type="percent"/>
+            <filter enabled="true"/>
+          </extractOutput>
+          <extractOutput enabled="1" label="Seg2" name="extractOutput2" x="984" y="274">
+            <limiter defaultLimit="100" percent="10" type="percent"/>
+          </extractOutput>
+          <done enabled="false" label="Result" name="done"/>
+          <remainder enabled="0" label="Complement" name="remainder"/>
+        </transitions>
+      </extract>
+      <changeAxis collision="0" img="nms:activities/changeAxis.png" keepAllExtraData="true"
+                  keepRank="false" label="Change dimension" mask="0" name="changeAxis"
+                  noAutoPkFilter="false" onError="0" recipientLink="target" runOnSimulation="true"
+                  schema="nms:recipient" timezone="_inherit_" x="744" y="88">
+        <transitions>
+          <result enabled="true" label="Result" name="result" target="extract"/>
+          <remainder enabled="false" label="Complement" name="remainder"/>
+        </transitions>
+        <configuration includeMainInDuplicates="false" number="1" type="choice"/>
+      </changeAxis>
+      <customActivity andJoin="true" autoCreate="true" collision="0" img="xtk:activities/execsql.png"
+                      label="AI 대상자 추출" library="uplus:customActivity.js" mask="0"
+                      name="customActivity" onError="0" timezone="_inherit_" x="240"
+                      y="88">
+        <transitions>
+          <done enabled="true" label="Ok" name="done" target="changeDataSource"/>
+        </transitions>
+      </customActivity>
+    </activities>
+    <desc><![CDATA[]]></desc>
+    <visualState><![CDATA[]]></visualState>
+    <process forecasted="0" login="" priority="0" processState="0" startState="0"/>
+    <createdBy _cs="양성호 (shyang)"/>
+    <modifiedBy _cs="양성호 (shyang)"/>
+    <folder _cs="Campaign workflows"/>
+    <operation _cs="[LGU+] LLM 활용 캠페인 템플릿 (OP39)"/>
+  </workflow>
+  <fcpSeed>
+    <where filteringSchema="nms:seedMember"/>
+  </fcpSeed>
+</operation>

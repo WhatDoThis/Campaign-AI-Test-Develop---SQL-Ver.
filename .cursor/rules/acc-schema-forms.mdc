@@ -1,0 +1,36 @@
+---
+description: Adobe Campaign schema and input form XML conventions
+globs: new_ver/schema/**,new_ver/input_form/**
+alwaysApply: false
+---
+
+# ACC Schema & Forms
+
+## Naming (must match)
+
+| Item | Rule | Example |
+|------|------|---------|
+| namespace | `woo` | |
+| schema name | camel `testWoo*` | `testWooAiFragment` |
+| sqltable | **same as schema name** | `sqltable="testWooAiFragment"` |
+| input form name | **same as schema name** | `testWooAiFragment` |
+| entity-schema | `woo:` + name | `woo:testWooAiFragment` |
+
+## Fragment schema fields (current)
+
+Use `sql_text` (full SELECT), `plan_json` in history — **not** PRD's old `expr`/`ir_json`/`target_table`.
+
+Required: `name`, `label`, `category`, `tags`, `key_column`, `sql_text`, `params`, `param_domain`, `description`, `sample_questions`, `status`.
+
+## Form XML
+
+- `<input>` uses **xpath only** — no `height`, no `type="text"` (XML-110013)
+- memo fields: rely on schema `type="memo"` for multiline
+
+## Do not deploy (DEFERRED)
+
+`testWooAiCodemap`, `testWooAiRequestQueue` — files exist locally for future use only.
+
+## Reference
+
+`docs/report/01_개발가이드.md` section 2

@@ -1,0 +1,59 @@
+<!--
+woo:testWooSampleCustomer (Test Woo 샘플 고객)
+=============================================
+섹션5 E2E·fragment SQL 검증용 고객 마스터. 운영 CD와 분리된 테스트 테이블.
+
+[Main Functions]
+===========
+- 고객 100건 샘플 적재 대상
+- grain: customer_id (가입·fragment SELECT 키)
+
+[Model: table structure]
+=======================
+- name=sqltable=testWooSampleCustomer
+- customer_id(unique) / name / age / gender / birth_date
+- region / marketing_consent / sms_consent / email / status / created_date
+
+[Dependencies]
+=========
+- Adobe Campaign xtk:srcSchema (mappingType=sql)
+- 연계: woo:testWooSampleSubscription (@customer_id)
+- 시드: new_ver/workflow/testWooSampleSeed.js (WF JavaScript code activity)
+-->
+<srcSchema _cs="Test Woo Sample Customer (woo)" mappingType="sql" name="testWooSampleCustomer" namespace="woo"
+           label="Test Woo Sample Customer" labelSingular="Test Woo Sample Customer" xtkschema="xtk:srcSchema">
+  <enumeration basetype="string" default="active" name="sampleCustomerStatus">
+    <value label="Active"  name="active"/>
+    <value label="Dormant" name="dormant"/>
+  </enumeration>
+  <enumeration basetype="string" default="U" name="sampleGender">
+    <value label="Male"   name="M"/>
+    <value label="Female" name="F"/>
+    <value label="Unknown" name="U"/>
+  </enumeration>
+
+  <element autopk="true" label="Test Woo Sample Customer" name="testWooSampleCustomer" sqltable="testWooSampleCustomer">
+    <dbindex name="idx_region_status">
+      <keyfield xpath="@region"/>
+      <keyfield xpath="@status"/>
+    </dbindex>
+    <dbindex name="idx_mkt_consent">
+      <keyfield xpath="@marketing_consent"/>
+    </dbindex>
+    <key name="byCustomerId">
+      <keyfield xpath="@customer_id"/>
+    </key>
+
+    <attribute label="Customer ID"       length="32"  name="customer_id"        type="string"/>
+    <attribute label="Name"              length="64"  name="name"               type="string"/>
+    <attribute label="Age"               name="age"                type="long"/>
+    <attribute enum="sampleGender" label="Gender" length="1" name="gender" type="string"/>
+    <attribute label="Birth Date"        name="birth_date"         type="date"/>
+    <attribute label="Region"            length="32"  name="region"             type="string"/>
+    <attribute label="Marketing Consent" name="marketing_consent"  type="byte"/>
+    <attribute label="SMS Consent"       name="sms_consent"        type="byte"/>
+    <attribute label="Email"             length="128" name="email"              type="string"/>
+    <attribute enum="sampleCustomerStatus" label="Status" length="16" name="status" type="string"/>
+    <attribute label="Created Date"      name="created_date"       type="datetime"/>
+  </element>
+</srcSchema>

@@ -1,0 +1,34 @@
+<!--
+woo:testWooAiGapLog (데이터 갭 축적 · Triage 불가 판정)
+========================================================
+동일 normalizedConcept upsert → requestCount 증가.
+
+[Dependencies]
+=========
+- testWooRepository.js upsertGapLog
+-->
+<srcSchema _cs="Test Woo AI Gap Log (woo)" mappingType="sql" name="testWooAiGapLog" namespace="woo"
+           label="Test Woo AI Gap Log" labelSingular="Test Woo AI Gap Log" xtkschema="xtk:srcSchema">
+  <enumeration basetype="string" default="open" name="gapLogStatus">
+    <value label="Open"     name="open"/>
+    <value label="Planned"  name="planned"/>
+    <value label="Resolved" name="resolved"/>
+    <value label="Wont Fix" name="wontfix"/>
+  </enumeration>
+
+  <element autopk="true" label="Test Woo AI Gap Log" name="testWooAiGapLog" sqltable="testWooAiGapLog">
+    <dbindex name="idx_concept">
+      <keyfield xpath="@normalized_concept"/>
+    </dbindex>
+
+    <attribute label="Slot Text"          name="slot_text"           type="memo"/>
+    <attribute label="Verdict"            length="24"  name="verdict"           type="string"/>
+    <attribute label="Normalized Concept" length="128" name="normalized_concept" type="string"/>
+    <attribute label="Request Count"      name="request_count"       type="long" default="1"/>
+    <attribute label="First Seen At"      name="first_seen_at"       type="datetime"/>
+    <attribute label="Last Seen At"       name="last_seen_at"        type="datetime"/>
+    <attribute label="Sample Evidence"    name="sample_evidence"     type="memo"/>
+    <attribute enum="gapLogStatus" label="Status" length="16" name="status" type="string"/>
+    <attribute label="Note"               name="note"                type="memo"/>
+  </element>
+</srcSchema>

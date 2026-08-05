@@ -1,0 +1,92 @@
+<%
+response.setContentType("application/json;charset=utf-8");
+/*
+ * testWooAiGenerate.jssp (Pass0→StageA→Pass1 → SQL / Foundry 큐 분기)
+ */
+try {
+  TW_RESPONSE = response;
+  TW_REQUEST = request;
+  TW_DOCUMENT = document;
+  loadLibrary("woo:testWooCommon.js");
+  loadLibrary("woo:testWooConfig.js");
+  loadLibrary("woo:testWooFragments.js");
+  loadLibrary("woo:testWooLlm.js");
+  loadLibrary("woo:testWooCompiler.js");
+  loadLibrary("woo:testWooGates.js");
+  loadLibrary("woo:testWooRepository.js");
+  requireRight("testWooAiSqlGenerate");
+
+  var p = readPayload();
+  if (!p.nl_request) throw new Error("nl_request missing");
+  var cfg = testWoo.cfg.getConfig();
+
+  var plan = testWoo.llm.generatePlan(p.nl_request);
+  var unmatched = plan.unmatched || [];
+
+  if (unmatched.length) {
+    if (cfg.foundry.enabled) {
+      var queueId = testWoo.repo.enqueueRequest({
+        nl_text: p.nl_request,
+        slots_json: JSON.stringify(plan._meta ? plan._meta.slots : []),
+        missing_slots_json: JSON.stringify(unmatched),
+        plan_json: JSON.stringify({
+          grainKey: plan.grainKey,
+          include: plan.include || [],
+          exclude: plan.exclude || [],
+          unmatched: unmatched
+        }),
+        created_by: currentLogin(),
+        workflow_id: p.workflow_id || 0
+      });
+      jsonOut({
+        ok: true,
+        passed: false,
+        status: "queued",
+        queueId: queueId,
+        message: "\uC870\uAC74 \uC870\uB9BD\uC5D0 \uD544\uC694\uD55C \uD56D\uBAA9\uC744 \uC0DD\uC131 \uC694\uCCAD\uD588\uC2B5\uB2C8\uB2E4. \uC2B9\uC778 \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD574 \uC8FC\uC138\uC694.",
+        missingSlots: unmatched,
+        unmatched: unmatched,
+        reviewUrl: "/woo/testWooAiFragmentReview.jssp"
+      });
+    } else {
+      jsonOut({
+        ok: false,
+        passed: false,
+        unmatched: unmatched,
+        matchedSlots: plan.matchedSlots || [],
+        plan: {
+          grainKey: plan.grainKey || "",
+          include: plan.include || [],
+          exclude: plan.exclude || [],
+          unmatched: unmatched
+        }
+      });
+    }
+  } else {
+    var compiled = testWoo.compiler.compile(plan);
+    var results = testWoo.gates.runAll(plan, compiled.sql);
+    var passed = true;
+    for (var ri = 0; ri < results.length; ri++) {
+      if (!results[ri].ok) { passed = false; break; }
+    }
+    var clientPlan = {
+      grainKey: plan.grainKey,
+      include: plan.include || [],
+      exclude: plan.exclude || [],
+      unmatched: plan.unmatched || []
+    };
+    jsonOut({
+      ok: true,
+      passed: passed,
+      plan: clientPlan,
+      sql: compiled.sql,
+      chips: testWoo.compiler.chipsFromPlan(clientPlan),
+      summary: compiled.summary,
+      results: results,
+      error: passed ? null : "validation failed"
+    });
+  }
+} catch (e) {
+  handleApiError(e);
+}
+%>

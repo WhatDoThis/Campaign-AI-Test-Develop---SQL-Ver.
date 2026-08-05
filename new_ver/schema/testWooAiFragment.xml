@@ -1,0 +1,93 @@
+<!--
+woo:testWooAiFragment (Test Woo AI Condition Fragment · Foundry 확장)
+====================================================================
+검증된 SELECT fragment 라이브러리. 버전/생애주기/임베딩/감사 필드 포함.
+
+[Main Functions]
+===========
+- fragment 등록·버전 발행·폐기(revoke)
+- Stage A 검색 / Foundry 생성(draft→verified→active)
+- 컴파일러 입력(sql_text/params/key_column/scope_key)
+
+[Model: table structure]
+=======================
+- name + version (unique), isCurrent, contentHash
+- status: draft|verified|active|deprecated|revoked|rejected
+- origin: manual|foundry
+
+[Dependencies]
+=========
+- Consumers: testWooFragments.js, testWooCompiler.js, testWooLifecycle.js, testWooFoundry.js
+-->
+<srcSchema _cs="Test Woo AI Condition Fragment (woo)" mappingType="sql" name="testWooAiFragment" namespace="woo"
+           label="Test Woo AI Condition Fragment" labelSingular="Test Woo AI Condition Fragment" xtkschema="xtk:srcSchema">
+  <enumeration basetype="string" default="draft" name="fragmentStatus">
+    <value label="Draft"      name="draft"/>
+    <value label="Verified"   name="verified"/>
+    <value label="Active"     name="active"/>
+    <value label="Deprecated" name="deprecated"/>
+    <value label="Revoked"    name="revoked"/>
+    <value label="Rejected"   name="rejected"/>
+  </enumeration>
+  <enumeration basetype="string" default="manual" name="fragmentOrigin">
+    <value label="Manual"  name="manual"/>
+    <value label="Foundry" name="foundry"/>
+  </enumeration>
+
+  <element autopk="true" label="Test Woo AI Condition Fragment" name="testWooAiFragment" sqltable="testWooAiFragment">
+    <dbindex name="idx_name_version" unique="true">
+      <keyfield xpath="@name"/>
+      <keyfield xpath="@version"/>
+    </dbindex>
+    <dbindex name="idx_content_hash">
+      <keyfield xpath="@content_hash"/>
+    </dbindex>
+    <dbindex name="idx_status_current">
+      <keyfield xpath="@status"/>
+      <keyfield xpath="@is_current"/>
+    </dbindex>
+    <dbindex name="idx_key_scope">
+      <keyfield xpath="@key_column"/>
+      <keyfield xpath="@scope_key"/>
+    </dbindex>
+    <dbindex name="idx_cat_status">
+      <keyfield xpath="@category"/>
+      <keyfield xpath="@status"/>
+    </dbindex>
+
+    <attribute label="Fragment Name"     length="64"  name="name"             type="string"/>
+    <attribute label="Version"           name="version"          type="long" default="1"/>
+    <attribute label="Is Current"        name="is_current"       type="boolean" default="true"/>
+    <attribute label="Content Hash"      length="64"  name="content_hash"     type="string"/>
+    <attribute label="Supersedes ID"     name="supersedes_id"    type="long"/>
+    <attribute label="Label"             length="200" name="label"            type="string"/>
+    <attribute label="Category"          length="64"  name="category"         type="string"/>
+    <attribute label="Tags"              length="255" name="tags"             type="string"/>
+    <attribute label="Synonyms"          name="synonyms"         type="memo"/>
+    <attribute label="Key Column"        length="64"  name="key_column"       type="string"/>
+    <attribute label="Scope Key"         length="64"  name="scope_key"        type="string"/>
+    <attribute label="SQL Text"          name="sql_text"         type="memo"/>
+    <attribute label="Params JSON"       name="params"           type="memo"/>
+    <attribute label="Param Domain JSON" name="param_domain"     type="memo"/>
+    <attribute label="Description"       name="description"      type="memo"/>
+    <attribute label="Sample Questions"  name="sample_questions" type="memo"/>
+    <attribute enum="fragmentStatus" label="Status" length="24" name="status" type="string"/>
+    <attribute label="Active Flag"       name="active"           type="boolean" default="false"/>
+    <attribute enum="fragmentOrigin" label="Origin" length="16" name="origin" type="string"/>
+    <attribute label="Source Request ID" name="source_request_id" type="long"/>
+    <attribute label="Gate Report JSON"  name="gate_report"      type="memo"/>
+    <attribute label="Audit Sample JSON" name="audit_sample"     type="memo"/>
+    <attribute label="Approved By"       length="64"  name="approved_by"      type="string"/>
+    <attribute label="Approved At"       name="approved_at"      type="datetime"/>
+    <attribute label="Revoked Reason"    name="revoked_reason"   type="memo"/>
+    <attribute label="Revoked By"        length="64"  name="revoked_by"       type="string"/>
+    <attribute label="Revoked At"        name="revoked_at"       type="datetime"/>
+    <attribute label="Usage Count"       name="usage_count"      type="long" default="0"/>
+    <attribute label="Last Used At"      name="last_used_at"     type="datetime"/>
+    <attribute label="Embedding Vector"  name="emb_vector"       type="memo"/>
+    <attribute label="Embedding Model"   length="64"  name="emb_model"        type="string"/>
+    <attribute label="Embedding Dim"     name="emb_dim"          type="short"/>
+    <attribute label="Emb Source Hash"   length="64"  name="emb_source_hash"  type="string"/>
+    <attribute label="Emb Updated At"    name="emb_updated_at"   type="datetime"/>
+  </element>
+</srcSchema>

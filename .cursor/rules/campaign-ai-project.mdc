@@ -1,0 +1,33 @@
+---
+description: Campaign AI Studio project context — read docs before changing new_ver
+alwaysApply: true
+---
+
+# Campaign AI Studio (Test Woo)
+
+LG U+ **Adobe Campaign Classic v7** — NL audience extraction via fragment library.
+
+## Source of truth (read first)
+
+1. `docs/main/PRD.md` — design principles (AI never writes SQL; trust pipeline)
+2. `docs/report/01_개발가이드.md` — naming, deployment sections, ACC constraints
+3. `.cursor/skills/campaign-ai-studio/SKILL.md` — agent workflow + file map
+
+## Naming
+
+- Namespace: `woo` | Files/schemas: `testWoo*` camel | Global JS: `testWoo.*`
+- URL prefix: `/woo/` | Options/rights: `testWooAi*`
+- Never use `uplus` in new code
+
+## Scope guardrails
+
+- Implement only in `new_ver/` unless user asks otherwise
+- DEFERRED unless explicit: codemap, request_queue, funnel COUNT, WF XML inject
+- Modify `docs/main/*` only when user requests doc updates
+- After file changes: update `docs/log/log.md`
+
+## Code standards
+
+- Korean module docstring at top of every code file (rule #6)
+- ACC server JS: Rhino-safe — see `.cursor/skills/campaign-ai-studio/acc-rhino-constraints.md`
+- Minimize diff; follow existing `testWoo*.js` patterns

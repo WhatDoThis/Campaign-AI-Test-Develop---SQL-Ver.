@@ -1,0 +1,257 @@
+/*
+ * testWooLifecycle.js (fragment 생애주기 · server-side)
+ * =======================================================
+ * contentHash, 버전 발행, revoke, hardDelete, impact 조회.
+ *
+ * [Main Functions]
+ * ===========
+ * - normalizeSql / contentHash / nextVersion
+ * - publish / revoke / hardDelete / listImpact / compileHash
+ *
+ * [Dependencies]
+ * =========
+ * - xtk.session.Write
+ * - Schema: woo:testWooAiFragment, woo:testWooAiSql
+ * - loadLibrary("woo:testWooLifecycle.js")
+ */
+var testWoo = testWoo || {};
+testWoo.lifecycle = (function () {
+  "use strict";
+
+  var FRAG_SCHEMA = "woo:testWooAiFragment";
+  var SQL_SCHEMA = "woo:testWooAiSql";
+
+  function _trim(s) {
+    return String(s == null ? "" : s).replace(/^\s+|\s+$/g, "");
+  }
+
+  function nowStr() {
+    return formatDate(new Date(), "%4Y/%2M/%2D %02H:%02N:%02S");
+  }
+
+  function normalizeSql(sql) {
+    var s = String(sql || "").toLowerCase();
+    s = s.replace(/\/\*[\s\S]*?\*\//g, " ");
+    s = s.replace(/--[^\n\r]*/g, " ");
+    s = s.replace(/\s+/g, " ");
+    s = s.replace(/;\s*$/, "");
+    return _trim(s);
+  }
+
+  function _djb2(str) {
+    var h = 5381;
+    var s = String(str || "");
+    for (var i = 0; i < s.length; i++) {
+      h = ((h << 5) + h) + s.charCodeAt(i);
+      h = h & 0x7fffffff;
+    }
+    return ("00000000" + h.toString(16)).slice(-16);
+  }
+
+  function contentHash(sqlText, keyColumn, scopeKey) {
+    var norm = normalizeSql(sqlText) + "|" +
+      String(keyColumn || "") + "|" +
+      String(scopeKey || "");
+    return _djb2(norm);
+  }
+
+  function nextVersion(name) {
+    if (!name) throw new Error("[testWoo.lifecycle.nextVersion] name missing");
+    var esc = String(name).replace(/'/g, "''");
+    try {
+      var q = xtk.queryDef.create(
+        <queryDef schema={FRAG_SCHEMA} operation="select" lineCount="1">
+          <select><node expr="@version"/></select>
+          <where><condition expr={"@name = '" + esc + "'"}/></where>
+          <orderBy><node expr="@version" sortDesc="true"/></orderBy>
+        </queryDef>);
+      var res = q.ExecuteQuery();
+      for each (var r in res.testWooAiFragment) {
+        var v = parseInt(String(r.@version), 10);
+        return (isNaN(v) ? 0 : v) + 1;
+      }
+      return 1;
+    } catch (e) {
+      throw new Error("[testWoo.lifecycle.nextVersion] query failed: " + e.message);
+    }
+  }
+
+  function _getFragmentById(id) {
+    var q = xtk.queryDef.create(
+      <queryDef schema={FRAG_SCHEMA} operation="getIfExists">
+        <select>
+          <node expr="@name"/><node expr="@version"/><node expr="@status"/>
+          <node expr="@is_current"/><node expr="@usage_count"/>
+        </select>
+        <where><condition expr={"@id = " + Number(id)}/></where>
+      </queryDef>);
+    var res = q.ExecuteQuery();
+    if (!res || !res.testWooAiFragment || !res.testWooAiFragment.length) return null;
+    var r = res.testWooAiFragment[0];
+    return {
+      id: Number(r.@id),
+      name: String(r.@name),
+      version: Number(r.@version),
+      status: String(r.@status),
+      is_current: String(r.@is_current) === "true" || r.@is_current === true,
+      usage_count: Number(r.@usage_count) || 0
+    };
+  }
+
+  function publish(fragDoc) {
+    if (!fragDoc || !fragDoc.name)
+      throw new Error("[testWoo.lifecycle.publish] fragDoc.name missing");
+    var name = String(fragDoc.name);
+    var ver = fragDoc.version != null ? Number(fragDoc.version) : nextVersion(name);
+    var hash = contentHash(fragDoc.sql_text, fragDoc.key_column, fragDoc.scope_key);
+    var esc = name.replace(/'/g, "''");
+
+    var prevQ = xtk.queryDef.create(
+      <queryDef schema={FRAG_SCHEMA} operation="select" lineCount="10">
+        <select><node expr="@id"/></select>
+        <where>
+          <condition expr={"@name = '" + esc + "'"/>
+          <condition expr="@is_current = 1"/>
+        </where>
+      </queryDef>);
+    var prevRes = prevQ.ExecuteQuery();
+    for each (var pr in prevRes.testWooAiFragment) {
+      var upd = <testWooAiFragment xtkschema={FRAG_SCHEMA} _operation="update"/>;
+      upd.@id = Number(pr.@id);
+      upd.@is_current = false;
+      upd.@status = "deprecated";
+      upd.@active = false;
+      xtk.session.Write(upd);
+    }
+
+    var idList = xtk.session.GetNewIds(1);
+    var newId = parseInt(String(idList).split(",")[0], 10);
+    var doc = <testWooAiFragment xtkschema={FRAG_SCHEMA} _operation="insert"/>;
+    doc.@id = newId;
+    doc.@name = name;
+    doc.@version = ver;
+    doc.@is_current = true;
+    doc.@content_hash = hash;
+    doc.@label = fragDoc.label || name;
+    doc.@category = fragDoc.category || "other";
+    doc.@tags = fragDoc.tags || "";
+    doc.@synonyms = fragDoc.synonyms || "";
+    doc.@key_column = fragDoc.key_column || "";
+    doc.@scope_key = fragDoc.scope_key || "";
+    doc.@sql_text = fragDoc.sql_text || "";
+    doc.@params = fragDoc.params || "";
+    doc.@param_domain = fragDoc.param_domain || "";
+    doc.@description = fragDoc.description || "";
+    doc.@sample_questions = fragDoc.sample_questions || "";
+    doc.@status = fragDoc.status || "verified";
+    doc.@active = fragDoc.active === true;
+    doc.@origin = fragDoc.origin || "manual";
+    doc.@source_request_id = fragDoc.source_request_id || 0;
+    doc.@gate_report = fragDoc.gate_report || "";
+    doc.@audit_sample = fragDoc.audit_sample || "";
+    doc.@usage_count = 0;
+    if (fragDoc.supersedes_id) doc.@supersedes_id = fragDoc.supersedes_id;
+    xtk.session.Write(doc);
+    if (testWoo.fragments && testWoo.fragments.clearCache) testWoo.fragments.clearCache();
+    return newId;
+  }
+
+  function revoke(fragmentId, reason, operator) {
+    var f = _getFragmentById(fragmentId);
+    if (!f) throw new Error("[testWoo.lifecycle.revoke] fragment not found: " + fragmentId);
+    var doc = <testWooAiFragment xtkschema={FRAG_SCHEMA} _operation="update"/>;
+    doc.@id = fragmentId;
+    doc.@status = "revoked";
+    doc.@is_current = false;
+    doc.@active = false;
+    doc.@revoked_reason = reason || "";
+    doc.@revoked_by = operator || "";
+    doc.@revoked_at = nowStr();
+    xtk.session.Write(doc);
+    if (testWoo.fragments && testWoo.fragments.clearCache) testWoo.fragments.clearCache();
+
+    var affected = [];
+    var q = xtk.queryDef.create(
+      <queryDef schema={SQL_SCHEMA} operation="select" lineCount="5000">
+        <select>
+          <node expr="@id"/><node expr="@title"/><node expr="@creator"/>
+          <node expr="@creation_date"/><node expr="@impact_status"/><node expr="@used_fragments"/>
+        </select>
+      </queryDef>);
+    var res = q.ExecuteQuery();
+    for each (var r in res.testWooAiSql) {
+      var uf = String(r.@used_fragments || "");
+      if (uf.indexOf('"' + f.name + '"') >= 0 || uf.indexOf(f.name) >= 0) {
+        var upd = <testWooAiSql xtkschema={SQL_SCHEMA} _operation="update"/>;
+        upd.@id = Number(r.@id);
+        upd.@impact_status = "affected";
+        xtk.session.Write(upd);
+        affected.push({
+          id: Number(r.@id),
+          title: String(r.@title),
+          creator: String(r.@creator),
+          creation_date: String(r.@creation_date),
+          impact_status: "affected"
+        });
+      }
+    }
+    return { fragmentId: fragmentId, name: f.name, affected: affected };
+  }
+
+  function hardDelete(fragmentId) {
+    var f = _getFragmentById(fragmentId);
+    if (!f) throw new Error("[testWoo.lifecycle.hardDelete] not found");
+    if (f.status !== "draft" && f.status !== "rejected")
+      throw new Error("[testWoo.lifecycle.hardDelete] status must be draft or rejected");
+    if (f.usage_count > 0)
+      throw new Error("[testWoo.lifecycle.hardDelete] usageCount>0");
+    var impact = listImpact(f.name);
+    if (impact && impact.length)
+      throw new Error("[testWoo.lifecycle.hardDelete] referenced by ai_sql");
+    var doc = <testWooAiFragment xtkschema={FRAG_SCHEMA} _operation="delete"/>;
+    doc.@id = fragmentId;
+    xtk.session.Write(doc);
+    if (testWoo.fragments && testWoo.fragments.clearCache) testWoo.fragments.clearCache();
+  }
+
+  function listImpact(fragmentName) {
+    var out = [];
+    var q = xtk.queryDef.create(
+      <queryDef schema={SQL_SCHEMA} operation="select" lineCount="5000">
+        <select>
+          <node expr="@id"/><node expr="@title"/><node expr="@creator"/>
+          <node expr="@creation_date"/><node expr="@impact_status"/><node expr="@used_fragments"/>
+        </select>
+      </queryDef>);
+    var res = q.ExecuteQuery();
+    var needle = String(fragmentName || "");
+    for each (var r in res.testWooAiSql) {
+      var uf = String(r.@used_fragments || "");
+      if (uf.indexOf(needle) >= 0) {
+        out.push({
+          id: Number(r.@id),
+          title: String(r.@title),
+          creator: String(r.@creator),
+          creation_date: String(r.@creation_date),
+          impact_status: String(r.@impact_status || "ok")
+        });
+      }
+    }
+    return out;
+  }
+
+  function compileHash(plan, sql) {
+    return _djb2(JSON.stringify(plan || {}) + "|" + normalizeSql(sql));
+  }
+
+  return {
+    normalizeSql: normalizeSql,
+    contentHash: contentHash,
+    nextVersion: nextVersion,
+    publish: publish,
+    revoke: revoke,
+    hardDelete: hardDelete,
+    listImpact: listImpact,
+    compileHash: compileHash
+  };
+})();

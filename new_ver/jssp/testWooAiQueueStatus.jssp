@@ -1,0 +1,31 @@
+<%
+response.setContentType("application/json;charset=utf-8");
+/*
+ * testWooAiQueueStatus.jssp — Foundry 큐 폴링 API
+ * payload: { queueId } 또는 ?queueId=
+ */
+try {
+  TW_RESPONSE = response;
+  TW_REQUEST = request;
+  TW_DOCUMENT = document;
+  loadLibrary("woo:testWooCommon.js");
+  loadLibrary("woo:testWooRepository.js");
+  requireRight("testWooAiSqlGenerate");
+
+  var p = readPayload();
+  var qid = p.queueId || p.queue_id;
+  if (!qid) {
+    try { qid = String(request.getParameter("queueId") || ""); } catch (eP) {}
+  }
+  if (!qid) throw new Error("queueId missing");
+
+  var st = testWoo.repo.getQueueStatus(Number(qid));
+  if (!st) {
+    jsonOut({ ok: false, error: "queue not found" });
+  } else {
+    jsonOut({ ok: true, queue: st });
+  }
+} catch (e) {
+  handleApiError(e);
+}
+%>

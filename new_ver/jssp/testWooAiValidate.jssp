@@ -1,0 +1,89 @@
+<%
+response.setContentType("application/json;charset=utf-8");
+/*
+ * testWooAiValidate.jssp (검증·카운트·카탈로그 통합)
+ * ==================================================
+ * setContentType은 KA-14685대로 최상단.
+ * 게이트: plan fragment DB active (allowedNames 폐기).
+ *
+ * [Endpoint]
+ * =======================
+ * POST /woo/testWooAiValidate.jssp
+ *   action=validate|count|catalog
+ *
+ * [Dependencies]
+ * =========
+ * - woo:testWooCommon.js (+ Config/Fragments/Compiler/Gates by action)
+ */
+try {
+  TW_RESPONSE = response;
+  TW_REQUEST = request;
+  TW_DOCUMENT = document;
+  loadLibrary("woo:testWooCommon.js");
+  requireRight("testWooAiSqlGenerate");
+
+  var p = readPayload();
+  var action = String(
+    p.action || TW_REQUEST.getParameter("action") || "validate"
+  ).toLowerCase();
+
+  if (action === "catalog") {
+    _runCatalog();
+  } else if (action === "count") {
+    _runCount(p);
+  } else if (action === "validate") {
+    _runValidate(p);
+  } else {
+    throw new Error("unknown action: " + action + " (validate|count|catalog)");
+  }
+} catch (e) {
+  handleApiError(e);
+}
+
+function _runCatalog() {
+  loadLibrary("woo:testWooConfig.js");
+  loadLibrary("woo:testWooFragments.js");
+  jsonOut({ ok: true, categories: testWoo.fragments.listCategories() });
+}
+
+function _runCount(p) {
+  if (!p.plan) throw new Error("plan missing");
+  loadLibrary("woo:testWooConfig.js");
+  loadLibrary("woo:testWooFragments.js");
+  loadLibrary("woo:testWooCompiler.js");
+  loadLibrary("woo:testWooGates.js");
+  var compiled = testWoo.compiler.compile(p.plan);
+  jsonOut({
+    ok: true,
+    sql: compiled.sql,
+    keyColumn: compiled.keyColumn,
+    funnel: [],
+    finalCount: null,
+    total: null
+  });
+}
+
+function _runValidate(p) {
+  if (!p.plan) throw new Error("plan missing");
+  loadLibrary("woo:testWooConfig.js");
+  loadLibrary("woo:testWooFragments.js");
+  loadLibrary("woo:testWooCompiler.js");
+  loadLibrary("woo:testWooGates.js");
+
+  var compiled = testWoo.compiler.compile(p.plan);
+  var results = testWoo.gates.runAll(p.plan, compiled.sql);
+  var passed = true;
+  for (var i = 0; i < results.length; i++) {
+    if (!results[i].ok) { passed = false; break; }
+  }
+  jsonOut({
+    ok: true,
+    passed: passed,
+    results: results,
+    sql: compiled.sql,
+    summary: compiled.summary,
+    chips: testWoo.compiler.chipsFromPlan(p.plan),
+    plan: p.plan
+  });
+}
+%>

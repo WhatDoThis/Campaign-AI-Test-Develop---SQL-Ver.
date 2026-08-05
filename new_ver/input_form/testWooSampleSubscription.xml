@@ -1,0 +1,21 @@
+<!--
+woo:testWooSampleSubscription (Test Woo Sample Subscription Form)
+================================================================
+샘플 가입 조회/수정 콘솔 폼.
+
+[Dependencies]
+=========
+- entity-schema: woo:testWooSampleSubscription
+-->
+<form _cs="Test Woo Sample Subscription" entity-schema="woo:testWooSampleSubscription" img="xtk:form.png"
+      label="Test Woo Sample Subscription" name="testWooSampleSubscription" namespace="woo" type="default"
+      xtkschema="xtk:form">
+  <container type="frame" label="Subscription">
+    <input xpath="@customer_id"/>
+    <input xpath="@plan_code"/>
+    <input xpath="@plan_label"/>
+    <input xpath="@start_date"/>
+    <input xpath="@status"/>
+    <input xpath="@end_date"/>
+  </container>
+</form>

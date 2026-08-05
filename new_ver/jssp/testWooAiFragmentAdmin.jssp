@@ -1,0 +1,80 @@
+<%
+response.setContentType("application/json;charset=utf-8");
+/*
+ * testWooAiFragmentAdmin.jssp — fragment 관리 대시보드 API
+ */
+try {
+  TW_RESPONSE = response;
+  TW_REQUEST = request;
+  TW_DOCUMENT = document;
+  loadLibrary("woo:testWooCommon.js");
+  loadLibrary("woo:testWooLifecycle.js");
+  requireRight("testWooAiLibraryManage");
+
+  var p = readPayload();
+  var action = String(p.action || "list");
+
+  if (action === "list") {
+    var statusFilter = String(p.status || "");
+    var parts = ["<condition expr=\"@is_current = 1\"/>"];
+    if (statusFilter) parts.push("<condition expr=\"@status = '" +
+      statusFilter.replace(/'/g, "''") + "'\"/>");
+    var xml =
+      '<queryDef schema="woo:testWooAiFragment" operation="select" lineCount="500">' +
+      "<select>" +
+      '<node expr="@id"/><node expr="@name"/><node expr="@version"/><node expr="@status"/>' +
+      '<node expr="@key_column"/><node expr="@scope_key"/><node expr="@usage_count"/>' +
+      '<node expr="@last_used_at"/>' +
+      "</select><where>" + parts.join("") + "</where>" +
+      '<orderBy><node expr="@name"/></orderBy></queryDef>';
+    var q = xtk.queryDef.create(new XML(xml));
+    var res = q.ExecuteQuery();
+    var rows = [];
+    for each (var r in res.testWooAiFragment) {
+      var nm = String(r.@name);
+      var refs = testWoo.lifecycle.listImpact(nm);
+      rows.push({
+        id: Number(r.@id),
+        name: nm,
+        version: Number(r.@version),
+        status: String(r.@status),
+        keyColumn: String(r.@key_column),
+        scopeKey: String(r.@scope_key),
+        usageCount: Number(r.@usage_count) || 0,
+        lastUsedAt: String(r.@last_used_at || ""),
+        refSqlCount: refs.length
+      });
+    }
+    jsonOut({ ok: true, fragments: rows });
+  } else if (action === "affectedSql") {
+    var q2 = xtk.queryDef.create(
+      <queryDef schema="woo:testWooAiSql" operation="select" lineCount="500">
+        <select>
+          <node expr="@id"/><node expr="@title"/><node expr="@creator"/>
+          <node expr="@impact_status"/><node expr="@creation_date"/>
+        </select>
+        <where><condition expr="@impact_status = 'affected'"/></where>
+      </queryDef>);
+    var res2 = q2.ExecuteQuery();
+    var aff = [];
+    for each (var s in res2.testWooAiSql) {
+      aff.push({
+        id: Number(s.@id),
+        title: String(s.@title),
+        creator: String(s.@creator),
+        impactStatus: String(s.@impact_status),
+        creationDate: String(s.@creation_date)
+      });
+    }
+    jsonOut({ ok: true, affected: aff });
+  } else if (action === "hardDelete") {
+    requireStudioCsrf();
+    testWoo.lifecycle.hardDelete(Number(p.fragmentId));
+    jsonOut({ ok: true });
+  } else {
+    throw new Error("unknown action: " + action);
+  }
+} catch (e) {
+  handleApiError(e);
+}
+%>

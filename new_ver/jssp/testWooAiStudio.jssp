@@ -1,0 +1,192 @@
+<%/*
+ * testWooAiStudio.jssp (Studio UI shell)
+ * =====================================
+ * Cookie __sessiontoken → logon(tok) 바인딩.
+ * 미인증 시 하드 redirect 대신 안내 페이지(target 미동작 사례 대비).
+ * logon()은 127.0.0.1로 기록되어 보안 존을 우회함 — API는 AllowedCidr로 보완.
+ *
+ * [ACC encoding]
+ * UI 한글은 HTML &#x…; 엔티티.
+ *
+ * [Dependencies]
+ * =========
+ * - /woo/testWooAiStudioJs.jssp
+ * Ref: https://experienceleague.adobe.com/developer/campaign-api/api/f-logon.html
+ */
+response.setContentType("text/html;charset=utf-8");
+
+function _twEscJs(s) {
+  return String(s || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/'/g, "\\'")
+    .replace(/\r/g, "")
+    .replace(/\n/g, "");
+}
+
+function _twHtmlEsc(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+// Cookie 헤더 우선
+function _twCookie(name) {
+  try {
+    var hdr = String(request.getHeader("Cookie") || "");
+    var parts = hdr.split(";");
+    for (var j = 0; j < parts.length; j++) {
+      var p = parts[j].replace(/^\s+/, "");
+      var eq = p.indexOf("=");
+      if (eq < 0) continue;
+      if (p.substring(0, eq) === name) return p.substring(eq + 1);
+    }
+  } catch (e1) {}
+  try {
+    var cs = request.cookies;
+    if (cs && cs.length != null) {
+      for (var i = 0; i < cs.length; i++) {
+        if (String(cs[i].name) === name) return String(cs[i].value || "");
+      }
+    }
+  } catch (e2) {}
+  return "";
+}
+
+var _wf = String(request.getParameter("workflowId") || "");
+var _studioUrl = "/woo/testWooAiStudio.jssp";
+if (_wf) _studioUrl += "?workflowId=" + encodeURIComponent(_wf);
+var _logonUrl = "/nl/jsp/logon.jsp?target=" + encodeURIComponent(_studioUrl);
+
+var _login = "";
+try { _login = String(application.operator.login || ""); } catch (eLogin) { _login = ""; }
+
+if (!_login) {
+  var _tok = _twCookie("__sessiontoken");
+  if (_tok) {
+    try {
+      logon(_tok);
+      _login = String(application.operator.login || "");
+    } catch (eBind) { _login = ""; }
+  }
+}
+
+if (!_login) {
+%>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Test Woo AI Studio — Sign in</title>
+  <style>
+    body{font-family:system-ui,"Segoe UI",sans-serif;background:#f0f2f5;margin:0;padding:48px 16px;}
+    .box{max-width:420px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:24px;}
+    h1{font-size:1.1rem;margin:0 0 8px;} p{color:#64748b;font-size:.9rem;margin:0 0 16px;line-height:1.5;}
+    a.btn{display:inline-block;padding:10px 18px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;}
+    code{font-size:.8rem;background:#f8fafc;padding:2px 6px;border-radius:4px;}
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>Test Woo AI Studio</h1>
+    <p>Campaign operator session required. Sign in, then return to this Studio URL (bookmark it).</p>
+    <p>Studio URL:<br/><code><%= _twHtmlEsc(_studioUrl) %></code></p>
+    <p><a class="btn" href="<%= _twHtmlEsc(_logonUrl) %>">Sign in (Campaign logon)</a></p>
+  </div>
+</body>
+</html>
+<%
+} else {
+%>
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Test Woo AI Studio</title>
+  <style>
+    :root{--bg:#f0f2f5;--surface:#fff;--border:#e2e8f0;--text:#0f172a;--muted:#64748b;
+      --accent:#2563eb;--ok:#047857;--err:#b91c1c;--radius:14px;--font:system-ui,"Segoe UI",sans-serif;--mono:ui-monospace,Consolas,monospace;}
+    *{box-sizing:border-box;} html,body{height:100%;margin:0;}
+    body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.5;}
+    .app{display:flex;flex-direction:column;height:100vh;max-width:960px;margin:0 auto;background:var(--surface);border-left:1px solid var(--border);border-right:1px solid var(--border);}
+    .header{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);}
+    .header h1{font-size:1rem;margin:0;} .header .wf{font-size:.75rem;color:var(--muted);margin-left:auto;}
+    .main{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:16px;}
+    .card{border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;}
+    .card h2{font-size:.85rem;margin:0 0 10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;}
+    .chips{display:flex;flex-wrap:wrap;gap:8px;}
+    .chip{display:inline-flex;align-items:center;gap:8px;background:#eff6ff;color:var(--accent);border:1px solid #bfdbfe;border-radius:999px;padding:6px 12px;font-size:.85rem;}
+    .chip button{border:none;background:none;color:var(--accent);cursor:pointer;font-size:1rem;line-height:1;}
+    table.funnel{width:100%;border-collapse:collapse;font-size:.88rem;}
+    table.funnel td{padding:6px 4px;border-bottom:1px dashed var(--border);}
+    table.funnel td.num{text-align:right;font-variant-numeric:tabular-nums;font-weight:600;}
+    table.funnel tr.total td{border-top:2px solid var(--text);border-bottom:none;font-weight:700;color:var(--ok);}
+    .gates{display:flex;flex-direction:column;gap:6px;font-size:.85rem;}
+    .gate{display:flex;gap:8px;align-items:center;} .gate .g-ok{color:var(--ok);} .gate .g-err{color:var(--err);}
+    pre.code{font-family:var(--mono);font-size:.78rem;background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:12px;overflow:auto;white-space:pre-wrap;max-height:340px;color:#0f766e;}
+    .banner{padding:10px 14px;border-radius:8px;font-size:.9rem;}
+    .banner.err{background:#fef2f2;color:var(--err);} .banner.warn{background:#fffbeb;color:#b45309;} .banner.ok{background:#ecfdf5;color:var(--ok);}
+    .composer{padding:12px 16px 16px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:flex-end;}
+    textarea#nl{flex:1;font:inherit;border:1px solid var(--border);border-radius:14px;padding:12px 16px;resize:none;min-height:48px;max-height:160px;}
+    .btn{font:inherit;font-weight:600;border:none;border-radius:8px;padding:10px 18px;cursor:pointer;background:var(--accent);color:#fff;}
+    .btn:disabled{opacity:.5;cursor:not-allowed;} .btn-outline{background:var(--surface);color:var(--text);border:1px solid var(--border);}
+    .actions{display:flex;gap:8px;align-items:center;}
+    .hidden{display:none;}
+    details summary{cursor:pointer;font-size:.82rem;color:var(--muted);}
+    .slot-card{border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:.88rem;}
+    .slot-card .badge{display:inline-block;font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:999px;margin-left:6px;}
+    .badge-feasible{background:#ecfdf5;color:#047857;}
+    .badge-no_value,.badge-no_column{background:#fef2f2;color:#b91c1c;}
+    .badge-ambiguous,.badge-partially_infeasible{background:#fffbeb;color:#b45309;}
+    .badge-low{border:1px dashed #b45309;}
+    .alt-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+    .alt-chip{font-size:.78rem;padding:4px 10px;border-radius:999px;border:1px solid var(--border);cursor:pointer;background:#f8fafc;}
+  </style>
+  <script>
+    window.__TW_LOGIN__ = '<%= _twEscJs(_login) %>';
+  </script>
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <h1>Test Woo AI Studio</h1>
+      <span class="wf" id="wfInfo">user: <%= _twEscJs(_login) %> / register&#x2192;ai_sql_id</span>
+    </header>
+
+    <main class="main" id="main">
+      <div class="banner ok" id="hint">&#xC790;&#xC5F0;&#xC5B4;&#xB85C; &#xB300;&#xC0C1; &#xC870;&#xAC74;&#xC744; &#xC785;&#xB825;&#xD558;&#xC138;&#xC694;. &#xD55C; &#xBB38;&#xC7A5;&#xC73C;&#xB85C; &#xBB49;&#xCCD0;&#xB3C4; &#xB429;&#xB2C8;&#xB2E4;. &#xC608;) &#xCD5C;&#xADFC; &#xD55C;&#xB2EC; Y&#xC694;&#xAE08; &#xAC00;&#xC785;&#xD55C; 1020&#xC138;&#xB300; &#xC911; &#xC218;&#xC2E0;&#xB3D9;&#xC758;&#xD558;&#xACE0; &#xB9C8;&#xCF00;&#xD305; &#xBA54;&#xC2DC;&#xC9C0;&#xB97C; &#xD55C;&#xBC88;&#xB3C4; &#xBC1B;&#xC9C0;&#xC54A;&#xC740; &#xACE0;&#xAC1D;</div>
+
+      <div class="card hidden" id="cardSlotResults"><h2>&#xC2AC;&#xB86F; &#xD310;&#xC815; / &#xBD88;&#xAC00; &#xBCF4;&#xACE0;</h2><div id="slotResults"></div></div>
+
+      <div class="card hidden" id="cardChips"><h2>&#xC870;&#xAC74; &#xC2AC;&#xB86F;</h2><div class="chips" id="chips"></div></div>
+
+      <div class="card hidden" id="cardFunnel"><h2>&#xD37C;&#xB110; &#xCE74;&#xC6B4;&#xD2B8; (&#xBCF4;&#xB958;)</h2><table class="funnel" id="funnel"></table></div>
+
+      <div class="card hidden" id="cardGates"><h2>&#xAC80;&#xC99D; &#xAC8C;&#xC774;&#xD2B8;</h2><div class="gates" id="gates"></div></div>
+
+      <div class="card hidden" id="cardCode">
+        <details><summary>&#xCF54;&#xB4DC; &#xBCF4;&#xAE30; (SQL &#xC804;&#xBB38; &#x00B7; &#xC77D;&#xAE30; &#xC804;&#xC6A9;)</summary><pre class="code" id="sql"></pre></details>
+      </div>
+
+      <div class="banner err hidden" id="err"></div>
+    </main>
+
+    <footer class="composer">
+      <textarea id="nl" rows="1" placeholder="&#xC870;&#xAC74;&#xC744; &#xB9D0;&#xB85C; &#xC785;&#xB825;&#xD558;&#xC138;&#xC694;&#x2026;"></textarea>
+      <div class="actions">
+        <button type="button" class="btn" id="btnGen">&#xC0DD;&#xC131;</button>
+        <button type="button" class="btn btn-outline" id="btnReg" disabled>&#xB4F1;&#xB85D;</button>
+      </div>
+    </footer>
+  </div>
+
+  <script src="/woo/testWooAiStudioJs.jssp"></script>
+</body>
+</html>
+<%
+}
+%>

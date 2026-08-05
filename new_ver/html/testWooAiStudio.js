@@ -1,0 +1,315 @@
+/*
+ * testWooAiStudio.js (Test Woo AI Studio 클라이언트)
+ * ==================================================
+ * HTML ↔ 서버 JSSP. LLM/SQL은 서버만. CNF plan 기반 UI.
+ * 등록 = 이력 저장(ai_sql_id). chips는 서버 응답만.
+ * 인증은 Cookie + 서버 logon() — X-Security-Token 헤더 미사용(ACC 미해석).
+ *
+ * [Main Functions]
+ * ===========
+ * - generate / validate / register
+ *
+ * [Dependencies]
+ * =========
+ * - /woo/testWooAiGenerate|Validate|Register.jssp
+ * - Cookie credentials + X-Requested-With: TestWooStudio
+ * - Served as /woo/testWooAiStudioJs.jssp (keep in sync)
+ * - 권장: 외부 브라우저 (ACC 콘솔 IE는 fetch 미지원)
+ */
+(function () {
+  "use strict";
+
+  var TITLE_MAX = 200; // schema woo:testWooAiSql @title length
+  var params = new URLSearchParams(location.search);
+  var WORKFLOW_ID = params.get("workflowId") || "";
+  var BASE = "/woo/";
+
+  var state = { plan: null, sql: "", summary: "", passed: false, nl: "", aiSqlId: null, queuePoll: null };
+  var $ = function (id) { return document.getElementById(id); };
+
+  function post(endpoint, payload) {
+    var body = "payload=" + encodeURIComponent(JSON.stringify(payload || {}));
+    var headers = {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "X-Requested-With": "TestWooStudio"
+    };
+    return fetch(BASE + endpoint, {
+      method: "POST", credentials: "include",
+      headers: headers, body: body
+    }).then(function (r) {
+      return r.text().then(function (text) {
+        var t = String(text || "").replace(/^\uFEFF/, "").trim();
+        if (!t) throw new Error(endpoint + " empty response (HTTP " + r.status + ")");
+        var data;
+        try { data = JSON.parse(t); }
+        catch (e) {
+          var preview = t.length > 800 ? t.slice(0, 800) + "..." : t;
+          throw new Error(endpoint + " non-JSON (HTTP " + r.status + "): " + preview);
+        }
+        if (data && data.code === "AUTH" && data.logonUrl) {
+          location.href = data.logonUrl;
+          throw new Error("NOT_AUTHENTICATED");
+        }
+        return data;
+      });
+    });
+  }
+
+  function showErr(msg) { var e = $("err"); e.textContent = msg; e.classList.remove("hidden"); }
+  function clearErr() { $("err").classList.add("hidden"); }
+  function _errText(res) {
+    if (!res) return "error";
+    var m = res.error || "failed";
+    if (res.detail && String(res.detail) !== String(m)) m += " | " + res.detail;
+    if (res.errId) m += " [" + res.errId + "]";
+    return m;
+  }
+
+  function pollQueue(queueId, reviewUrl) {
+    var attempts = 0;
+    var maxAttempts = 120;
+    if (state.queuePoll) clearInterval(state.queuePoll);
+    state.queuePoll = setInterval(function () {
+      attempts++;
+      post("testWooAiQueueStatus.jssp", { queueId: queueId }).then(function (st) {
+        if (!st.ok || !st.queue) return;
+        var qs = st.queue.status;
+        $("hint").className = "banner warn";
+        $("hint").textContent = "Foundry \uD050 \uC0C1\uD0DC: " + qs +
+          (st.queue.lastError ? " — " + st.queue.lastError : "");
+        if (st.queue.slotResults && st.queue.slotResults.length)
+          renderSlotResults(st.queue.slotResults, st.queue.partialPreview);
+        if (qs === "awaiting_approval") {
+          clearInterval(state.queuePoll);
+          state.queuePoll = null;
+          $("hint").className = "banner ok";
+          $("hint").textContent = "\uC0DD\uC131 \uC644\uB8CC — \uC2B9\uC778 \uD544\uC694. " +
+            (reviewUrl ? " <a href='" + reviewUrl + "' target='_blank'>\uC2B9\uC778 \uD654\uBA74</a>" : "");
+        } else if (qs === "infeasible" || qs === "partially_infeasible") {
+          clearInterval(state.queuePoll);
+          state.queuePoll = null;
+          $("hint").className = "banner warn";
+          $("hint").textContent = qs === "infeasible" ?
+            "\uC694\uCCAD \uC870\uAC74\uC744 \uD45C\uD604\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uC544\uB798 \uC774\uC720\uB97C \uD655\uC778\uD558\uC138\uC694." :
+            "\uC77C\uBD80 \uC870\uAC74\uB9CC \uAC00\uB2A5\uD569\uB2C8\uB2E4. \uC81C\uC678 \uC870\uAC74\uC744 \uD655\uC778\uD558\uC138\uC694.";
+        } else if (qs === "done" || qs === "failed" || qs === "needs_human_design" || qs === "throttled") {
+          clearInterval(state.queuePoll);
+          state.queuePoll = null;
+        }
+      }).catch(function () {});
+      if (attempts >= maxAttempts && state.queuePoll) {
+        clearInterval(state.queuePoll);
+        state.queuePoll = null;
+      }
+    }, 5000);
+  }
+
+  function renderSlotResults(slots, partialPreview) {
+    var box = $("slotResults");
+    if (!box) return;
+    box.innerHTML = "";
+    (slots || []).forEach(function (s) {
+      var el = document.createElement("div");
+      el.className = "slot-card";
+      var badgeCls = "badge badge-" + esc(s.verdict || "ambiguous");
+      if (s.confidence === "low") badgeCls += " badge-low";
+      el.innerHTML = "<strong>" + esc(s.slotText || s.slotId) + "</strong>" +
+        "<span class='" + badgeCls + "'>" + esc(s.verdict) + " / " + esc(s.confidence) + "</span>" +
+        "<p><em>AI \uC124\uBA85:</em> " + esc(s.narrative || "") + "</p>";
+      if (s.evidence) {
+        var det = document.createElement("details");
+        det.innerHTML = "<summary>\uC2E4\uC81C \uC870\uD68C \uACB0\uACFC (\uD655\uC778 \uADDC\uAC70)</summary><pre class='code'>" +
+          esc(JSON.stringify(s.evidence, null, 2)) + "</pre>";
+        el.appendChild(det);
+      }
+      if (s.alternatives && s.alternatives.length) {
+        var chips = document.createElement("div");
+        chips.className = "alt-chips";
+        s.alternatives.forEach(function (a) {
+          var c = document.createElement("span");
+          c.className = "alt-chip";
+          c.textContent = a.label || a.detail || a.type;
+          c.addEventListener("click", function () {
+            if (a.detail) $("nl").value = a.detail;
+            else if (a.label) $("nl").value = a.label;
+          });
+          chips.appendChild(c);
+        });
+        el.appendChild(chips);
+      }
+      box.appendChild(el);
+    });
+    if (partialPreview && partialPreview.sql) {
+      var warn = document.createElement("div");
+      warn.className = "banner warn";
+      warn.textContent = "\uBD80\uBD84 \uC2E4\uD589 \uBBF8\uB9AC\uBCF4\uAE30 — \uC81C\uC678\uB41C \uC870\uAC74\uC774 \uC788\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4.";
+      box.appendChild(warn);
+      renderSql(partialPreview.sql);
+    }
+    $("cardSlotResults").classList.remove("hidden");
+  }
+
+  function generate() {
+    var nl = $("nl").value.trim();
+    if (!nl) return;
+    state.nl = nl; clearErr(); setBusy(true);
+    post("testWooAiGenerate.jssp", { nl_request: nl, workflow_id: WORKFLOW_ID })
+      .then(function (res) {
+        if (res.status === "queued" && res.queueId) {
+          $("hint").className = "banner warn";
+          $("hint").textContent = res.message || "queued";
+          hideResultCards();
+          pollQueue(res.queueId, res.reviewUrl);
+          return;
+        }
+        if (!res.ok) {
+          if (res.unmatched && res.unmatched.length) {
+            $("hint").className = "banner warn";
+            // unmatched = Stage A \uD504\uB798\uADF8\uBA3C\uD2B8 \uBBF8\uBC1C\uACAC (\uCC3D\uC791 SQL/\uC870\uAC74 \uAE08\uC9C0)
+            $("hint").textContent =
+              "\uB9E4\uCE6D \uC2E4\uD328(\uCC3D\uC791 \uC5C6\uC74C): \uB77C\uC774\uBE0C\uB7EC\uB9AC\uC5D0 \uD574\uB2F9 fragment\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. " +
+              "\uC2AC\uB86F: " + res.unmatched.join(" | ");
+            hideResultCards();
+          } else {
+            showErr(_errText(res));
+            if (res.results) renderGates(res.results);
+          }
+          return;
+        }
+        state.plan = res.plan;
+        state.sql = res.sql || "";
+        state.summary = res.summary || "";
+        state.passed = !!res.passed;
+        renderChips(res.chips);
+        renderSummaryHint(res.summary);
+        renderSql(state.sql);
+        renderGates(res.results || []);
+        $("btnReg").disabled = !state.passed;
+        if (!state.passed) showErr(res.error || "validation failed");
+        hideFunnel();
+      })
+      .catch(function (e) { showErr(String(e)); })
+      .finally(function () { setBusy(false); });
+  }
+
+  function validate() {
+    if (!state.plan || !fragmentCount(state.plan)) { hideResultCards(); return; }
+    return post("testWooAiValidate.jssp", { plan: state.plan }).then(function (v) {
+      if (!v.ok) throw new Error(_errText(v));
+      state.sql = v.sql || "";
+      state.summary = v.summary || state.summary;
+      state.passed = !!v.passed;
+      if (v.chips) renderChips(v.chips);
+      renderSql(state.sql);
+      renderGates(v.results);
+      if (v.summary) renderSummaryHint(v.summary);
+      $("btnReg").disabled = !v.passed;
+    });
+  }
+
+  function register() {
+    if (!state.passed) return;
+    setBusy(true); clearErr();
+    var title = (state.nl || "").slice(0, TITLE_MAX);
+    post("testWooAiRegister.jssp", {
+      plan: state.plan,
+      workflow_id: WORKFLOW_ID || 0,
+      title: title,
+      target_count: 0,
+      nl_request: state.nl
+    }).then(function (r) {
+      if (!r.ok || r.passed === false) {
+        showErr(_errText(r));
+        if (r.results) renderGates(r.results);
+        if (r.sql) { state.sql = r.sql; renderSql(r.sql); }
+        return;
+      }
+      state.aiSqlId = r.ai_sql_id;
+      if (r.sql) state.sql = r.sql;
+      $("hint").className = "banner ok";
+      $("hint").textContent = "Registered. ai_sql_id=" + r.ai_sql_id +
+        " (custom activity loads SQL at runtime — workflow XML not modified)";
+      $("btnReg").disabled = true;
+    }).catch(function (e) { showErr(String(e)); }).finally(function () { setBusy(false); });
+  }
+
+  function renderChips(chips) {
+    var box = $("chips"); box.innerHTML = "";
+    (chips || []).forEach(function (c) {
+      var el = document.createElement("span"); el.className = "chip";
+      el.innerHTML = "<span></span><button type='button' title='remove'>×</button>";
+      var tag = c.role === "exclude" ? "EXCEPT" : (c.op || "AND");
+      el.firstChild.textContent = "[" + tag + "] " + c.label;
+      el.querySelector("button").addEventListener("click", function () { removeChip(c); });
+      box.appendChild(el);
+    });
+    $("cardChips").classList.remove("hidden");
+  }
+
+  function removeChip(chip) {
+    if (!state.plan) return;
+    if (chip.role === "exclude") {
+      var ek = parseInt(String(chip.id).replace(/^e/, ""), 10);
+      state.plan.exclude = (state.plan.exclude || []).filter(function (_, i) { return i !== ek; });
+    } else {
+      var parts = String(chip.id).replace(/^i/, "").split("_");
+      var gi = parseInt(parts[0], 10);
+      var ai = parseInt(parts[1], 10);
+      var group = state.plan.include && state.plan.include[gi];
+      if (group && group.any) {
+        group.any = group.any.filter(function (_, j) { return j !== ai; });
+        if (!group.any.length) {
+          state.plan.include = state.plan.include.filter(function (_, i) { return i !== gi; });
+        }
+      }
+    }
+    if (!fragmentCount(state.plan)) { hideResultCards(); return; }
+    validate().catch(function (e) { showErr(String(e)); });
+  }
+
+  function fragmentCount(plan) {
+    var n = 0;
+    var inc = (plan && plan.include) || [];
+    for (var i = 0; i < inc.length; i++) {
+      if (inc[i] && inc[i].any) n += inc[i].any.length;
+    }
+    n += ((plan && plan.exclude) || []).length;
+    return n;
+  }
+
+  function renderGates(results) {
+    var box = $("gates"); box.innerHTML = "";
+    (results || []).forEach(function (r) {
+      var el = document.createElement("div"); el.className = "gate";
+      el.innerHTML = "<span class='" + (r.ok ? "g-ok" : "g-err") + "'>" + (r.ok ? "PASS" : "FAIL") + "</span> " +
+        "<strong>" + esc(r.gate) + "</strong> " + esc(r.reason || "");
+      box.appendChild(el);
+    });
+    $("cardGates").classList.remove("hidden");
+  }
+
+  function renderSql(sql) { $("sql").textContent = sql || ""; $("cardCode").classList.remove("hidden"); }
+  function renderSummaryHint(summary) { $("hint").className = "banner ok"; $("hint").textContent = summary || "Review conditions."; }
+  function hideFunnel() { $("cardFunnel").classList.add("hidden"); }
+  function hideResultCards() {
+    ["cardSlotResults", "cardChips", "cardFunnel", "cardGates", "cardCode"].forEach(function (id) {
+      $(id).classList.add("hidden");
+    });
+    $("btnReg").disabled = true;
+    state.passed = false;
+  }
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  function setBusy(b) { $("btnGen").disabled = b; $("nl").disabled = b; }
+
+  function init() {
+    var login = window.__TW_LOGIN__ || "";
+    $("wfInfo").textContent = "user: " + (login || "?") +
+      " / workflow: " + (WORKFLOW_ID || "n/a") + " / register\u2192ai_sql_id";
+    $("btnGen").addEventListener("click", generate);
+    $("btnReg").addEventListener("click", register);
+    $("nl").addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); generate(); }
+    });
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
+})();
