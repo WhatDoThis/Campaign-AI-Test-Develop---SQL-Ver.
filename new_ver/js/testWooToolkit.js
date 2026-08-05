@@ -376,10 +376,12 @@ testWoo.toolkit = (function () {
     }
 
     // 별칭 tw_val 고정 → sqlSelect format 과 1:1 대응 (반환은 XML 객체)
-    // limitSelect 로 서브쿼리 중첩 없이 생성 + ORDER BY 1 로 재현성 확보
+    // limitSelect 로 서브쿼리 중첩 없이 생성 + ORDER BY 1 로 재현성 확보.
+    // DISTINCT 는 selectList 에 넣지 않고 opts 로 넘긴다 — T-SQL 은 DISTINCT 가 TOP 앞이다.
     if (!testWoo.probe) return { ok: false, error: "probe module not loaded" };
     var sampleQ = testWoo.probe.dialect().limitSelect(
-      "DISTINCT " + columnName + " AS tw_val", tbl, columnName + " IS NOT NULL", limit);
+      columnName + " AS tw_val", tbl, columnName + " IS NOT NULL", limit,
+      { distinct: true });
 
     var values = [];
     try {

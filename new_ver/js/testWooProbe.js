@@ -5,10 +5,14 @@
  *
  * [Main Functions]
  * ===========
- * - preflight() → {ok, code, message} : 오퍼레이터 'sql' named right 사전 검증
+ * - preflight() → {ok, code, message, dbms, dialectVerified} : 'sql' named right 사전 검증.
+ *   PostgreSQL 이 아니면 logWarning 만 남기고 차단하지 않는다(방언 분기는 PG 만 실동 검증)
  * - run(sql, keyColumn, sampleLimit) → {ok, total, distinctKey, nullKey, sample, error, stage}
- * - dialect() → {type, exceptOp, limitSelect, limit} : limitSelect 가 유일한 래핑 지점,
- *   ORDER BY 1 로 샘플 재현성 보장(Oracle FETCH FIRST / MSSQL TOP 은 정렬 없으면 비결정적)
+ * - dialect() / dialectFor(dbmsType) → {type, exceptOp, limitSelect}
+ *   limitSelect(selectList, fromClause, whereSql, n, opts) 가 유일한 래핑 지점.
+ *   opts={distinct,orderBy} — DISTINCT 위치는 방언별로 다르므로 selectList 에 넣지 않는다
+ *   (T-SQL은 SELECT DISTINCT TOP n 순서). orderBy:null 이면 ORDER BY 생략(파생 테이블용).
+ *   기본 ORDER BY 1 로 샘플 재현성 보장(Oracle FETCH FIRST / MSSQL TOP 은 정렬 없으면 비결정적)
  * - staticBlock(sql) → {ok, reason} : SELECT-only 정적 차단(주석 제거 후 금지 구문 검사)
  * - validKeyColumn(name) → boolean : keyColumn 식별자 화이트리스트
  *
@@ -34,36 +38,52 @@ testWoo.probe = (function () {
     return String(s == null ? "" : s).replace(/^\s+|\s+$/g, "");
   }
 
+  // DBMS 타입을 인자로 받는 방언 팩토리 (스모크에서 mssql/oracle 시뮬레이션에 사용).
   // Oracle FETCH FIRST / MSSQL TOP 은 ORDER BY 없으면 결과가 비결정적이다.
-  // auditSample 은 승인 화면의 근거 자료이므로 재현성이 필수 → ORDER BY 1 을 항상 붙인다.
-  function dialect() {
-    var t = "";
-    try { t = String(application.getDBMSType() || "").toLowerCase(); } catch (e) {}
-    var exceptOp = (t.indexOf("oracle") >= 0) ? "MINUS" : "EXCEPT";
+  // auditSample 은 승인 화면의 근거 자료이므로 재현성이 필수 → 기본 ORDER BY 1.
+  function dialectFor(dbmsType) {
+    var t = String(dbmsType || "").toLowerCase();
     var isOracle = t.indexOf("oracle") >= 0;
     var isMssql = t.indexOf("mssql") >= 0 || t.indexOf("sqlserver") >= 0;
+    var exceptOp = isOracle ? "MINUS" : "EXCEPT";
 
-    // 유일한 limit 래핑 지점. selectList/from/where 를 받아 중첩을 한 겹도 만들지 않는다.
-    function limitSelect(selectList, fromClause, whereSql, n) {
+    // 유일한 limit 래핑 지점. 중첩을 한 겹도 만들지 않는다.
+    //   limitSelect(selectList, fromClause, whereSql, n, opts)
+    //   opts = { distinct: false, orderBy: "1" }
+    // selectList 에 DISTINCT 를 직접 넣지 말 것 — 방언별 위치가 다르다.
+    //   T-SQL 은 SELECT [ALL|DISTINCT] [TOP n] select_list 순서이므로
+    //   "SELECT TOP n DISTINCT …" 는 구문 오류가 된다.
+    // orderBy: null 이면 ORDER BY 를 생략한다(파생 테이블·집합연산 내부 래핑용).
+    //   MSSQL 은 파생 테이블/서브쿼리 안의 ORDER BY 를 거부한다.
+    function limitSelect(selectList, fromClause, whereSql, n, opts) {
       var lim = Number(n) || DEFAULT_SAMPLE;
-      var head = isMssql ? ("SELECT TOP " + lim + " ") : "SELECT ";
+      var o = opts || {};
+      var dis = o.distinct ? "DISTINCT " : "";
+      var ob = (o.orderBy === null) ? "" : String(o.orderBy || "1");
+
+      var head = isMssql ?
+        ("SELECT " + dis + "TOP " + lim + " ") :
+        ("SELECT " + dis);
+
       var s = head + selectList + " FROM " + fromClause;
       if (whereSql) s = s + " WHERE " + whereSql;
-      s = s + " ORDER BY 1";
+      if (ob) s = s + " ORDER BY " + ob;
       if (isOracle) s = s + " FETCH FIRST " + lim + " ROWS ONLY";
       else if (!isMssql) s = s + " LIMIT " + lim;
       return s;
     }
 
-    return {
-      type: t,
-      exceptOp: exceptOp,
-      limitSelect: limitSelect,
-      // 완성된 SELECT 에 상한을 씌운다(한 겹 래핑). 별칭 지정이 필요하면 limitSelect 를 쓸 것.
-      limit: function (sql, n) {
-        return limitSelect("*", "(" + sql + ") tw_lim", "", n);
-      }
-    };
+    return { type: t, exceptOp: exceptOp, limitSelect: limitSelect };
+  }
+
+  // 현재는 nms:default 데이터소스 기준(getDBMSType 인자 생략 시 기본값).
+  // FDA 외부 데이터소스 지원 시 dialect(dsName) → application.getDBMSType(dsName) 으로
+  // 확장이 필요하다. 지금은 확장하지 않는다.
+  //   https://experienceleague.adobe.com/developer/campaign-api/api/m-Application-getDBMSType.html
+  function dialect() {
+    var t = "";
+    try { t = String(application.getDBMSType() || "").toLowerCase(); } catch (e) {}
+    return dialectFor(t);
   }
 
   function _stripComments(sql) {
@@ -104,8 +124,17 @@ testWoo.probe = (function () {
     }
   }
 
+  // 현재 접속 DBMS 와 방언 실동 검증 여부. ACC v7 은 PG/Oracle/MSSQL 을 지원하지만
+  // 본 시스템은 PostgreSQL 에서만 실동 검증된다 — 나머지는 문자열 정합까지만 맞춘다.
+  function _dbmsInfo() {
+    var t = "";
+    try { t = String(application.getDBMSType() || "").toLowerCase(); } catch (e) { t = ""; }
+    return { dbms: t, dialectVerified: (t.indexOf("postgres") >= 0) };
+  }
+
   // 1. 'sql' named right 프리플라이트 — Foundry 배치/큐 처리 진입 시 1회
   function preflight() {
+    var info = _dbmsInfo();
     try {
       sqlGetInt("SELECT 1");
     } catch (e) {
@@ -113,7 +142,9 @@ testWoo.probe = (function () {
         ok: false,
         code: "NO_SQL_RIGHT",
         message: "Foundry 실행 오퍼레이터에 'sql' named right가 없습니다. " +
-          "관리자에게 권한 부여를 요청하세요. (원인: " + String(e.message || e) + ")"
+          "관리자에게 권한 부여를 요청하세요. (원인: " + String(e.message || e) + ")",
+        dbms: info.dbms,
+        dialectVerified: info.dialectVerified
       };
     }
     try {
@@ -122,10 +153,18 @@ testWoo.probe = (function () {
       return {
         ok: false,
         code: "NO_SQL_SELECT_RIGHT",
-        message: "sqlSelect 실행 권한이 없습니다: " + String(e2.message || e2)
+        message: "sqlSelect 실행 권한이 없습니다: " + String(e2.message || e2),
+        dbms: info.dbms,
+        dialectVerified: info.dialectVerified
       };
     }
-    return { ok: true };
+    // 분기 존재가 곧 지원 보장으로 오해되는 것을 막는 경고 — 차단하지 않는다.
+    if (!info.dialectVerified) {
+      logWarning("[testWoo.probe] 검증되지 않은 DBMS: " + info.dbms +
+        " — dialect() 분기는 PostgreSQL 에서만 실동 검증됨. " +
+        "probe/dedup 생성 SQL 을 직접 확인할 것");
+    }
+    return { ok: true, dbms: info.dbms, dialectVerified: info.dialectVerified };
   }
 
   function _safeSqlGetInt(query) {
@@ -199,6 +238,7 @@ testWoo.probe = (function () {
     preflight: preflight,
     run: run,
     dialect: dialect,
+    dialectFor: dialectFor,
     staticBlock: _staticBlock,
     validKeyColumn: _validKeyColumn
   };

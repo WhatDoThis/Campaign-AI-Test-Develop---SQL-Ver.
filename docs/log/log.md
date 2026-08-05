@@ -1,6 +1,8 @@
 # Log
 
 ## Log Index
+78. 2026-08-05 방언 지원 정책 명문화 — 미검증 DBMS 런타임 가드 + FDA 주석 + 문자열 대조 도구 (추가5 반영)
+77. 2026-08-05 SQL 방언 정합 M-1~M-3 (limitSelect DISTINCT TOP · 스모크 6a/6b, 06 리포트 반영)
 76. 2026-08-05 Adobe API 오용 수정 N-1~N-6 + 배포 스모크 (05 리포트 반영)
 75. 2026-08-05 코드 점검 결함 수정 P0~P2 (04 리포트 반영)
 74. 2026-08-05 navtree listdet→list (폼 잘림) + notebook 재등록 안내
@@ -79,6 +81,122 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+78. 2026-08-05 방언 지원 정책 명문화 — 미검증 DBMS 런타임 가드 + FDA 주석 + 문자열 대조 도구 (추가5 반영)
+Purpose: docs/report/06_SQL생성추가_추가5.md(추가4 개정판) 반영. M-1 A/B/C·M-2·M-3 은 로그 #77 에서 이미 적용 완료이며, 본 항목은 개정판에서 **신규 추가된 수정 D/E 와 방언 지원 정책**만 처리한다 Changes:
+
+**수정 D (신규) — 미검증 DBMS 런타임 가드**
+- 배경: ACC v7 은 PostgreSQL/Oracle/MSSQL 을 모두 지원하지만 본 시스템은 **PostgreSQL 에서만
+  실동 검증**된다. `dialect()` 에 분기가 존재한다는 사실이 "3종 지원됨" 으로 오해될 위험을 차단
+  https://experienceleague.adobe.com/en/docs/campaign-classic/using/release-notes/compatibility-matrix
+- `testWooProbe.js` `_dbmsInfo()` 신설 → `{dbms, dialectVerified}` 계산
+- `preflight()` 반환에 `dbms` / `dialectVerified` 추가. 성공·실패(NO_SQL_RIGHT,
+  NO_SQL_SELECT_RIGHT) 3경로 모두에 포함해 실패 시에도 진단 정보가 남게 함
+- PG 가 아니면 성공 경로 말미에 `logWarning` — **차단하지 않는다**(정상 진행).
+  권한 실패 경로에서는 경고를 내지 않는다(이미 차단된 상태라 노이즈)
+- 기존 호출부(`foundry._preflight` → `pf.ok`/`pf.code`/`pf.message`)는 필드 추가만이라 무영향
+
+**수정 E (신규) — FDA 확장 여지 주석**
+- `getDBMSType(name)` 은 데이터소스명을 받고 미지정 시 `nms:default` 를 쓴다. FDA 로 외부
+  데이터소스를 붙이면 fragment SQL 대상 방언이 달라질 수 있다
+  https://experienceleague.adobe.com/developer/campaign-api/api/m-Application-getDBMSType.html
+- `dialect()` 상단에 `dialect(dsName) → getDBMSType(dsName)` 확장 필요 주석만 추가.
+  **구현하지 않음**(리포트 지시)
+
+**M-3 부수 — 스모크 요약에 DBMS 표기**
+- `TW_SMOKE_DBMS` 에 `preflight()` 의 `dbms`/`dialectVerified` 를 담아 2번 스텝 PASS 메시지와
+  최종 요약에 출력. 어떤 DB 에서 나온 결과인지 로그만 보고 판단 가능하게 함
+
+**검증 도구 상설화 (리포트 검증 5항)**
+- `tools/checkDialectSql.js` 신설 — `testWooProbe.js` 에서 `dialectFor` **본문을 파일에서 추출**해
+  실행하므로 코드 사본이 아닌 실제 구현을 대조한다. DB 접속 불필요, 종료코드 반환
+- 로그 #77 에서는 동일 검사를 임시 스크립트로 1회 실행 후 삭제했는데, 검증 절차 5항이 상시
+  항목이 되었으므로 도구로 승격
+- 실행 결과 6/6 통과 (DISTINCT 3종 + 파생 테이블 래핑 3종):
+  - MSSQL  `SELECT DISTINCT TOP 50 col AS tw_val FROM tbl WHERE col IS NOT NULL ORDER BY 1`
+  - Oracle `SELECT DISTINCT col AS tw_val FROM tbl WHERE col IS NOT NULL ORDER BY 1 FETCH FIRST 50 ROWS ONLY`
+  - PG     `SELECT DISTINCT col AS tw_val FROM tbl WHERE col IS NOT NULL ORDER BY 1 LIMIT 50`
+  - 래핑 3종 모두 `{orderBy:null}` 로 외부 ORDER BY 미생성
+
+**개정판 재확인 결과 (무변경)**
+- 수정 C 의 dedup 항목: `_symmetricDiffCount` 는 `dial.exceptOp` 만 쓰고 limit 래핑을 하지
+  않으므로 `{orderBy:null}` 전환 대상이 없다 — 재확인 후 무변경 (로그 #77 과 동일 결론)
+- M-2 의 `getQueueStatus` operation 확인: `getIfExists` 로 이미 정상 (testWooRepository.js:143)
+
+**문서**
+- docs/report/01_개발가이드.md 섹션 6: "방언 지원 범위"·"getDBMSType 데이터소스" 규약 2건 추가,
+  스모크 2번에 dbms 기록 명시, 완료 체크에 dbms 확인 + 로컬 도구 2종 실행 추가 · v1.5.1
+- docs/report/00_ReportIndex.md: `06_SQL생성추가_추가5.md` 등재 + `tools/` 점검 도구 표 추가
+- **번호 중복 지적**: `06_…추가4` / `06_…추가5` 가 접두 번호를 공유한다(규칙상 후자는 `07_`).
+  docs/ 파일 개명은 요청 시에만 수행하므로 인덱스에 안내 문구만 남김
+
+**미실행 (환경 필요)**
+- 검증 4항(`probe_values`/`probe_sql`/dedup L3 실동작) · 7항(PG 에서 `dialectVerified:true`,
+  경고 미발생) · 8항(`foundry.enabled=false`)은 ACC 배포 후 스모크로 확인
+- Oracle/MSSQL 은 **실행 검증하지 않는다**(리포트 금지 항목). 문자열 정합까지만 보증
+
+Changed files: new_ver/js/testWooProbe.js, new_ver/tools/testWooSmoke.js, tools/checkDialectSql.js(신규), docs/report/{00_ReportIndex,01_개발가이드}.md, docs/log/log.md
+
+77. 2026-08-05 SQL 방언 정합 M-1~M-3 (limitSelect DISTINCT TOP · 스모크 6a/6b, 06 리포트 반영)
+Purpose: docs/report/06_SQL생성추가_추가4.md 의 잔여 결함 3건 교정. M-1 은 로그 #76 의 N-4(limitSelect 신설) 지시가 방언 분기를 고려하지 못한 후속 교정이다 Changes:
+
+**M-1 (P1) limitSelect 방언 조립 오류 — MSSQL probe_values 전량 실패**
+- 근거: T-SQL 구문 순서는 `SELECT [ALL|DISTINCT] [TOP n] select_list`
+  https://learn.microsoft.com/en-us/sql/t-sql/queries/select-transact-sql
+  MSSQL 은 뷰·인라인함수·파생테이블·서브쿼리·CTE 내부의 ORDER BY 를 거부(TOP/OFFSET 동반 시만 허용)
+  https://learn.microsoft.com/en-us/answers/questions/1061604/the-order-by-clause-is-invalid-in-views-inline-fun
+  Oracle row limiting: ORDER BY … FETCH FIRST n ROWS ONLY
+  https://blogs.oracle.com/sql/how-to-select-the-top-n-rows-per-group-with-sql-in-oracle-database
+- **자기 유입 결함 2건** (#76 N-4 에서 넣은 코드):
+  1) `head = "SELECT TOP n "` + selectList 조립 + `_toolProbeValues` 가 selectList 에
+     `"DISTINCT col AS tw_val"` 를 섞어 전달 → MSSQL 에서 `SELECT TOP 50 DISTINCT …` 구문 오류
+  2) `limit(sql, n)` 이 `limitSelect("*", "(sql) tw_lim", …)` 를 호출 → 인자 sql 이 이미
+     ORDER BY 를 포함한 완성 SELECT 면 파생 테이블 안의 ORDER BY 로 MSSQL 오류
+- 수정 A: `limitSelect(selectList, fromClause, whereSql, n, opts)` 로 시그니처 확장.
+  `opts = {distinct, orderBy}` — DISTINCT 는 방언별 위치가 다르므로 opts 로 받고,
+  MSSQL 만 `"SELECT " + dis + "TOP n "` 로 조립. `orderBy: null` 이면 ORDER BY 생략
+- 수정 B: `dialect()` 반환에서 **`limit` 삭제**. 전수 grep 결과 `.limit(` 호출부 0건이라
+  하위 호환 부담 없이 제거 (파생 테이블 이중 래핑 경로 자체를 없앰)
+- 수정 C: `_toolProbeValues` 를 `limitSelect(col + " AS tw_val", tbl, col + " IS NOT NULL",
+  limit, {distinct:true})` 로 전환. `probe.run` 샘플 경로는 opts 생략(기본 distinct=false,
+  orderBy="1") 으로 현행 유지
+- **dedup 은 대상 아님**: `_symmetricDiffCount` 는 `dial.exceptOp` 만 쓰고 limit 래핑을
+  하지 않아 집합연산 내부 ORDER BY 문제가 없음 (리포트 C항 확인 결과 무변경)
+- `dialectFor(dbmsType)` 신설 + export — `dialect()` 는 `getDBMSType()` 결과로 이를 호출.
+  방언 시뮬레이션을 가능하게 해 스모크 5b 에서 실행 없이 문자열 검증
+- 검증(로컬, 실제 파일에서 함수 추출해 실행):
+  - MSSQL  `SELECT DISTINCT TOP 50 col AS tw_val FROM tbl WHERE col IS NOT NULL ORDER BY 1`
+  - Oracle `SELECT DISTINCT col AS tw_val FROM tbl WHERE col IS NOT NULL ORDER BY 1 FETCH FIRST 50 ROWS ONLY`
+  - PG     `SELECT DISTINCT col AS tw_val FROM tbl WHERE col IS NOT NULL ORDER BY 1 LIMIT 50`
+  - 파생 래핑(`{orderBy:null}`) 3종 모두 외부 ORDER BY 미생성 → 리포트 기대값과 전부 일치
+
+**M-2 (P2) 스모크 6번 getIfExists 경로 보장**
+- 확인 결과 `repo.getQueueStatus` 는 이미 `operation="getIfExists"` 였다(경로 자체는 유효)
+- 다만 Foundry 핵심 경로인 `_getQueue` 는 스모크가 타지 않아 향후 회귀를 놓칠 수 있으므로
+  `testWoo.foundry.peekQueue(id)` 를 읽기 전용 진입점으로 노출 (운영 로직 미사용)
+- 6번을 분리: **6b** 무매치(`-1`) 조회 → 예외 아닌 `null` (부작용 없어 더미 생성 전 수행) /
+  **6a** 더미 왕복 → `peekQueue`(=`_getQueue`) + `getQueueStatus` **양쪽** 에서
+  `@id` 읽힘 + `status="queued"` 일치 확인
+- 더미 레코드 `finally` 삭제 + 삭제 실패 시 `logError` 수동 안내는 현행 유지
+
+**M-3 (P2) 스모크 1번 전역 부재 로그 노이즈**
+- `testWoo` 자체가 undefined 면 14개 모듈이 전부 missing 으로 나열되어 "loadLibrary 실패"
+  라는 진짜 원인이 묻혔다. 스모크는 장애 상황에서 읽는 산출물이므로 메시지 품질이 복구 속도다
+- 전역 부재는 별도 메시지("JS 라이브러리 배포 여부와 woo: 네임스페이스를 먼저 확인")로 조기 반환,
+  개별 모듈 누락은 `n/14 modules undefined` 형태로 구분
+
+**문서**
+- docs/report/01_개발가이드.md 섹션 6: 규약 3건 추가(행 제한 SQL 조립 단일 래핑 지점 ·
+  DISTINCT 위치 · 파생테이블/집합연산 ORDER BY 금지) + 스모크 표에 5b/6b/6a 반영 · v1.5.0
+- docs/report/00_ReportIndex.md: `06_SQL생성추가_추가4.md` 등재
+
+**미실행 (환경 필요)**
+- 06 리포트 검증 4번(`probe_values` 실동작 회귀) · 7번(`foundry.enabled=false` 회귀)은 ACC 배포 후.
+  5번(방언 3종 문자열)은 로컬에서 선검증 완료했고 스모크 5b 가 ACC 에서 재확인한다
+- 현재 DBMS 가 PostgreSQL 이면 M-1 의 MSSQL 구문 오류는 실환경에 나타나지 않았을 가능성이 높다.
+  다만 방언 분기 코드가 깨진 상태였으므로 DBMS 변경·타 환경 이관 시 즉시 발현될 결함이었다
+
+Changed files: new_ver/js/testWoo{Probe,Toolkit,Foundry}.js, new_ver/tools/testWooSmoke.js, docs/report/{00_ReportIndex,01_개발가이드}.md, docs/log/log.md
 
 76. 2026-08-05 Adobe API 오용 수정 N-1~N-6 + 배포 스모크 (05 리포트 반영)
 Purpose: docs/report/05_SQL생성추가_추가3.md 의 신규 결함 6건 교정 — 이 중 N-2 는 로그 #75 의 P2-1(E4X 전환) 과정에서 새로 유입시킨 결함이다 Changes:

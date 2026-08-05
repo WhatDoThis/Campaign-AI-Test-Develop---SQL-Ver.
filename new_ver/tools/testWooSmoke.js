@@ -7,12 +7,14 @@
  *
  * [Main Functions]
  * ===========
- * - 1. 라이브러리 전역 정의 확인 (testWoo.* 10개)
- * - 2. probe.preflight() → 'sql' named right 확인
+ * - 1. 라이브러리 전역 정의 확인 (testWoo.* 14개 · 전역 부재와 모듈 누락을 구분)
+ * - 2. probe.preflight() → 'sql' named right + dbms/dialectVerified 기록
  * - 3. sqlSelect 반환 XML 구조 logInfo (파싱 가정 검증용)
  * - 4. describe_schema 속성 배열 비어있지 않은지 (N-2 회귀 검출)
  * - 5. search_columns 1건 이상 매칭
- * - 6. 큐 더미 1건 insert → getIfExists 조회 → 삭제 (N-1 회귀 검출)
+ * - 5b. 방언별 limitSelect 생성 SQL 문자열 검증 (M-1 회귀, 실행 없음)
+ * - 6b. 무매치 id 조회 → 예외 아닌 null (getIfExists 규약)
+ * - 6a. 큐 더미 1건 insert → _getQueue/getQueueStatus 조회 → 삭제 (N-1 회귀 검출)
  * - 7. PASS/FAIL 요약 출력, 실패 1건 이상이면 logError
  *
  * [Dependencies]
@@ -21,7 +23,7 @@
  * - sqlSelect / sqlGetInt ('sql' named right 필요)
  * - xtk.session#Write / xtk.session#GetNewIds, xtk.queryDef
  * - ACC Rhino: var / for 만 사용 (화살표함수·let·const·템플릿리터럴 금지)
- * 주의: 고객 실데이터를 출력하지 않는다. 6번 더미 레코드는 finally 에서 반드시 삭제.
+ * 주의: 고객 실데이터를 출력하지 않는다. 6a 더미 레코드는 finally 에서 반드시 삭제.
  */
 loadLibrary("woo:testWooCommon.js");
 loadLibrary("woo:testWooEnv.js");
@@ -40,6 +42,8 @@ loadLibrary("woo:testWooFeasibility.js");
 loadLibrary("woo:testWooFoundry.js");
 
 var TW_SMOKE_RESULTS = [];
+// preflight 가 돌려준 접속 DBMS — 어떤 DB에서 나온 결과인지 요약에 남긴다.
+var TW_SMOKE_DBMS = "(unknown)";
 
 function twPass(step, note) {
   TW_SMOKE_RESULTS.push({ step: step, ok: true, note: String(note || "") });
@@ -52,15 +56,23 @@ function twFail(step, note) {
 }
 
 // 1. 라이브러리 전역 정의 확인
+// 전역 부재와 개별 모듈 누락을 다른 메시지로 구분한다 — 전자를 14개 나열로 묻으면
+// "loadLibrary 실패" 라는 진짜 원인이 가려진다.
 function twStepGlobals() {
+  if (typeof testWoo === "undefined" || !testWoo) {
+    twFail("1.globals", "testWoo 전역 자체가 없음 — loadLibrary 실패. " +
+      "JS 라이브러리 배포 여부와 woo: 네임스페이스를 먼저 확인할 것");
+    return false;
+  }
   var names = ["probe", "toolkit", "llm", "fragments", "lifecycle", "dedup",
     "gates", "feasibility", "foundry", "compiler", "repo", "cfg", "env", "embedding"];
   var missing = [];
   for (var i = 0; i < names.length; i++) {
-    if (typeof testWoo === "undefined" || !testWoo[names[i]]) missing.push(names[i]);
+    if (!testWoo[names[i]]) missing.push(names[i]);
   }
   if (missing.length) {
-    twFail("1.globals", "undefined: testWoo." + missing.join(", testWoo."));
+    twFail("1.globals", missing.length + "/" + names.length +
+      " modules undefined: testWoo." + missing.join(", testWoo."));
     return false;
   }
   twPass("1.globals", names.length + " modules defined");
@@ -70,11 +82,15 @@ function twStepGlobals() {
 // 2. 'sql' named right 프리플라이트
 function twStepPreflight() {
   var r = testWoo.probe.preflight();
+  if (r && r.dbms != null) {
+    TW_SMOKE_DBMS = String(r.dbms || "(empty)") +
+      (r.dialectVerified ? " (dialect verified)" : " (dialect NOT verified — PG 외 방언은 문자열 정합만)");
+  }
   if (!r || r.ok !== true) {
     twFail("2.preflight", (r ? (r.code + " " + r.message) : "no result"));
     return false;
   }
-  twPass("2.preflight", "sql right ok");
+  twPass("2.preflight", "sql right ok · dbms=" + TW_SMOKE_DBMS);
   return true;
 }
 
@@ -133,7 +149,80 @@ function twStepSearchColumns() {
   return true;
 }
 
-// 6. 큐 더미 1건 왕복 (getIfExists 파싱 회귀 검출)
+// 5b. 방언별 limitSelect 생성 SQL 검증 (실행 없이 문자열만)
+// MSSQL 은 DISTINCT 가 TOP 앞이어야 하고, 파생 테이블 안에는 ORDER BY 를 만들면 안 된다.
+function twStepDialectSql() {
+  var cases = [
+    {
+      dbms: "mssql",
+      expect: "SELECT DISTINCT TOP 50 col AS tw_val FROM tbl " +
+        "WHERE col IS NOT NULL ORDER BY 1"
+    },
+    {
+      dbms: "oracle",
+      expect: "SELECT DISTINCT col AS tw_val FROM tbl " +
+        "WHERE col IS NOT NULL ORDER BY 1 FETCH FIRST 50 ROWS ONLY"
+    },
+    {
+      dbms: "postgresql",
+      expect: "SELECT DISTINCT col AS tw_val FROM tbl " +
+        "WHERE col IS NOT NULL ORDER BY 1 LIMIT 50"
+    }
+  ];
+  var bad = 0;
+  for (var i = 0; i < cases.length; i++) {
+    var d = testWoo.probe.dialectFor(cases[i].dbms);
+    var got = d.limitSelect("col AS tw_val", "tbl", "col IS NOT NULL", 50,
+      { distinct: true });
+    logInfo("[smoke] dialect " + cases[i].dbms + ": " + got);
+    if (got !== cases[i].expect) {
+      bad++;
+      logWarning("[smoke]   expected: " + cases[i].expect);
+    }
+  }
+  // 파생 테이블 래핑은 ORDER BY 가 없어야 한다 (MSSQL 거부)
+  var wrap = testWoo.probe.dialectFor("mssql").limitSelect(
+    "*", "(SELECT 1 AS a) tw_lim", "", 10, { orderBy: null });
+  logInfo("[smoke] dialect mssql derived-wrap: " + wrap);
+  if (wrap.indexOf("ORDER BY") >= 0) {
+    bad++;
+    logWarning("[smoke]   파생 테이블 래핑에 ORDER BY 가 생성됨 (orderBy:null 무시)");
+  }
+
+  if (bad > 0) {
+    twFail("5b.dialect", bad + " case(s) mismatched — 위 logWarning 참조");
+    return false;
+  }
+  twPass("5b.dialect", "mssql/oracle/pg + derived-wrap 생성 SQL 일치");
+  return true;
+}
+
+// 6b. 무매치 조회 — getIfExists 는 빈 엘리먼트를 주므로 예외가 아니라 null 이어야 한다.
+// 부작용이 없으므로 더미 생성 전에 먼저 수행한다.
+function twStepQueueMiss() {
+  try {
+    var none = testWoo.foundry.peekQueue(-1);
+    if (none !== null) {
+      twFail("6b.queue.miss", "expected null for id=-1, got " + JSON.stringify(none));
+      return false;
+    }
+    var none2 = testWoo.repo.getQueueStatus(-1);
+    if (none2 !== null) {
+      twFail("6b.queue.miss", "repo.getQueueStatus(-1) expected null, got non-null");
+      return false;
+    }
+    twPass("6b.queue.miss", "id=-1 → null (no exception) on both paths");
+    return true;
+  } catch (e) {
+    twFail("6b.queue.miss", "무매치 조회가 예외를 던짐 — getIfExists 파싱 회귀(N-1): " +
+      String(e.message || e));
+    return false;
+  }
+}
+
+// 6a. 큐 더미 1건 왕복 (getIfExists 파싱 회귀 검출)
+// foundry.peekQueue = Foundry 핵심 경로 _getQueue, repo.getQueueStatus = Studio 조회 경로.
+// 둘 다 operation="getIfExists" 이므로 두 경로를 모두 검증한다.
 function twStepQueueRoundTrip() {
   var qid = 0;
   try {
@@ -145,26 +234,48 @@ function twStepQueueRoundTrip() {
       workflow_id: 0
     });
     if (!qid) {
-      twFail("6.queue", "enqueueRequest returned no id");
+      twFail("6a.queue.write-read", "enqueueRequest returned no id");
       return false;
     }
+
+    var row = testWoo.foundry.peekQueue(qid);
+    if (!row) {
+      twFail("6a.queue.write-read",
+        "foundry.peekQueue(_getQueue) returned null — getIfExists 파싱 회귀(N-1)");
+      return false;
+    }
+    if (Number(row.id) !== Number(qid)) {
+      twFail("6a.queue.write-read", "_getQueue id mismatch: wrote " + qid +
+        " read " + String(row.id));
+      return false;
+    }
+    if (String(row.status) !== "queued") {
+      twFail("6a.queue.write-read", "_getQueue status mismatch: expected queued got '" +
+        String(row.status) + "'");
+      return false;
+    }
+
     var st = testWoo.repo.getQueueStatus(qid);
     if (!st) {
-      twFail("6.queue", "getQueueStatus returned null — getIfExists 파싱 회귀(N-1)");
+      twFail("6a.queue.write-read",
+        "repo.getQueueStatus returned null — getIfExists 파싱 회귀(N-1)");
       return false;
     }
     if (Number(st.queueId) !== Number(qid)) {
-      twFail("6.queue", "id mismatch: wrote " + qid + " read " + String(st.queueId));
+      twFail("6a.queue.write-read", "getQueueStatus id mismatch: wrote " + qid +
+        " read " + String(st.queueId));
       return false;
     }
     if (String(st.status) !== "queued") {
-      twFail("6.queue", "status mismatch: expected queued got '" + String(st.status) + "'");
+      twFail("6a.queue.write-read", "getQueueStatus status mismatch: expected queued got '" +
+        String(st.status) + "'");
       return false;
     }
-    twPass("6.queue", "round trip id=" + qid);
+
+    twPass("6a.queue.write-read", "id=" + qid + " · @id/status 일치 (_getQueue + getQueueStatus)");
     return true;
   } catch (e) {
-    twFail("6.queue", String(e.message || e));
+    twFail("6a.queue.write-read", String(e.message || e));
     return false;
   } finally {
     if (qid) {
@@ -192,6 +303,7 @@ function twSummary() {
   }
   logInfo("[smoke] ===== summary (" + (TW_SMOKE_RESULTS.length - failed) + "/" +
     TW_SMOKE_RESULTS.length + " passed) =====");
+  logInfo("[smoke] dbms=" + TW_SMOKE_DBMS);
   logInfo("[smoke] " + lines.join(" | "));
   if (failed > 0)
     logError("[smoke] " + failed + " step(s) FAILED — 배포를 완료로 간주하지 말 것");
@@ -204,6 +316,8 @@ if (twStepGlobals()) {
   twStepSqlSelectShape();
   twStepDescribeSchema();
   twStepSearchColumns();
+  twStepDialectSql();
+  twStepQueueMiss();
   twStepQueueRoundTrip();
 }
 twSummary();

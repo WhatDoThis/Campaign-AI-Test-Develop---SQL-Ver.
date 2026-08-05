@@ -5,11 +5,23 @@
 | 파일 | 용도 |
 |---|---|
 | `00_ReportIndex.md` | 리포트 폴더 인덱스 (본 문서) |
+| `06_SQL생성추가_추가5.md` | M-1~M-3 개정판 — 추가4 에 **방언 지원 정책**(PG 만 실동 검증) + 수정 D(미검증 DBMS 런타임 가드) · 수정 E(FDA 확장 주석) 추가. 번호 중복은 아래 참고 |
+| `06_SQL생성추가_추가4.md` | 잔여 결함 M-1~M-3 — limitSelect 방언 조립(DISTINCT TOP 순서·파생 테이블 ORDER BY)·스모크 검출력(6a/6b 분리·전역 부재 메시지) |
 | `05_SQL생성추가_추가3.md` | 신규 결함 N-1~N-6 + 스모크(S-1) — getIfExists 반환형·Schema toDocument·물리명 추정 금지·샘플 재현성·used_fragments 정확 비교 |
 | `04_SQL생성추가_추가2.md` | 코드 점검 결함 수정 요청 P0~P2 (sqlSelect 규약·sql right·큐 선점·E4X 전환) |
 | `03_SQL생성추가_추가1.md` | Feasibility Triage / 불가 보고 / GapLog (Foundry 보강) |
 | `02_SQL생성추가.md` | Fragment Foundry 통합 스펙 (툴킷·dedup·생애주기·큐) |
 | `01_개발가이드.md` | Test Woo 가이드 — 섹션1~6(Foundry 선행조건), JSSP 5개(Validate 통합), ai_sql_id |
+
+> **번호 중복 안내**: `06_…추가4` 와 `06_…추가5` 가 접두 번호를 공유한다(추가5 는 추가4 의 개정판).
+> 명명 규칙(순번 접두)상 후자는 `07_` 이 되어야 하나, 문서 파일 개명은 요청 시에만 수행한다.
+
+## 로컬 점검 도구 (`tools/`)
+
+| 파일 | 용도 |
+|---|---|
+| `tools/checkRhinoSyntax.js` | ACC Rhino+E4X 구문 사전 점검 (괄호 균형 · E4X 보간 미종료) |
+| `tools/checkDialectSql.js` | 방언 3종 생성 SQL 문자열 대조 (DB 접속 불필요 · M-1 회귀 방지) |
 
 ## 관련 상위 문서 (docs/ 및 프로젝트 루트)
 

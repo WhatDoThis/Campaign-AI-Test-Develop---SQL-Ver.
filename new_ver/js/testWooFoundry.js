@@ -10,6 +10,7 @@
  * - processQueueItem : 슬롯별 triage → 생성(게이트 자가수정) → dedup → publish
  * - generateFragmentForSlot : tool 루프 + 게이트 실패 되먹임 재생성
  * - runToolLoop : LLM tool calling 루프 (예산 초기화는 하지 않음)
+ * - peekQueue : 읽기 전용 큐 조회 (스모크의 getIfExists 파싱 검증 전용)
  *
  * [Dependencies]
  * =========
@@ -747,10 +748,17 @@ testWoo.foundry = (function () {
     return { processed: ids.length, recovered: recovered };
   }
 
+  // 읽기 전용 큐 조회 (부작용 없음). 스모크가 _getQueue 의 getIfExists 파싱을
+  // 실제 경로로 검증하기 위한 진입점 — 운영 로직에서는 사용하지 않는다.
+  function peekQueue(id) {
+    return _getQueue(Number(id));
+  }
+
   return {
     processQueueItem: processQueueItem,
     processBatch: processBatch,
     runToolLoop: runToolLoop,
-    generateFragmentForSlot: generateFragmentForSlot
+    generateFragmentForSlot: generateFragmentForSlot,
+    peekQueue: peekQueue
   };
 })();
