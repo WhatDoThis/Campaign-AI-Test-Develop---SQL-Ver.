@@ -70,6 +70,56 @@ response.setContentType("application/javascript;charset=utf-8");
     return m;
   }
 
+  function _queueStatusLabel(status) {
+    var map = {
+      queued: "\uB300\uAE30 \uC911 (WF\uAC00 \uC791\uC5C5 \uC608\uC815)",
+      processing: "fragment \uC0DD\uC131 \uC9C4\uD589 \uC911",
+      awaiting_approval: "\uC0DD\uC131 \uC644\uB8CC \u2014 \uC6B4\uC601 \uB2F4\uB2F9\uC790 \uC2B9\uC778 \uB300\uAE30",
+      infeasible: "\uC694\uCCAD \uC870\uAC74 \uC2E4\uD604 \uBD88\uAC00",
+      partially_infeasible: "\uC77C\uBD80 \uC870\uAC74\uB9CC \uAC00\uB2A5",
+      failed: "\uC0DD\uC131 \uC2E4\uD328",
+      needs_human_design: "\uC6B4\uC601 \uAC80\uD1A0 \uD544\uC694",
+      throttled: "LLM \uC6A9\uB7C9 \uC81C\uD55C",
+      done: "\uC644\uB8CC"
+    };
+    return map[status] || status;
+  }
+
+  function _renderQueueHint(status, queueId, reviewUrl, lastError) {
+    var el = $("hint");
+    var idPart = queueId ? " (queueId=" + queueId + ")" : "";
+    if (status === "queued" || status === "processing") {
+      el.className = "banner warn";
+      el.innerHTML =
+        "<strong>[\uC9C4\uD589 \uC911]</strong> " + _queueStatusLabel(status) + idPart +
+        "<br/>\uC774 \uD654\uBA74\uC744 \uB2EB\uC9C0 \uB9C8\uC138\uC694. \uC57D 5\uBD84 \uAC04\uACA9\uC73C\uB85C \uC0C1\uD0DC\uAC00 \uAC31\uC2E0\uB429\uB2C8\uB2E4." +
+        (lastError ? "<br/>" + esc(lastError) : "");
+      return;
+    }
+    if (status === "awaiting_approval") {
+      el.className = "banner ok";
+      el.innerHTML =
+        "<strong>[\uC6B4\uC601 \uC2B9\uC778 \uD544\uC694]</strong> fragment \uC0DD\uC131\uC740 \uB81C \uC644\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4." + idPart +
+        "<br/>\uB9C8\uCF00\uD130\uAC00 \uC2B9\uC778\uD558\uB294 \uACBD\uB85C\uAC00 \uC544\uB985\uB2C8\uB2E4. <strong>\uC6B4\uC601 \uB2F4\uB2F9\uC790</strong>\uAC00 LibraryManage \uAD8C\uD55C\uC73C\uB85C \uC2B9\uC778\uD574\uC57C \uD569\uB2C8\uB2E4." +
+        "<br/>\uC2B9\uC778 \uC644\uB8CC \uD6C4 <strong>\uAC19\uC740 \uC9C8\uEBAC\uC744 \uB2E4\uC2DC [\uC0DD\uC131]</strong>\uD574 \uC8FC\uC138\uC694. \uC790\uB3D9 \uC7AC\uC2DC\uD050\u00B7\uD478\uC2DC \uC54C\uB9BC\uC740 \uC5C6\uC2B5\uB2C8\uB2E4." +
+        (reviewUrl ? " <a href='" + reviewUrl + "' target='_blank' rel='noopener'>\uC6B4\uC601 \uC2B9\uC778 API</a>" : "");
+      return;
+    }
+    if (status === "infeasible" || status === "partially_infeasible") {
+      el.className = "banner warn";
+      el.textContent = _queueStatusLabel(status) + " \u2014 \uC544\uB798 \uC0C1\uC138\uB97C \uD655\uC778\uD558\uC138\uC694.";
+      return;
+    }
+    if (status === "failed" || status === "needs_human_design" || status === "throttled") {
+      el.className = "banner err";
+      el.textContent = _queueStatusLabel(status) + idPart +
+        (lastError ? " \u2014 " + lastError : "");
+      return;
+    }
+    el.className = "banner warn";
+    el.textContent = "Foundry \uD050: " + _queueStatusLabel(status) + idPart;
+  }
+
   function pollQueue(queueId, reviewUrl) {
     var attempts = 0;
     var maxAttempts = 120;
@@ -79,25 +129,11 @@ response.setContentType("application/javascript;charset=utf-8");
       post("testWooAiQueueStatus.jssp", { queueId: queueId }).then(function (st) {
         if (!st.ok || !st.queue) return;
         var qs = st.queue.status;
-        $("hint").className = "banner warn";
-        $("hint").textContent = "Foundry \uD050 \uC0C1\uD0DC: " + qs +
-          (st.queue.lastError ? " — " + st.queue.lastError : "");
+        _renderQueueHint(qs, queueId, reviewUrl, st.queue.lastError);
         if (st.queue.slotResults && st.queue.slotResults.length)
           renderSlotResults(st.queue.slotResults, st.queue.partialPreview);
-        if (qs === "awaiting_approval") {
-          clearInterval(state.queuePoll);
-          state.queuePoll = null;
-          $("hint").className = "banner ok";
-          $("hint").textContent = "\uC0DD\uC131 \uC644\uB8CC — \uC2B9\uC778 \uD544\uC694. " +
-            (reviewUrl ? " <a href='" + reviewUrl + "' target='_blank'>\uC2B9\uC778 \uD654\uBA74</a>" : "");
-        } else if (qs === "infeasible" || qs === "partially_infeasible") {
-          clearInterval(state.queuePoll);
-          state.queuePoll = null;
-          $("hint").className = "banner warn";
-          $("hint").textContent = qs === "infeasible" ?
-            "\uC694\uCCAD \uC870\uAC74\uC744 \uD45C\uD604\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uC544\uB798 \uC774\uC720\uB97C \uD655\uC778\uD558\uC138\uC694." :
-            "\uC77C\uBD80 \uC870\uAC74\uB9CC \uAC00\uB2A5\uD569\uB2C8\uB2E4. \uC81C\uC678 \uC870\uAC74\uC744 \uD655\uC778\uD558\uC138\uC694.";
-        } else if (qs === "done" || qs === "failed" || qs === "needs_human_design" || qs === "throttled") {
+        if (qs === "awaiting_approval" || qs === "infeasible" || qs === "partially_infeasible" ||
+            qs === "done" || qs === "failed" || qs === "needs_human_design" || qs === "throttled") {
           clearInterval(state.queuePoll);
           state.queuePoll = null;
         }
@@ -105,8 +141,13 @@ response.setContentType("application/javascript;charset=utf-8");
       if (attempts >= maxAttempts && state.queuePoll) {
         clearInterval(state.queuePoll);
         state.queuePoll = null;
+        $("hint").className = "banner warn";
+        $("hint").innerHTML =
+          "<strong>[\uC2DC\uAC04 \uCD08\uACFC]</strong> \uC0C1\uD0DC \uC870\uD68C\uB97C \uC911\uB2E8\uD588\uC2B5\uB2C8\uB2E4 (queueId=" + queueId + "). " +
+          "\uC6B4\uC601 \uB2F4\uB2F9\uC790\uC5D0\uAC8C \uD655\uC778 \uD6C4, \uC2B9\uC778\uC774 \uB418\uC5C8\uC73C\uBA74 \uAC19\uC740 \uC9C8\uEBAC\uC744 \uB2E4\uC2DC [\uC0DD\uC131]\uD574 \uC8FC\uC138\uC694.";
       }
     }, 5000);
+    _renderQueueHint("queued", queueId, reviewUrl, "");
   }
 
   function renderSlotResults(slots, partialPreview) {
@@ -161,8 +202,6 @@ response.setContentType("application/javascript;charset=utf-8");
     post("testWooAiGenerate.jssp", { nl_request: nl, workflow_id: WORKFLOW_ID })
       .then(function (res) {
         if (res.status === "queued" && res.queueId) {
-          $("hint").className = "banner warn";
-          $("hint").textContent = res.message || "queued";
           hideResultCards();
           pollQueue(res.queueId, res.reviewUrl);
           return;

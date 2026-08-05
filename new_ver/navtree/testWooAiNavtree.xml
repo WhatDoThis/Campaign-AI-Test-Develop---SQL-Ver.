@@ -1,0 +1,144 @@
+<!--
+woo:testWooAiNav (Test Woo AI Navigation Hierarchy)
+===================================================
+Campaign Explorer 탐색기 전용 navtree. uplus:customizing 과 별도 xtk:navtree 문서.
+
+[주의]
+- nodeModel columns/orderBy/sysFilter xpath 는 ACC 에 등록된 스키마 필드와 일치해야 함.
+- Foundry 확장 필드(version/active/origin/is_current 등)는
+  new_ver/schema/testWooAiFragment.xml 재등록 + Update database structure 후
+  아래 [Foundry] 주석 블록으로 교체 가능.
+
+[등록]
+Administration > Configuration > Navigation hierarchies > woo:testWooAiNav
+
+[배포 전 필수 치환]
+- 아래 views/view/@url 의 __CAMPAIGN_SERVER_URL__ 을 실제 Campaign 서버 베이스 URL 로 바꿀 것.
+- 실제 값은 old_ver/secrets/OLD_VER_SECRETS.md (git 제외) 참조.
+-->
+<navtree entitySchema="xtk:navtree" img="nl:folders.png" label="[WOO] Test Woo AI"
+         name="testWooAiNav" namespace="woo" xtkschema="xtk:navtree">
+
+  <model name="root">
+    <model label="Test Woo AI" name="testWooAi">
+
+      <nodeModel hiddenCommands="adbdelete, adbDup, adbDupTo" img="nl:folders.png"
+                 label="[WOO] Fragments" name="testWooAiFragment">
+        <view enumImage="@status" name="listdet" schema="woo:testWooAiFragment" type="listdet">
+          <columns>
+            <node xpath="@name"/>
+            <node xpath="@category"/>
+            <node xpath="@tags"/>
+            <node xpath="@key_column"/>
+            <node xpath="@status"/>
+          </columns>
+          <orderBy>
+            <node expr="@name"/>
+          </orderBy>
+        </view>
+      </nodeModel>
+
+      <nodeModel hiddenCommands="adbdelete, adbDup, adbDupTo" img="nl:folders.png"
+                 label="[WOO] Fragments (Verified)" name="testWooAiFragmentVerified">
+        <view enumImage="@status" name="listdet" schema="woo:testWooAiFragment" type="listdet">
+          <columns>
+            <node xpath="@name"/>
+            <node xpath="@category"/>
+            <node xpath="@tags"/>
+            <node xpath="@key_column"/>
+            <node xpath="@status"/>
+          </columns>
+          <orderBy>
+            <node expr="@name"/>
+          </orderBy>
+          <sysFilter>
+            <condition expr="@status = 'verified'"/>
+          </sysFilter>
+        </view>
+      </nodeModel>
+
+      <nodeModel hiddenCommands="adbdelete, adbDup, adbDupTo" img="nl:folders.png"
+                 label="[WOO] Request Queue" name="testWooAiRequestQueue">
+        <view enumImage="@status" name="listdet" schema="woo:testWooAiRequestQueue" type="listdet">
+          <columns>
+            <node xpath="@status"/>
+            <node xpath="@nl_text"/>
+            <node xpath="@attempt_count"/>
+            <node xpath="@last_error"/>
+            <node xpath="@created_at"/>
+            <node xpath="@updated_at"/>
+          </columns>
+          <orderBy>
+            <node expr="@created_at" desc="true"/>
+          </orderBy>
+        </view>
+      </nodeModel>
+
+      <nodeModel hiddenCommands="adbdelete, adbDup, adbDupTo" img="nl:folders.png"
+                 label="[WOO] SQL History" name="testWooAiSql">
+        <view enumImage="@status" name="listdet" schema="woo:testWooAiSql" type="listdet">
+          <columns>
+            <node xpath="@title"/>
+            <node xpath="@nl_request"/>
+            <node xpath="@status"/>
+            <node xpath="@target_count"/>
+            <node xpath="@workflow_id"/>
+            <node xpath="@creation_date"/>
+          </columns>
+          <orderBy>
+            <node expr="@creation_date" desc="true"/>
+          </orderBy>
+        </view>
+      </nodeModel>
+
+      <nodeModel hiddenCommands="adbdelete, adbDup, adbDupTo" img="nl:folders.png"
+                 label="[WOO] Sample Customer" name="testWooSampleCustomer">
+        <view name="listdet" schema="woo:testWooSampleCustomer" type="listdet">
+          <columns>
+            <node xpath="@customer_id"/>
+            <node xpath="@name"/>
+            <node xpath="@age"/>
+            <node xpath="@gender"/>
+            <node xpath="@marketing_consent"/>
+          </columns>
+          <orderBy>
+            <node expr="@customer_id"/>
+          </orderBy>
+        </view>
+      </nodeModel>
+
+      <nodeModel hiddenCommands="adbdelete, adbDup, adbDupTo" img="nl:folders.png"
+                 label="[WOO] Sample Subscription" name="testWooSampleSubscription">
+        <view name="listdet" schema="woo:testWooSampleSubscription" type="listdet">
+          <columns>
+            <node xpath="@customer_id"/>
+            <node xpath="@plan_code"/>
+            <node xpath="@plan_label"/>
+            <node xpath="@status"/>
+            <node xpath="@start_date"/>
+          </columns>
+          <orderBy>
+            <node expr="@customer_id"/>
+            <node expr="@start_date"/>
+          </orderBy>
+        </view>
+      </nodeModel>
+
+    </model>
+  </model>
+
+  <views>
+    <view label="Test Woo AI Studio" name="testWooAiStudio"
+          url="__CAMPAIGN_SERVER_URL__/woo/testWooAiStudio.jssp"/>
+    <view label="Test Woo AI Gap Admin" name="testWooAiGapAdmin"
+          url="__CAMPAIGN_SERVER_URL__/woo/testWooAiGapAdmin.jssp"/>
+  </views>
+
+  <commands>
+    <command label="Test Woo AI Studio" name="testWooAiStudio"
+             view="testWooAiStudio" viewType="view"/>
+    <command label="Test Woo AI Gap Admin" name="testWooAiGapAdmin"
+             view="testWooAiGapAdmin" viewType="view"/>
+  </commands>
+
+</navtree>

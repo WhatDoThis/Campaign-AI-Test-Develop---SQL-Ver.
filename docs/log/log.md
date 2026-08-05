@@ -1,6 +1,12 @@
 # Log
 
 ## Log Index
+66. 2026-08-05 navtree·로그 내부 호스트명 placeholder 치환 (공개 저장소 대응)
+65. 2026-08-05 신규 구축(new_ver) ACC 적용 현황·이슈·잔여 작업 정리
+64. 2026-08-05 navtree xpath ACC 배포 스키마 정합 (XTK-170036)
+63. 2026-08-05 navtree label 슬래시 제거 (QUE-370028)
+62. 2026-08-05 woo:testWooAiNav navtree XML 신규 (uplus 분리)
+61. 2026-08-05 Foundry 큐 UX 안내 (진행/운영승인/재생성 구분)
 60. 2026-08-05 PRD 단일화(Rebuild→docs/main) + old_ver 시크릿 분리 + Git 초기 배포
 59. 2026-08-05 Skill acc-data-access (Campaign DB 접근 원칙)
 58. 2026-08-05 옵션 3개로 축소 + Env 주석 + 미배포 파일 삭제
@@ -63,6 +69,97 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+66. 2026-08-05 navtree·로그 내부 호스트명 placeholder 치환 (공개 저장소 대응)
+Purpose: 공개 GitHub 저장소에 LG U+ 테스트 Campaign 서버 실제 엔드포인트가 노출되지 않도록 치환 Changes:
+
+navtree views/view/@url 2건(Studio·GapAdmin) → `__CAMPAIGN_SERVER_URL__` + 헤더에 배포 전 치환 안내 추가
+log #65 Studio URL → `{CAMPAIGN_SERVER_URL}` 표기
+실제 값은 old_ver/secrets/OLD_VER_SECRETS.md(git 제외)에 출처 추가 기록
+Changed files: new_ver/navtree/testWooAiNavtree.xml, docs/log/log.md, old_ver/secrets/OLD_VER_SECRETS.md
+
+65. 2026-08-05 신규 구축(new_ver) ACC 적용 현황·이슈·잔여 작업 정리
+Purpose: Test Woo AI 신규 구축(new_ver) 이후 ACC 환경 적용 진행상황, 발생 이슈, 후속 작업을 한곳에 기록 Changes:
+
+**A. 로컬(new_ver) 구현 완료 범위**
+- 데이터 모델: `woo:testWooAiFragment` / `testWooAiSql` / `testWooAiRequestQueue` / `testWooAiGapLog` / `testWooAiGolden` + 샘플 `testWooSampleCustomer` / `testWooSampleSubscription`
+- 입력 폼: Fragment / Sql / RequestQueue / Golden / Sample 2종
+- JS 라이브러리: Config(옵션3) + Env(튜닝) + Pass0/StageA/Pass1 + Compiler/Gates/Lifecycle + Foundry 확장(Feasibility·Toolkit·Dedup·Embedding·Foundry·Probe)
+- JSSP: Studio·Generate·Validate·Register·QueueStatus·FragmentReview(JSON)·GapAdmin·AuthDebug
+- WF: `testWooSampleSeed.js`(샘플 100/150), `testWooFoundryBatch.js`(Foundry 5분 배치), `testWooGoldenRun.js`
+- Explorer: `woo:testWooAiNav` navtree (`new_ver/navtree/testWooAiNavtree.xml`) — uplus:customizing 과 분리
+- UX: Foundry 큐 상태별 Studio 배너 ([진행중]/[운영승인필요], 자동 재시도 없음)
+
+**B. ACC 환경 — 확인·진행된 사항**
+- Studio URL 접근·JSSP 배포: `{CAMPAIGN_SERVER_URL}/woo/testWooAiStudio.jssp`
+- 샘플 시드 WF 실행: `testWooSampleCustomer` 100건, `testWooSampleSubscription` 150건 적재
+- Foundry 큐 동작: Studio NL 매칭 실패 시 `woo:testWooAiRequestQueue` INSERT 확인 (Generate → enqueueRequest)
+- XtkOption 최소 3개(ApiKey/Model/Endpoint) + `testWooEnv.js` 튜닝 분리 구조 반영
+- `woo:testWooAiNav` navtree 신규 문서 등록 진행 (uplus XML 수정 없이 merge)
+
+**C. ACC 환경 — 미완·미확인**
+- 스키마 **Foundry 확장 필드** ACC 재등록 + **Update database structure** (version/active/origin/is_current 등)
+- `WKF_testWooFoundry` WF 생성·스케줄(5분) 또는 수동 Run — **Queue → Fragment 생성의 필수 경로**
+- JS 라이브러리 전량 배포 및 loadLibrary 순서(Config→…→Foundry) 검증
+- Fragment **active 라이브러리 0건** → Studio Stage A 매칭 실패 지속 (Foundry 완료 + ops 승인 전까지)
+- navtree Explorer 실폴더 생성 완료 여부 (`[WOO] Fragments` 등)
+- Foundry 확장 후 navtree columns/orderBy 확장 컬럼 복원 (version·label·active 등)
+- HTML 운영 승인 UI (`FragmentReview` 페이지) — **미구현**, 현재 Explorer에서 `verified` → `active` 수동
+- 03 스펙 잔여: clarification UI/API, partial-exec 체크박스, Golden `expectedVerdict`
+
+**D. 발생·해결 이슈**
+| # | 증상/에러 | 원인 | 조치 |
+|---|-----------|------|------|
+| 1 | Studio NL → 매칭 실패 | active fragment 0건 + Foundry off 또는 WF 미처리 | Foundry ON + WF 실행 + fragment 승인 |
+| 2 | `relation "testwooairequestqueue" does not exist` | Queue 스키마 DB 미반영 | 스키마 Save → Update database structure |
+| 3 | Queue有 / Fragment無 | enqueue ≠ publish. WF 미실행·failed·infeasible·verified만 존재(active 필터) | Queue status·last_error·WF 로그 확인 |
+| 4 | QUE-370028 invalid `/` in folder name | nodeModel label `Test Woo AI / …` → Explorer 폴더명 기본값 | label → `[WOO] Fragments` (슬래시 제거) |
+| 5 | XTK-170036 `@version` `@label` `@active` `@id` unknown | navtree xpath가 ACC **미배포** Foundry 필드 참조 | navtree 기본 필드만 사용; 스키마 재배포 후 확장 |
+| 6 | uplus:customizing 에 navtree 삽입 혼선 | woo 전용은 **별도** xtk:navtree 문서 | `woo:testWooAiNav` New 등록 (merge) |
+| 7 | 큐 UX “승인 후 재시도” 혼동 | queued vs awaiting_approval 구분 부족 | Generate/Studio phase별 배너 (log #61) |
+
+**E. 후속 작업 우선순위**
+1. **스키마·DB**: Fragment/Queue/Sql(+GapLog) 최신 XML 재등록 → Update structure → Preview 필드 확인
+2. **JS·WF**: 전 JS 재배포 → `WKF_testWooFoundry` 생성·실행 → Queue `status`가 `awaiting_approval`까지 도달 확인
+3. **Explorer**: `woo:testWooAiNav` Save → `[WOO] Fragments` 폴더 생성 → `verified` fragment 목록 확인
+4. **운영 승인**: Explorer에서 `status=verified`, `active=false` → `active=true` (또는 lifecycle API)
+5. **E2E**: Studio 동일 NL 재시도 → Stage A 매칭 → SQL 생성
+6. **navtree**: 스키마 반영 후 Foundry 컬럼·Verified sysFilter 재적용
+7. **선택**: FragmentReview HTML UI, fragment 스모크 시드 WF, Golden Run 보완
+
+**F. 설계 불변 (재확인)**
+- LLM은 fragment SQL만 작성; 최종 SQL은 컴파일러 조립
+- Foundry 생성 fragment는 자동 `active` 금지 — ops 승인 필수
+- DB CRUD: `xtk.session.Write` (sqlExec/raw DML 금지)
+- 마케터: Studio만 / fragment·queue 관리: 운영·개발
+
+Changed files: docs/log/log.md
+
+64. 2026-08-05 navtree xpath ACC 배포 스키마 정합 (XTK-170036)
+Purpose: navtree columns/orderBy 가 ACC 미배포 Foundry 필드(version/label/active/@id) 참조로 저장 실패 Changes:
+
+Fragment/Queue/SQL/Sample view: 섹션2 기본 필드만 사용, @id·@version·Foundry 확장 컬럼 제거
+Changed files: new_ver/navtree/testWooAiNavtree.xml, docs/log/log.md
+
+63. 2026-08-05 navtree label 슬래시 제거 (QUE-370028)
+Purpose: Explorer New folder 기본 label 의 / 문자가 ACC 폴더명 규칙 위반으로 QUE-370028 발생 Changes:
+
+nodeModel label: Test Woo AI / … → [WOO] … (uplus [샘플] 패턴)
+Changed files: new_ver/navtree/testWooAiNavtree.xml, docs/log/log.md
+
+62. 2026-08-05 woo:testWooAiNav navtree XML 신규 (uplus 분리)
+Purpose: uplus:customizing 과 별도 xtk:navtree 문서로 Test Woo AI Explorer 폴더 타입·JSSP command 구성 Changes:
+
+new_ver/navtree/testWooAiNavtree.xml: model testWooAi + Fragment/Queue/SQL/Sample nodeModel, Studio·GapAdmin views/commands
+Verified 전용 sysFilter 폴더 타입 포함
+Changed files: new_ver/navtree/testWooAiNavtree.xml, docs/log/log.md
+
+61. 2026-08-05 Foundry 큐 UX 안내 (진행/운영승인/재생성 구분)
+Purpose: 마케터가 queued 메시지에서 승인 대기·자동 알림을 오해하지 않도록 단계별 배너 명시 Changes:
+
+Generate.jssp 큐 접수 문구 개선
+Studio pollQueue: [진행중]/[운영승인필요]/시간초과 안내, 자동 재시도 없음 명시
+Changed files: new_ver/jssp/testWooAiGenerate.jssp, html/testWooAiStudio.js, jssp/testWooAiStudioJs.jssp, docs/log/log.md
 
 60. 2026-08-05 PRD 단일화(Rebuild→docs/main) + old_ver 시크릿 분리 + Git 초기 배포
 Purpose: 이원화된 PRD를 docs/main 하나로 통합하고, 공개 저장소 배포 전 평문 자격증명을 코드에서 분리 Changes:
