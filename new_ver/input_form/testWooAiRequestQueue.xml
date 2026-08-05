@@ -1,10 +1,11 @@
 <!--
 woo:testWooAiRequestQueue (Foundry 큐 입력 폼)
+listdet 하단 잘림 방지: form type=notebook 탭 분리
 -->
 <form _cs="Test Woo AI Request Queue" entity-schema="woo:testWooAiRequestQueue" img="xtk:form.png"
-      label="Test Woo AI Request Queue" name="testWooAiRequestQueue" namespace="woo" type="default"
+      label="Test Woo AI Request Queue" name="testWooAiRequestQueue" namespace="woo" type="notebook"
       xtkschema="xtk:form">
-  <container type="frame" label="Queue">
+  <container label="Summary">
     <input xpath="@nl_text"/>
     <input xpath="@status"/>
     <input xpath="@attempt_count"/>
@@ -14,5 +15,15 @@ woo:testWooAiRequestQueue (Foundry 큐 입력 폼)
     <input xpath="@workflow_id"/>
     <input xpath="@created_at"/>
     <input xpath="@updated_at"/>
+  </container>
+  <container label="Plan">
+    <input xpath="@slots_json"/>
+    <input xpath="@plan_json"/>
+    <input xpath="@partial_preview"/>
+  </container>
+  <container label="Triage">
+    <input xpath="@slot_results"/>
+    <input xpath="@evidence_log"/>
+    <input xpath="@clarify_answers"/>
   </container>
 </form>

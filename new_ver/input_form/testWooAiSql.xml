@@ -1,39 +1,31 @@
 <!--
 woo:testWooAiSql (Test Woo AI Generated SQL Form)
-=================================================
-생성·등록 이력 조회/편집 콘솔 폼.
-
-[네이밍]
-- form@name = 스키마 name과 동일 (카멜)
-- entity-schema = woo:testWooAiSql
-
-[Forms 규칙 · xtk:form]
-- attribute(memo 포함) → xpath="@..."
-
-[Dependencies]
-=========
-- entity-schema: woo:testWooAiSql
+listdet 하단 잘림 방지: form type=notebook 탭 분리
 -->
 <form _cs="Test Woo AI Generated SQL" entity-schema="woo:testWooAiSql" img="xtk:form.png"
-      label="Test Woo AI Generated SQL" name="testWooAiSql" namespace="woo" type="default"
+      label="Test Woo AI Generated SQL" name="testWooAiSql" namespace="woo" type="notebook"
       xtkschema="xtk:form">
-  <container type="frame" label="Header">
+  <container label="Header">
     <input xpath="@title"/>
     <input xpath="@creator"/>
     <input xpath="@status"/>
     <input xpath="@workflow_id"/>
     <input xpath="@target_count"/>
     <input xpath="@creation_date"/>
+    <input xpath="@impact_status"/>
   </container>
-  <container type="frame" label="Request">
+  <container label="Request">
     <input xpath="@nl_request"/>
     <input xpath="@summary_ko"/>
   </container>
-  <container type="frame" label="Plan / SQL">
+  <container label="Plan">
     <input xpath="@plan_json"/>
     <input xpath="@used_fragments"/>
     <input xpath="@compile_hash"/>
-    <input xpath="@impact_status"/>
+    <input xpath="@excluded_slots"/>
+    <input xpath="@has_exclusion"/>
+  </container>
+  <container label="SQL">
     <input xpath="@sql_query"/>
   </container>
 </form>

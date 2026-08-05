@@ -1,6 +1,7 @@
 # Log
 
 ## Log Index
+67. 2026-08-05 입력폼 notebook 탭 + Sample 폴더 연결·스크롤 개선
 66. 2026-08-05 navtree·로그 내부 호스트명 placeholder 치환 (공개 저장소 대응)
 65. 2026-08-05 신규 구축(new_ver) ACC 적용 현황·이슈·잔여 작업 정리
 64. 2026-08-05 navtree xpath ACC 배포 스키마 정합 (XTK-170036)
@@ -69,6 +70,14 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+67. 2026-08-05 입력폼 notebook 탭 + Sample 폴더 연결·스크롤 개선
+Purpose: listdet 하단 폼 잘림 해소 및 Sample Customer/Subscription Explorer 연결 오류 대응 Changes:
+
+입력 폼 5종 type=notebook 탭 분리 (Fragment/Sql/Queue/Sample×2)
+navtree Sample view form= 명시, Customer Name 컬럼 label
+Sample 연결 오류: input_form/testWooSample*.xml ACC Input forms 등록 필수
+Changed files: new_ver/input_form/*.xml, new_ver/navtree/testWooAiNavtree.xml, docs/log/log.md
 
 66. 2026-08-05 navtree·로그 내부 호스트명 placeholder 치환 (공개 저장소 대응)
 Purpose: 공개 GitHub 저장소에 LG U+ 테스트 Campaign 서버 실제 엔드포인트가 노출되지 않도록 치환 Changes:

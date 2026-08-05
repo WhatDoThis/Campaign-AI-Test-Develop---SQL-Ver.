@@ -1,29 +1,24 @@
 <!--
 woo:testWooSampleCustomer (Test Woo Sample Customer Form)
-========================================================
-샘플 고객 조회/수정 콘솔 폼.
-
-[Dependencies]
-=========
-- entity-schema: woo:testWooSampleCustomer
+listdet 연결: form name = 스키마 name. @name xpath 는 ACC 예약과 충돌 가능 → customer_name 표시용 colname
 -->
 <form _cs="Test Woo Sample Customer" entity-schema="woo:testWooSampleCustomer" img="xtk:form.png"
-      label="Test Woo Sample Customer" name="testWooSampleCustomer" namespace="woo" type="default"
+      label="Test Woo Sample Customer" name="testWooSampleCustomer" namespace="woo" type="notebook"
       xtkschema="xtk:form">
-  <container type="frame" label="Identity">
+  <container label="Identity">
     <input xpath="@customer_id"/>
     <input xpath="@name"/>
     <input xpath="@age"/>
     <input xpath="@gender"/>
     <input xpath="@birth_date"/>
   </container>
-  <container type="frame" label="Profile">
+  <container label="Profile">
     <input xpath="@region"/>
     <input xpath="@email"/>
     <input xpath="@status"/>
     <input xpath="@created_date"/>
   </container>
-  <container type="frame" label="Consent">
+  <container label="Consent">
     <input xpath="@marketing_consent"/>
     <input xpath="@sms_consent"/>
   </container>

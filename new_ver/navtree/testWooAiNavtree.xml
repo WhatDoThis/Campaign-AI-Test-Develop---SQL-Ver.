@@ -12,6 +12,9 @@ Campaign Explorer 탐색기 전용 navtree. uplus:customizing 과 별도 xtk:nav
 [등록]
 Administration > Configuration > Navigation hierarchies > woo:testWooAiNav
 
+[Sample 폴더]
+Input forms: testWooSampleCustomer / testWooSampleSubscription ACC 등록 필수 (연결 오류 방지)
+
 [배포 전 필수 치환]
 - 아래 views/view/@url 의 __CAMPAIGN_SERVER_URL__ 을 실제 Campaign 서버 베이스 URL 로 바꿀 것.
 - 실제 값은 old_ver/secrets/OLD_VER_SECRETS.md (git 제외) 참조.
@@ -93,13 +96,14 @@ Administration > Configuration > Navigation hierarchies > woo:testWooAiNav
 
       <nodeModel hiddenCommands="adbdelete, adbDup, adbDupTo" img="nl:folders.png"
                  label="[WOO] Sample Customer" name="testWooSampleCustomer">
-        <view name="listdet" schema="woo:testWooSampleCustomer" type="listdet">
+        <view form="woo:testWooSampleCustomer" name="listdet" schema="woo:testWooSampleCustomer" type="listdet">
           <columns>
             <node xpath="@customer_id"/>
-            <node xpath="@name"/>
+            <node label="Customer Name" xpath="@name"/>
             <node xpath="@age"/>
             <node xpath="@gender"/>
             <node xpath="@marketing_consent"/>
+            <node xpath="@email"/>
           </columns>
           <orderBy>
             <node expr="@customer_id"/>
@@ -109,7 +113,7 @@ Administration > Configuration > Navigation hierarchies > woo:testWooAiNav
 
       <nodeModel hiddenCommands="adbdelete, adbDup, adbDupTo" img="nl:folders.png"
                  label="[WOO] Sample Subscription" name="testWooSampleSubscription">
-        <view name="listdet" schema="woo:testWooSampleSubscription" type="listdet">
+        <view form="woo:testWooSampleSubscription" name="listdet" schema="woo:testWooSampleSubscription" type="listdet">
           <columns>
             <node xpath="@customer_id"/>
             <node xpath="@plan_code"/>
