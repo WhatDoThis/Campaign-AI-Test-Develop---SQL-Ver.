@@ -3,6 +3,7 @@
  * =====================================================
  * Git 버전관리 대상. 배포 후 값 변경 시 JS 라이브러리만 재등록하면 된다.
  * XtkOption은 시크릿 3개만: testWooAiLlmApiKey / Model / Endpoint
+ * toolkit.totalCallBudget=132 (E-1: 3슬롯×36 + margin24). foundry.dailyBudget 미구현.
  *
  * [Main Functions]
  * ===========
@@ -88,7 +89,9 @@ testWoo.env = (function () {
      *   nms:common 같은 기술 스키마로 오답을 낸다(실측). cus 는 이 인스턴스에 0건이다.
      *   운영에서 nms:recipient 대상 fragment 가 필요해지면 그때 넓히고, 스모크 4·4b 의
      *   대상 스키마도 함께 표준 스키마로 되돌린다.
-     * tokenBudget / dailyBudget: 비용 가드 (현재 Foundry에서 부분 미적용)
+     * tokenBudget: 요청당 누적 tokensUsed 상한. processQueueItem 이 슬롯 생성 후 검사하고
+     *   초과 시 needs_human_design ("요청 토큰 예산 초과"). dryRunSlot 경로는 검사하지 않는다.
+     * dailyBudget: 일일 상한 — 미구현 (선언만, 검사 로직 없음)
      * gateRetries: fragment 게이트 실패 시 LLM 자가수정 재시도. 권장 2
      * staleProcessingMinutes: processing 정체 레코드를 queued 로 되돌리는 기준(분).
      *   권장 30. WF 실행이 비정상 종료된 큐를 배치 시작 시 1회 복구
@@ -138,17 +141,21 @@ testWoo.env = (function () {
 
     /* ------------------------------------------------------------------
      * toolkit — LLM tool calling 요청당 호출 상한 (OWASP LLM06)
-     * totalCallBudget: 요청 전체. triage+generate 합산 상한. 권장 40
+     * totalCallBudget 산식:
+     *   maxNewFragments(3) * (triageCallBudget 12 + generateCallBudget 24) + margin 24
+     *   = 3*36 + 24 = 132
+     *   (maxNewFragments 만 올리면 total 도 같이 올려야 슬롯 2·3에서 기아 난다)
      * triageCallBudget / generateCallBudget: 단계별 상한 (setPhaseBudget).
      *   산출: triage ≈ maxTurns(6) × ~2콜, generate ≈ maxTurns(6) × attempts(3)
+     * probeSql/probeValues/searchColumnsBudget: 다중 슬롯이 공유하는 요청 단위 상한(슬롯당 아님)
      * ------------------------------------------------------------------ */
     toolkit: {
-      totalCallBudget: 40,
+      totalCallBudget: 132,
       triageCallBudget: 12,
       generateCallBudget: 24,
-      probeSqlBudget: 8,
-      probeValuesBudget: 6,
-      searchColumnsBudget: 8
+      probeSqlBudget: 18,
+      probeValuesBudget: 14,
+      searchColumnsBudget: 18
     },
 
     /* ------------------------------------------------------------------

@@ -22,6 +22,7 @@
  * - 7. llm.pass0 실호출 — 슬롯 1건 이상 + max_tokens 절단 없음 (billable)
  * - 8. llm.embedding 실호출 — 벡터 길이 > 0 (billable · embedEnabled=false면 SKIP)
  * - 9. foundry.generate — dryRunSlot 로 Triage+생성 경로 즉시 검증 (billable · 큐 부작용 0)
+ * - 9c. foundry.budget — 단계 예산 분리·total 여유 검증 (비과금 · TW_SMOKE_SKIP_LLM 무관)
  * - 10. PASS/FAIL/SKIP 요약 출력, 실패 1건 이상이면 logError
  *
  * logError 는 WF 스크립트 실행을 즉시 중단시킨다(문서화된 동작). 그래서 개별 스텝 실패는
@@ -30,7 +31,7 @@
  * 7·8·9 는 실제 과금이 발생한다. 그럼에도 필수인 이유: 1~6 은 전부 DB/스키마 계열이라
  * LLM 파라미터 결함(#80 tools 충돌 · #83 사고토큰 · #84 반복 루프)과 생성 단계
  * 결함(#89 fragment JSON missing)이 항상 사용자 입력·배치 시점에 처음 발현됐다.
- * 부득이한 경우에만 TW_SMOKE_SKIP_LLM=true 로 건너뛴다.
+ * 부득이한 경우에만 TW_SMOKE_SKIP_LLM=true 로 건너뛴다. 9c 는 항상 실행한다.
  *
  * [Dependencies]
  * =========
@@ -540,6 +541,92 @@ function twStepFoundryGenerate() {
   }
 }
 
+// 9c. foundry.budget (비과금) — E-1: 단계 예산이 자기 상한에서 멈추고 total 여유는 남는지.
+// TW_SMOKE_SKIP_LLM 과 무관하게 항상 실행. LLM 호출 없음.
+function twStepFoundryBudget() {
+  try {
+    var cfg = testWoo.cfg.getConfig();
+    var triageLimit = Number(cfg.toolkit.triageCallBudget) || 12;
+    var genLimit = Number(cfg.toolkit.generateCallBudget) || 24;
+    var totalLimit = Number(cfg.toolkit.totalCallBudget) || 132;
+    if (triageLimit + genLimit >= totalLimit) {
+      twFail("9c.foundry.budget",
+        "totalCallBudget(" + totalLimit + ") <= triage+generate(" +
+        (triageLimit + genLimit) + ") — E-1 산식 오류");
+      return false;
+    }
+
+    // list_schemas 는 required:["namespace"]. {} 로 치면 "namespace not allowed: "
+    // 이 나며 예산 카운트가 안 올라간다(5c 와 동일하게 허용 ns 를 넘긴다).
+    var nsList = [];
+    try {
+      nsList = testWoo.toolkit.env().allowedNamespaces || [];
+    } catch (eNs) {
+      twFail("9c.foundry.budget", "toolkit.env() 실패: " + String(eNs.message || eNs));
+      return false;
+    }
+    if (!nsList.length) {
+      twFail("9c.foundry.budget", "허용 namespace 0건 — env foundry.namespaces 확인");
+      return false;
+    }
+    var burnArgs = { namespace: String(nsList[0]) };
+
+    testWoo.toolkit.resetRequest();
+    testWoo.toolkit.setPhaseBudget("triage");
+    var i, res;
+    for (i = 0; i < triageLimit; i++) {
+      res = testWoo.toolkit.invoke("list_schemas", burnArgs);
+      if (res && res.error) {
+        twFail("9c.foundry.budget",
+          "triage invoke failed early i=" + i + " / " + String(res.error));
+        return false;
+      }
+    }
+    res = testWoo.toolkit.invoke("list_schemas", burnArgs);
+    if (!res || !res.error || String(res.error).indexOf("phase triage") < 0) {
+      twFail("9c.foundry.budget",
+        "expected phase triage block, got " +
+        String(res && res.error ? res.error : "no error"));
+      return false;
+    }
+
+    testWoo.toolkit.setPhaseBudget("generate");
+    for (i = 0; i < genLimit; i++) {
+      res = testWoo.toolkit.invoke("list_schemas", burnArgs);
+      if (res && res.error) {
+        twFail("9c.foundry.budget",
+          "generate invoke failed early i=" + i + " / " + String(res.error));
+        return false;
+      }
+    }
+    res = testWoo.toolkit.invoke("list_schemas", burnArgs);
+    if (!res || !res.error) {
+      twFail("9c.foundry.budget", "expected generate phase block, got no error");
+      return false;
+    }
+    var err = String(res.error);
+    if (err.indexOf("phase generate") < 0) {
+      twFail("9c.foundry.budget",
+        "failure message must include phase name, got: " + err);
+      return false;
+    }
+    if (err.indexOf("(total ") >= 0) {
+      twFail("9c.foundry.budget",
+        "totalCallBudget exhausted before phase generate — E-1 산식 오류: " + err);
+      return false;
+    }
+
+    var used = triageLimit + genLimit;
+    twPass("9c.foundry.budget",
+      "phase generate blocked at " + genLimit +
+      "; total used=" + used + "/" + totalLimit + " (margin ok)");
+    return true;
+  } catch (e) {
+    twFail("9c.foundry.budget", String(e.message || e));
+    return false;
+  }
+}
+
 // 10. 요약
 function twSummary() {
   var failed = 0;
@@ -579,5 +666,6 @@ if (twStepGlobals()) {
   twStepLlmPass0();
   twStepLlmEmbedding();
   twStepFoundryGenerate();
+  twStepFoundryBudget();
 }
 twSummary();

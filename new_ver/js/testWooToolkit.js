@@ -16,6 +16,7 @@
  *
  * 단계 예산(F-4): setPhaseBudget("triage"|"generate") 로 단계별 카운터를 분리한다.
  * 요청 전체 상한(totalCallBudget)은 유지하되, Triage 가 생성 예산을 잠식하지 않게 한다.
+ * E-1: total/probe* 기본값은 env.toolkit 과 동일(132/18/14/18). 산식은 testWooEnv.js 주석.
  *
  * [Main Functions]
  * ===========
@@ -56,12 +57,14 @@ testWoo.toolkit = (function () {
   var _evidenceSeq = 0;
   var _schemaListCache = {};
 
-  var TOTAL_BUDGET = 40;
+  // env.toolkit 과 동일하게 유지 (cfg 로드 실패 시 fallback). 산식은 testWooEnv.js 주석 참고.
+  // total = maxNewFragments(3)*(triage 12 + generate 24) + margin 24 = 132
+  var TOTAL_BUDGET = 132;
   var TRIAGE_PHASE_BUDGET = 12;
   var GENERATE_PHASE_BUDGET = 24;
-  var PROBE_BUDGET = 8;
-  var PROBE_VALUES_BUDGET = 6;
-  var SEARCH_COLUMNS_BUDGET = 8;
+  var PROBE_BUDGET = 18;
+  var PROBE_VALUES_BUDGET = 14;
+  var SEARCH_COLUMNS_BUDGET = 18;
 
   // getSchema는 스크립트 종료까지 메모리 유지 → namespace당 인스턴스화 상한
   var SEARCH_SCHEMA_LOAD_CAP = 30;

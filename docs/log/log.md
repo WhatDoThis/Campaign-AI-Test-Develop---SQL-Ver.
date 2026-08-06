@@ -1,6 +1,8 @@
 # Log
 
 ## Log Index
+95. 2026-08-06 스모크 9c list_schemas namespace 누락 수정 (args={} → allowed ns)
+94. 2026-08-06 리포트09 부분 핫픽스 — E-1 예산132 · C-1 sanitize순서 · E-2 tokenBudget · A-1 자가검증 · 스모크9c
 93. 2026-08-06 Pass0 Gemini 간헐 반복 루프 완화 — pass0MaxTokens 2048 · frequencyPenalty 0.3 · length 시 1회 재시도
 92. 2026-08-06 F-0~F-5·#91 검증 완료 — 스모크 14/14 · dryRun feasible→woo__customer__region__seoul gate.pass
 91. 2026-08-06 Triage no_column 오탐 차단 — describe_schema 필수(재지시·강등) + 스모크 9 forceGenerate
@@ -96,6 +98,48 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+95. 2026-08-06 스모크 9c list_schemas namespace 누락 수정 (args={} → allowed ns)
+Purpose: ACC 스모크 14/15 — 9 PASS(attempts=1) · 9c 만 `namespace not allowed:  (allowed: woo)` 로 FAIL. Foundry 회귀가 아니라 스모크 계측 버그 Changes:
+
+- 원인: 9c 가 예산 소진용으로 `list_schemas({})` 호출. 툴은 `required:["namespace"]` 이라 빈 ns 거부(카운트도 안 올라감). 5c 는 `{namespace:"woo"}` 로 이미 PASS
+- 조치: `toolkit.env().allowedNamespaces[0]` 을 burnArgs 로 전달 (5c 와 동일)
+- 재배포: `testWooSmoke.js` 만. 기대: 9c PASS · summary 15/15
+
+Changed files: new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+94. 2026-08-06 리포트09 부분 핫픽스 — E-1 예산132 · C-1 sanitize순서 · E-2 tokenBudget · A-1 자가검증 · 스모크9c
+Purpose: F-0~F-5 는 #92(단일 슬롯·단일 attempt)로 실증 완료. 리포트09 중 연쇄 기여가 큰 항목만 적용(9b/forceRetry 보류) Changes:
+
+**전제**
+- #92: dryRun `attempts=1` · gate.pass · `woo__customer__region__seoul` — happy path 실증됨
+- 이번 범위 제외: 9b / `forceRetry` (사유: attempts≥2 실측 전 과금 대비 이득 낮음). dryRunSlot 에 미사용 옵션 자리도 만들지 않음
+
+**C-1 — orphan tool_calls 로 인한 400 잠복 리스크 및 `_sanitizeToolHistory` no-op**
+- 원인: attempt>0 에서 sanitize→compress 순서라 끝 push 더미가 압축에 버려지고 sanitize 가 사실상 no-op. 끝 push 자체는 프로토콜 위반(잠복 400)
+- 조치: compress→sanitize 로 순서 교체. 더미 tool 은 assistant 직후(기존 tool 열 끝) splice. `runToolLoop` 반환 직전 sanitize 1회
+- 검증: 기존 스모크 9 PASS 유지(400 시 tool 메시지 순서 문제). attempts≥2 실측은 이후 로그로 판단
+
+**E-1 — 다중 슬롯 totalCallBudget 기아**
+- 원인: total=40 ≈ 슬롯1분(12+24). 슬롯2부터 total/probe 기아 → “랜덤” Foundry 실패로 보임
+- 조치: totalCallBudget **132** (= maxNewFragments(3)*(12+24)+margin 24). probeSql 18 / probeValues 14 / searchColumns 18. toolkit 하드코딩 fallback 동일 정렬. 산식 주석 고정
+- 검증: 스모크 **9c.foundry.budget** (비과금) — generate 가 phase 상한에서 멈추고 total 여유·phase 이름 포함 확인
+
+**E-2 — tokenBudget 미검사 (축소)**
+- 원인: tokenBudget/dailyBudget 선언만 있고 검사 없음(주석 “부분 미적용”도 부정확)
+- 조치: `processQueueItem` 슬롯 생성 후 누적 tokensUsed > tokenBudget 이면 `needs_human_design` / `"요청 토큰 예산 초과"`. dryRunSlot 제외. dailyBudget 은 **미구현** 주석만
+- 검증: (배포 후) tokenBudget 임시 1000 → needs_human_design 재현 후 원복
+
+**A-1 — probe_sql 자가검증 미고지**
+- 원인: 프롬프트에 total/distinctKey/nullKey 자가검증 절차 없음
+- 조치: `_foundrySystemPrompt` · `_gateFeedback` 에 1줄 추가
+- 검증: 생성 저널에서 probe_sql 후 최종 JSON 패턴 확인
+
+**F-6(9c)**
+- 원인: 스모크가 attempts=1·슬롯1만 봐 예산 회귀를 못 잡음
+- 조치: `9c.foundry.budget` 추가, `TW_SMOKE_SKIP_LLM` 무관 항상 실행. 9b/forceRetry 보류
+
+Changed files: new_ver/js/testWooEnv.js, new_ver/js/testWooToolkit.js, new_ver/js/testWooFoundry.js, new_ver/tools/testWooSmoke.js, docs/log/log.md
 
 93. 2026-08-06 Pass0 Gemini 간헐 반복 루프 완화 — pass0MaxTokens 2048 · frequencyPenalty 0.3 · length 시 1회 재시도
 Purpose: Studio 에서 Pass0 가 다시 `completion=8192 reasoning=0 contentChars=16166 [반복 루프 의심]` 으로 실패했다. #84(json_object 제거) 회귀가 아니라 Gemini 간헐 루프다 — 같은 날 스모크 Pass0 는 completion≈117 로 통과했다 Changes:

@@ -5,6 +5,8 @@
 | 파일 | 용도 |
 |---|---|
 | `00_ReportIndex.md` | 리포트 폴더 인덱스 (본 문서) |
+| `10_승인시스템전면교체.md` | Fragment 승인 모델을 게이트→라벨로 전환하는 설계 논의 (frequency 기반 검수·near-dedup은 자동 병합) |
+| `09_SQL생성추가_디버깅3.md` | F-0~F-5 반영 검증 후 잔여 C-1·E-1·E-2·A-1 — sanitize/compress 순서·phase 예산 누수·tokenBudget·자격 검증·스모크 9c |
 | `08_SQL생성추가_디버깅2.md` | Foundry 생성 단계 근원 진단 F-0~F-5 — 출력 계약 부재·루프 종료 불일치·자가진단 알고리즘·dryRunSlot 계측기 |
 | `07_SQL생성추가_디버깅1.md` | Pass0 `max_tokens` 소진 근원 해결 R-1~R-4 + LLM 계열 검수 L-1~L-3 — `json_object` 반복 루프·length 진단 강화·스모크 LLM 스텝·단계별 토큰 상한 |
 | `06_SQL생성추가_추가5.md` | M-1~M-3 개정판 — 추가4 에 **방언 지원 정책**(PG 만 실동 검증) + 수정 D(미검증 DBMS 런타임 가드) · 수정 E(FDA 확장 주석) 추가. 번호 중복은 아래 참고 |
