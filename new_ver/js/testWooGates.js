@@ -294,16 +294,31 @@ testWoo.gates = (function () {
         results.push(_okResult("G-B", true, "unique grain"));
       }
 
-      var pop = probe.total;
+      // 분모 부재(populationCountSql 미설정·조회 실패)면 pop=0 → 95% 상한 검사를 건너뛴다.
+      // probe.total 을 분모로 쓰면 total>=total*0.95 가 항상 참이 되어 G-C 가 상시 실패한다.
+      var pop = 0;
       var cfg = testWoo.cfg ? testWoo.cfg.getConfig() : null;
       if (cfg && cfg.foundry.populationCountSql) {
-        try { pop = Number(sqlGetInt(cfg.foundry.populationCountSql)); } catch (eP) {}
+        try {
+          pop = Number(sqlGetInt(cfg.foundry.populationCountSql));
+        } catch (eP) {
+          pop = 0;
+          logWarning("[testWoo.gates] populationCountSql 실행 실패 — G-C 상한 검사 생략: " +
+            String(eP.message || eP));
+        }
       }
+      if (isNaN(pop)) pop = 0;
+
       var gC = true;
-      if (probe.total === 0) { gC = false; pass = false; }
-      if (pop > 0 && probe.total >= pop * 0.95) { gC = false; pass = false; }
-      results.push(_okResult("G-C", gC,
-        gC ? "scale ok" : "total=0 or >=95% population (" + probe.total + "/" + pop + ")"));
+      var gCMsg = pop > 0 ? "scale ok (population=" + pop + ")" : "scale ok (population 미설정)";
+      if (probe.total === 0) {
+        gC = false; pass = false;
+        gCMsg = "결과 0건";
+      } else if (pop > 0 && probe.total >= pop * 0.95) {
+        gC = false; pass = false;
+        gCMsg = "결과가 모집단의 95% 이상 (" + probe.total + "/" + pop + ") — 필터 효과 없음";
+      }
+      results.push(_okResult("G-C", gC, gCMsg));
 
       var domainParse = _parseDomain(frag.param_domain);
       if (!domainParse.ok) {

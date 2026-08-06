@@ -11,6 +11,7 @@
  * - generatePlan (Pass0→StageA→Pass1)
  * - postChat / postEmbedding — 오류에 httpStatus/isRateLimited/isOutOfCredit 부착
  * - explainDedupDiff (dedup near 판정 차이 설명 · 실패해도 판정에 영향 없음)
+ * - reasoningOff — reasoning 비활성 body 조각 (Triage/Foundry 공용 · 형식 단일화)
  *
  * [Dependencies]
  * =========
@@ -28,6 +29,9 @@
  *       choices[0].message.content, finish_reason 정규화(length/error)
  * Ref: anthropic/claude-opus-5 — context 1M, max_completion_tokens 128k,
  *       reasoning default_enabled=true
+ * Ref: thinking 모델(Gemini 2.5 계열)은 사고 토큰이 max_tokens 에 합산되고 예산 미지정 시
+ *       dynamic(최대 8192)이 적용된다 → 끄려면 reasoning:{max_tokens:0} 이 필요하다
+ *       https://openrouter.ai/blog/tutorials/gemini-25-flash-api-pricing-quickstart-provider-comparison/
  */
 var testWoo = testWoo || {};
 testWoo.llm = (function () {
@@ -120,9 +124,12 @@ testWoo.llm = (function () {
       "Example meaning: age AND (region Seoul OR region Gyeonggi) EXCEPT opt_out",
       "→ include:[{any:[age]},{any:[regionSeoul,regionGyeonggi]}], exclude:[opt_out]",
       "Put uncovered phrases into unmatched[]. Do not invent fragments.",
+      "grainKey MUST be copied verbatim from the key_column of the chosen candidates " +
+        "(a physical DB column name). Do not translate or guess it — the compiler rejects " +
+        "any mismatch with the fragment key_column.",
       "CANDIDATES_BY_SLOT:",
       JSON.stringify(slim),
-      'OUTPUT JSON ONLY: {"grainKey":"customer_id","include":[{"any":[{"fragment":"<name>","label":"<ko>","params":{}}]}],"exclude":[{"fragment":"<name>","label":"<ko>","params":{}}],"unmatched":[]}'
+      'OUTPUT JSON ONLY: {"grainKey":"<key_column of chosen fragments>","include":[{"any":[{"fragment":"<name>","label":"<ko>","params":{}}]}],"exclude":[{"fragment":"<name>","label":"<ko>","params":{}}],"unmatched":[]}'
     ].join("\n");
     var user = "NL:\n" + String(nlRequest || "");
     var raw = _chat(cfg, system, user);
@@ -167,7 +174,27 @@ testWoo.llm = (function () {
     return plan;
   }
 
-  var LLM_MAX_TOKENS = 8192; // Opus 5는 reasoning 토큰이 max_tokens에 합산됨
+  var LLM_MAX_TOKENS = 8192; // reasoning 토큰이 max_tokens 에 합산되는 모델 기준 기본값
+
+  // reasoning 을 끄는 유일한 형식. thinking 모델은 사고 토큰을 max_tokens 에 합산하므로
+  // 끄지 못하면 본문 몫이 0 이 되어 finish_reason="length" + 빈 응답이 온다.
+  // enabled:false 만으로는 Gemini 계열에서 thinkingBudget 이 0 으로 내려가지 않아
+  // 구글 기본값(dynamic, 최대 8192)이 그대로 적용된다 → max_tokens:0 을 함께 보낸다.
+  // Ref: https://openrouter.ai/blog/tutorials/gemini-25-flash-api-pricing-quickstart-provider-comparison/
+  function reasoningOff() {
+    return { enabled: false, max_tokens: 0 };
+  }
+
+  // Pass0/Pass1 출력 상한. testWooEnv.js llm.pass0MaxTokens 를 따른다
+  // (Triage·Foundry 와 동일하게 env 직접 참조 — cfg.llm 은 이 값을 싣지 않는다).
+  function _pass0MaxTokens() {
+    var v = null;
+    try {
+      if (testWoo.env && testWoo.env.getEnv) v = testWoo.env.getEnv().llm.pass0MaxTokens;
+    } catch (eEnv) { v = null; }
+    var n = Number(v);
+    return (v != null && !isNaN(n) && n > 0) ? n : LLM_MAX_TOKENS;
+  }
 
   var _PROVIDERS = {
     anthropic: {
@@ -200,7 +227,7 @@ testWoo.llm = (function () {
           ]
         };
         if (opts.reasoning != null) body.reasoning = opts.reasoning;
-        else body.reasoning = { enabled: false };
+        else body.reasoning = reasoningOff();
         if (opts.responseFormat != null) body.response_format = opts.responseFormat;
         else if (!opts.tools) body.response_format = { type: "json_object" };
         if (opts.tools) {
@@ -221,8 +248,8 @@ testWoo.llm = (function () {
 
   function _chat(cfg, system, userContent) {
     var adapter = _provider(cfg);
-    var body = adapter.body(cfg.llm.model, system, userContent, LLM_MAX_TOKENS, {
-      reasoning: { enabled: false },
+    var body = adapter.body(cfg.llm.model, system, userContent, _pass0MaxTokens(), {
+      reasoning: reasoningOff(),
       responseFormat: { type: "json_object" }
     });
     return _postJson(cfg.llm, body, adapter.headers(cfg.llm.apiKey));
@@ -272,7 +299,7 @@ testWoo.llm = (function () {
       "\nDo not include customer PII.";
     var adapter = _provider(cfg);
     var body = adapter.body(cfg.llm.model, system, user, 1024, {
-      reasoning: { enabled: false }
+      reasoning: reasoningOff()
     });
     var raw = _postJson(cfg.llm, body, adapter.headers(cfg.llm.apiKey));
     try {
@@ -417,6 +444,27 @@ testWoo.llm = (function () {
     }
   }
 
+  // finish_reason="length" 원인 분기 안내. reasoning 토큰이 대부분이면 상한을 올리는 게
+  // 아니라 reasoning 을 꺼야 한다(thinking 모델은 사고 토큰이 max_tokens 에 합산됨).
+  function _lengthDiag(usage) {
+    var reason = 0;
+    var completion = 0;
+    try {
+      if (usage) {
+        completion = Number(usage.completion_tokens) || 0;
+        if (usage.completion_tokens_details)
+          reason = Number(usage.completion_tokens_details.reasoning_tokens) || 0;
+      }
+    } catch (eU) {}
+    var tail = "completion=" + completion + " reasoning=" + reason;
+    if (reason > 0 && reason >= completion / 2) {
+      return "사고(reasoning) 토큰이 출력 상한을 소진했습니다 — " + tail +
+        ". max_tokens 를 올리는 대신 reasoning 을 끄십시오" +
+        "(thinking 모델은 reasoning:{enabled:false} 만으로는 꺼지지 않아 max_tokens:0 이 필요).";
+    }
+    return "출력 상한을 올리거나 후보 수를 줄이세요 — " + tail + ".";
+  }
+
   // OpenAI 호환 봉투(choices) 우선 → Anthropic envelope 폴백
   function _parseJson(rawResponse) {
     var text = String(rawResponse || "");
@@ -436,9 +484,11 @@ testWoo.llm = (function () {
       if (wrap.choices && wrap.choices.length) {
         var ch = wrap.choices[0];
         if (ch.finish_reason === "length") {
+          // 사고 토큰이 출력 상한을 다 먹었는지를 메시지에서 바로 구분할 수 있게 한다.
+          // reasoning 이 대부분이면 후보 수를 줄여도 해결되지 않는다.
           throw new Error(
             "[testWoo.llm] 응답이 max_tokens에서 잘렸습니다. " +
-            "LLM_MAX_TOKENS를 올리거나 후보 수를 줄이세요."
+            _lengthDiag(wrap.usage)
           );
         }
         if (ch.finish_reason === "error") {
@@ -601,6 +651,7 @@ testWoo.llm = (function () {
     postChat: postChat,
     postEmbedding: postEmbedding,
     explainDedupDiff: explainDedupDiff,
+    reasoningOff: reasoningOff,
     _postJson: _postJson,
     _readResponseBody: _readResponseBody
   };

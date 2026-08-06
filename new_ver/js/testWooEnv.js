@@ -137,8 +137,12 @@ testWoo.env = (function () {
     },
 
     /* ------------------------------------------------------------------
-     * populationCountSql — G-C 게이트 전체 모집단 COUNT SQL (비우면 G-C 완화)
-     * 예: SELECT COUNT(DISTINCT customer_id) FROM testWooSampleCustomer
+     * populationCountSql — 전체 모집단 COUNT SQL. 두 곳에서 분모로 쓰인다.
+     *   1) G-C 게이트: fragment 결과가 모집단의 95% 이상이면 실패(필터 효과 없음)
+     *   2) dedup near 판정: symmetricDiff / 모집단 비율
+     * 비우면 두 검사 모두 생략된다(G-C 는 결과 0건만 검사, dedup 은 near+사람 위임).
+     * 예: SELECT COUNT(*) FROM testWooSampleCustomer
+     * 물리 컬럼명은 ACC 버전·DBMS 마다 다르므로 COUNT(DISTINCT col) 대신 COUNT(*) 권장.
      * ------------------------------------------------------------------ */
     populationCountSql: ""
   };

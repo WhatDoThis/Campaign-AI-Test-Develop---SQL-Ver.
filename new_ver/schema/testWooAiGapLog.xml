@@ -1,11 +1,45 @@
 <!--
-woo:testWooAiGapLog (데이터 갭 축적 · Triage 불가 판정)
-========================================================
-동일 normalizedConcept upsert → requestCount 증가.
+woo:testWooAiGapLog (데이터 갭 축적 · 스키마 정의서)
+====================================================
+Triage 가 "DB 로 표현 불가" 로 판정한 개념을 누적한다. 같은 개념이 반복 요청될수록
+request_count 가 올라가므로, 어떤 데이터를 먼저 확보해야 하는지의 우선순위 근거가 된다.
+개별 요청 이력이 아니라 개념 단위 집계 테이블이다.
+
+[Main Functions]
+===========
+- normalized_concept 기준 upsert. 신규는 insert, 기존은 request_count 증가
+- 운영자가 갭 해소 계획을 상태로 관리
+
+[Enumerations]
+=========
+- gapLogStatus (default open) : 갭 처리 상태
+  · open     미조치
+  · planned  데이터 확보 계획 수립
+  · resolved 해소됨 (fragment 등록 또는 데이터 적재 완료)
+  · wontfix  대응하지 않기로 결정
+
+[Keys / Indexes]
+=========
+- idx_concept : normalized_concept. upsert 시 기존 행 탐색 경로 (unique 아님)
+
+[Attributes]
+=========
+- slot_text          (memo)        불가 판정된 슬롯 원문. 표현이 달라도 개념이 같으면 같은 행에 누적
+- verdict            (string 24)   Triage 판정값. no_column / no_value / out_of_domain / not_sql / ambiguous
+                                   ※ 열거형이 아닌 자유 문자열이므로 값 검증은 코드에서 한다
+- normalized_concept (string 128)  개념 정규화 키. 이 값이 집계 단위
+- request_count      (long, 1)     동일 개념 요청 누적 횟수. 우선순위 정렬 기준
+- first_seen_at      (datetime)    최초 관측 시각
+- last_seen_at       (datetime)    최근 관측 시각
+- sample_evidence    (memo)        판정 근거 샘플 JSON (조사한 스키마·컬럼 등)
+- status             (enum 16)     위 gapLogStatus
+- note               (memo)        운영자 메모
 
 [Dependencies]
 =========
-- testWooRepository.js upsertGapLog
+- Producers: testWooRepository.js upsertGapLog (testWooFoundry.js 가 호출)
+- Consumers: jssp/testWooAiGapAdmin.jssp (navtree 의 Test Woo AI Gap Admin 뷰)
+- 전용 navtree 목록 노드·입력 폼 없음. 조회는 Gap Admin 화면으로만 한다
 -->
 <srcSchema _cs="Test Woo AI Gap Log (woo)" mappingType="sql" name="testWooAiGapLog" namespace="woo"
            label="Test Woo AI Gap Log" labelSingular="Test Woo AI Gap Log" xtkschema="xtk:srcSchema">

@@ -11,6 +11,8 @@
  * - 2. probe.preflight() → 'sql' named right + dbms/dialectVerified 기록
  * - 3. sqlSelect 반환 XML 구조 logInfo (파싱 가정 검증용)
  * - 4. describe_schema 속성 배열 비어있지 않은지 (N-2 회귀 검출)
+ * - 4b. describe_schema 가 물리 컬럼명(sqlColumn)을 노출하는지 (논리명 유출 회귀)
+ * - 4c. probe_values 가 논리명을 물리명으로 해석해 실제 SQL 을 실행하는지
  * - 5. search_columns 1건 이상 매칭
  * - 5b. 방언별 limitSelect 생성 SQL 문자열 검증 (M-1 회귀, 실행 없음)
  * - 6b. 무매치 id 조회 → 예외 아닌 null (getIfExists 규약)
@@ -53,6 +55,12 @@ function twPass(step, note) {
 function twFail(step, note) {
   TW_SMOKE_RESULTS.push({ step: step, ok: false, note: String(note || "") });
   logWarning("[smoke] FAIL " + step + " — " + String(note || ""));
+}
+
+// 전제 조건 미충족(예: 샘플 스키마 미배포)은 실패가 아니지만 PASS 로 세지도 않는다.
+function twSkip(step, note) {
+  TW_SMOKE_RESULTS.push({ step: step, ok: true, skipped: true, note: String(note || "") });
+  logWarning("[smoke] SKIP " + step + " — " + String(note || ""));
 }
 
 // 1. 라이브러리 전역 정의 확인
@@ -125,6 +133,81 @@ function twStepDescribeSchema() {
     return false;
   }
   twPass("4.describe_schema", "columns=" + res.columns.length);
+  return true;
+}
+
+// 4b. describe_schema 가 물리 컬럼명(@sqlname)을 노출하는지 — 실행 없이 스키마만 읽는다.
+// 논리명을 원시 SQL 에 넣으면 'column does not exist' 로 실패하므로 도구는 반드시
+// sqlColumn 을 함께 줘야 한다. 표준 스키마는 Adobe 가 sqlname 을 명시하므로
+// (email → sEmail) name 과 다른 컬럼이 반드시 1개 이상 존재한다.
+function twStepSqlColumnExposed() {
+  var res = testWoo.toolkit.invoke("describe_schema", { id: "nms:recipient" });
+  if (!res || res.error || !res.columns || !res.columns.length) {
+    twFail("4b.sqlColumn", (res && res.error) ? String(res.error) : "columns empty");
+    return false;
+  }
+  var withSql = 0;
+  var differing = "";
+  for (var i = 0; i < res.columns.length; i++) {
+    var c = res.columns[i];
+    if (c.sqlColumn == null) {
+      twFail("4b.sqlColumn", "sqlColumn 필드 자체가 없음 — describe_schema 회귀");
+      return false;
+    }
+    if (String(c.sqlColumn) === "") continue;
+    withSql++;
+    if (!differing && String(c.sqlColumn) !== String(c.name))
+      differing = String(c.name) + "→" + String(c.sqlColumn);
+  }
+  if (!withSql) {
+    twFail("4b.sqlColumn", "sqlColumn 이 전부 빈 값 — @sqlname 파싱 실패");
+    return false;
+  }
+  if (!differing) {
+    twFail("4b.sqlColumn",
+      "물리명이 논리명과 전부 동일 — @sqlname 대신 @name 으로 폴백한 의심");
+    return false;
+  }
+  twPass("4b.sqlColumn", withSql + "/" + res.columns.length +
+    " columns have sqlColumn · 예: " + differing);
+  return true;
+}
+
+// 4c. probe_values 가 논리명을 물리명으로 해석해 실제 SQL 을 실행하는지 (실행 검증).
+// 표준 스키마는 COUNT(DISTINCT) 비용이 커서 쓰지 않고, 100행 샘플 테이블로만 검증한다.
+// 샘플 스키마 미배포 환경에서는 SKIP — 값은 로그로 출력하지 않고 건수만 남긴다.
+function twStepProbeValuesResolve() {
+  var SID = "woo:testWooSampleCustomer";
+  var LOGICAL = "region";
+  var d = testWoo.toolkit.invoke("describe_schema", { id: SID });
+  if (!d || d.error || !d.columns || !d.columns.length) {
+    twSkip("4c.probe_values", SID + " 미배포 — 샘플 스키마 배포 후 재실행 권장");
+    return true;
+  }
+  var expect = "";
+  for (var i = 0; i < d.columns.length; i++) {
+    if (String(d.columns[i].name) === LOGICAL) expect = String(d.columns[i].sqlColumn);
+  }
+  if (!expect) {
+    twSkip("4c.probe_values", SID + " 에 SQL 매핑된 '" + LOGICAL + "' 속성이 없음");
+    return true;
+  }
+
+  var res = testWoo.toolkit.invoke("probe_values",
+    { schemaId: SID, columnName: LOGICAL, limit: 10 });
+  if (!res || res.ok !== true) {
+    twFail("4c.probe_values", "논리명 '" + LOGICAL +
+      "' 조회 실패 — 물리명 해석 결함 의심: " + (res ? String(res.error) : "no result"));
+    return false;
+  }
+  if (String(res.sqlColumn) !== expect) {
+    twFail("4c.probe_values", "sqlColumn 불일치: describe=" + expect +
+      " probe=" + String(res.sqlColumn));
+    return false;
+  }
+  twPass("4c.probe_values", LOGICAL + " → " + expect +
+    " 해석 · distinct=" + String(res.distinctCount) +
+    " sampled=" + String(res.values ? res.values.length : 0));
   return true;
 }
 
@@ -295,18 +378,24 @@ function twStepQueueRoundTrip() {
 // 7. 요약
 function twSummary() {
   var failed = 0;
+  var skipped = 0;
   var lines = [];
   for (var i = 0; i < TW_SMOKE_RESULTS.length; i++) {
     var r = TW_SMOKE_RESULTS[i];
     if (!r.ok) failed++;
-    lines.push((r.ok ? "PASS " : "FAIL ") + r.step);
+    else if (r.skipped) skipped++;
+    lines.push((r.ok ? (r.skipped ? "SKIP " : "PASS ") : "FAIL ") + r.step);
   }
-  logInfo("[smoke] ===== summary (" + (TW_SMOKE_RESULTS.length - failed) + "/" +
-    TW_SMOKE_RESULTS.length + " passed) =====");
+  var passed = TW_SMOKE_RESULTS.length - failed - skipped;
+  logInfo("[smoke] ===== summary (" + passed + "/" + TW_SMOKE_RESULTS.length +
+    " passed" + (skipped > 0 ? ", " + skipped + " skipped" : "") + ") =====");
   logInfo("[smoke] dbms=" + TW_SMOKE_DBMS);
   logInfo("[smoke] " + lines.join(" | "));
   if (failed > 0)
     logError("[smoke] " + failed + " step(s) FAILED — 배포를 완료로 간주하지 말 것");
+  else if (skipped > 0)
+    logInfo("[smoke] executed steps all passed — " + skipped +
+      " step(s) skipped (전제 조건 미충족, 위 SKIP 사유 확인)");
   else
     logInfo("[smoke] all steps passed");
 }
@@ -315,6 +404,8 @@ if (twStepGlobals()) {
   twStepPreflight();
   twStepSqlSelectShape();
   twStepDescribeSchema();
+  twStepSqlColumnExposed();
+  twStepProbeValuesResolve();
   twStepSearchColumns();
   twStepDialectSql();
   twStepQueueMiss();

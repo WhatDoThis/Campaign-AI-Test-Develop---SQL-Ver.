@@ -209,6 +209,15 @@ testWoo.foundry = (function () {
     return { ok: true, prevAttempt: prevAttempt };
   }
 
+  // 사고 예산은 출력 상한의 1/4 (최소 1024 — Anthropic 계열 하한, 최대 8192).
+  // 나머지 3/4 는 fragment JSON 과 tool_calls 출력용으로 남긴다.
+  function _reasoningBudget(maxTok) {
+    var n = Math.floor((Number(maxTok) || 16384) / 4);
+    if (n < 1024) n = 1024;
+    if (n > 8192) n = 8192;
+    return n;
+  }
+
   // 예산 초기화는 요청 단위(processQueueItem)에서만 한다. 여기서 초기화하면
   // 슬롯·단계마다 예산이 리셋되어 툴 호출 상한이 무력화된다.
   function runToolLoop(cfg, messages, specs, maxTurns) {
@@ -225,7 +234,10 @@ testWoo.foundry = (function () {
         tool_choice: "auto",
         parallel_tool_calls: false,
         max_tokens: maxTok,
-        reasoning: { enabled: true, effort: "high" },
+        // Foundry 는 사고가 필요하지만 effort:"high" 는 상한의 대부분을 사고에 배정해
+        // 본문 몫을 남기지 않을 수 있다(사고 토큰은 max_tokens 에 합산됨).
+        // 절대 예산으로 고정해 남은 몫을 보장한다. 모델 교체와 무관하게 동작한다.
+        reasoning: { max_tokens: _reasoningBudget(maxTok) },
         temperature: 0
       };
       var wrap = testWoo.llm.postChat(cfg, body);
@@ -267,6 +279,10 @@ testWoo.foundry = (function () {
       "You generate Adobe Campaign audience SQL fragments for LG U+ Test Woo.",
       "Output ONE fragment per request as JSON only on the final turn.",
       "Use tools to inspect schemas and probe_sql before finalizing.",
+      "In SQL use PHYSICAL names only: the sqltable for tables and the 'sqlColumn' " +
+        "reported by describe_schema for columns. The logical 'name' does not exist " +
+        "in the database (e.g. customer_id is stored as sCustomer_id).",
+      "keyColumn must also be a physical sqlColumn.",
       "Never generate final combined SQL — only single-fragment SELECT.",
       "name pattern: {domain}__{entity}__{predicate}__{qualifier}",
       "scopeKey: sub-entity grain or null string for recipient-level.",

@@ -41,6 +41,9 @@ testWoo.feasibility = (function () {
       "Use tools (list_schemas, describe_schema, search_columns, probe_values) for evidence.",
       "Never invent SQL. Never substitute a similar column silently — put substitutes in alternatives only.",
       "If value existence is uncertain, call probe_values before claiming no_value.",
+      "describe_schema reports a logical 'name' and a physical 'sqlColumn'. Report the " +
+        "physical sqlColumn in evidence and alternatives so downstream SQL is valid; " +
+        "an empty sqlColumn means the field is not SQL-queryable.",
       "OUTPUT JSON ONLY on final turn:",
       '{"slotId":"...","verdict":"feasible|no_column|no_value|out_of_domain|not_sql|ambiguous",',
       '"confidence":"high|medium|low","narrative":"Korean explanation",',
@@ -64,6 +67,9 @@ testWoo.feasibility = (function () {
       testWoo.env.getEnv().llm.triageMaxTokens : 4096;
 
     for (var t = 0; t < 4; t++) {
+      // response_format 금지: tools 와 동시 전송하면 Gemini 계열이 거부한다
+      // ("Function calling with a response mime type: 'application/json' is unsupported").
+      // JSON 강제는 시스템 프롬프트 + 아래 content 의 {…} 추출로 대체한다.
       var body = {
         model: cfg.llm.model,
         messages: messages,
@@ -71,9 +77,8 @@ testWoo.feasibility = (function () {
         tool_choice: "auto",
         parallel_tool_calls: false,
         max_tokens: maxTok,
-        reasoning: { enabled: false },
-        temperature: 0,
-        response_format: { type: "json_object" }
+        reasoning: testWoo.llm.reasoningOff(),
+        temperature: 0
       };
       var wrap = testWoo.llm.postChat(cfg, body);
       if (!wrap || !wrap.choices || !wrap.choices.length)

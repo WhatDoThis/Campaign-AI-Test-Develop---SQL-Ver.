@@ -4,11 +4,21 @@
  * OpenRouter tools용 spec/invoke. probe_values/search_columns + evidenceLog.
  * 스키마 파싱은 정규식이 아니라 E4X (속성 순서 자유 · label 누락 대응).
  *
+ * 논리명/물리명 규칙: 도구는 논리 속성명(@name)과 물리 컬럼명(@sqlname)을 항상 함께
+ * 노출하고(sqlColumn), 원시 SQL 에는 물리명만 쓴다. ACC 는 sqlname 생략 시 타입
+ * 접두사를 붙여 생성하므로(customer_id → sCustomer_id) 논리명은 SQL 에서 실패한다.
+ *
  * [Main Functions]
  * ===========
  * - register / specs / invoke / env
  * - resetRequest(요청 단위 1회) / markPhase(단계 구분자) / resetBudget(deprecated)
  * - getEvidenceLog / getEvidenceLogSince
+ *
+ * [Tools]
+ * =========
+ * - list_schemas / describe_schema : 스키마 목록·속성(name + sqlColumn + label + type)
+ * - probe_sql / probe_values       : SELECT-only 실행 · 컬럼 DISTINCT 값 조사
+ * - search_columns                 : 키워드로 name/label/sqlColumn 검색
  *
  * [Dependencies]
  * =========
@@ -18,6 +28,8 @@
  *   https://experienceleague.adobe.com/developer/campaign-api/api/f-sqlSelect.html
  * Ref getSchema: 스크립트 종료까지 메모리에 유지 → namespace당 로드 상한 필요
  *   https://experienceleague.adobe.com/developer/campaign-api/api/m-Application-getSchema.html
+ * Ref database-mapping(sqlname 접두사 규칙)
+ *   https://experienceleague.adobe.com/en/docs/campaign-classic/using/configuring-campaign-classic/schema-reference/database-mapping
  */
 var testWoo = testWoo || {};
 testWoo.toolkit = (function () {
@@ -42,7 +54,9 @@ testWoo.toolkit = (function () {
   var SEARCH_MATCH_CAP = 20;
   var SCHEMA_LIST_CAP = 80;
   var DESCRIBE_ATTR_CAP = 120;
-  var DESCRIBE_JSON_CAP = 4096;
+  // sqlColumn 추가로 컬럼당 직렬화 길이가 늘어 4096 이면 nms:recipient(47컬럼)가
+  // 절단된다. 물리명은 SQL 작성에 필수라 생략할 수 없으므로 상한을 함께 올린다.
+  var DESCRIBE_JSON_CAP = 6144;
 
   function _budgets() {
     try {
@@ -206,7 +220,8 @@ testWoo.toolkit = (function () {
       dbmsType: dbms,
       allowedNamespaces: ns,
       maxProbeRows: 100,
-      grainKeyCandidates: ["customer_id", "iRecipientId", "recipientId"]
+      // 물리 컬럼명. SQL 에 그대로 넣을 수 있는 형태여야 한다(논리명 금지).
+      grainKeyCandidates: ["sCustomer_id", "iRecipientId"]
     };
   }
 
@@ -223,6 +238,39 @@ testWoo.toolkit = (function () {
     if (!doc || !doc.documentElement)
       throw new Error("schema toDocument failed: " + schemaId);
     return new XML(String(doc.documentElement.toXMLString()));
+  }
+
+  // 논리 속성명(@name)과 물리 컬럼명(@sqlname)은 다르다. ACC 는 sqlname 을 생략하면
+  // 타입 접두사를 붙여 물리명을 생성한다(customer_id → sCustomer_id, age → iAge).
+  // 원시 SQL 에는 물리명만 통하므로 도구는 항상 sqlColumn 을 함께 노출해야 한다.
+  // Ref: https://experienceleague.adobe.com/en/docs/campaign-classic/using/configuring-campaign-classic/schema-reference/database-mapping
+  function _sqlColumnOf(attr) {
+    return String(attr.@sqlname || "");
+  }
+
+  // LLM 이 논리명·물리명 중 무엇을 넘겨도 스키마에 선언된 물리명으로 해석한다.
+  // 스키마에 없는 식별자는 거부 → 원시 SQL 에 임의 문자열이 들어가지 않는다(정합성 + 방어).
+  function _resolveSqlColumn(schemaId, requested) {
+    var want = String(requested || "").toLowerCase();
+    if (!want) return { ok: false, error: "columnName required" };
+    var xml = _schemaXml(schemaId);
+    var noSqlName = "";
+    for each (var a in xml..attribute) {
+      var nm = String(a.@name || "");
+      var sn = _sqlColumnOf(a);
+      if (sn && sn.toLowerCase() === want) return { ok: true, sqlColumn: sn, name: nm };
+      if (nm.toLowerCase() === want) {
+        if (sn) return { ok: true, sqlColumn: sn, name: nm };
+        noSqlName = nm;
+      }
+    }
+    if (noSqlName)
+      return {
+        ok: false,
+        error: "column '" + noSqlName + "' has no sqlname in the deployed schema " +
+          "(XML-stored or not SQL-mapped) and cannot be used in SQL"
+      };
+    return { ok: false, error: "column not declared in schema: " + String(requested) };
   }
 
   // 루트 element의 sqltable만 사용 (정규식 첫 매칭은 하위 element 값을 집을 수 있음)
@@ -297,6 +345,7 @@ testWoo.toolkit = (function () {
       for each (var a in xml..attribute) {
         cols.push({
           name: String(a.@name),
+          sqlColumn: _sqlColumnOf(a),
           label: String(a.@label || ""),
           type: String(a.@type || "string")
         });
@@ -358,9 +407,19 @@ testWoo.toolkit = (function () {
     }
     if (!_validIdent(tbl)) return { error: "invalid sqltable resolved" };
 
+    // LLM 이 논리명(customer_id)을 넘겨도 물리명(sCustomer_id)으로 해석한다.
+    // 논리명을 그대로 SQL 에 넣으면 'column does not exist' 로 실패한다.
+    var colR;
+    try { colR = _resolveSqlColumn(schemaId, columnName); } catch (eC) {
+      return { ok: false, error: String(eC.message || eC) };
+    }
+    if (!colR.ok) return { ok: false, error: colR.error };
+    var col = colR.sqlColumn;
+    if (!_validIdent(col)) return { ok: false, error: "invalid sqlColumn resolved" };
+
     var cap = cfg.triage.valueProbeCardinalityCap || 10000;
-    var countQ = "SELECT COUNT(DISTINCT " + columnName + ") FROM " + tbl +
-      " WHERE " + columnName + " IS NOT NULL";
+    var countQ = "SELECT COUNT(DISTINCT " + col + ") FROM " + tbl +
+      " WHERE " + col + " IS NOT NULL";
     var cntR = _sqlGetIntSafe(countQ);
     if (!cntR.ok) return { ok: false, error: cntR.error };
 
@@ -368,6 +427,8 @@ testWoo.toolkit = (function () {
     if (distinctCount > cap) {
       return {
         ok: true,
+        name: colR.name,
+        sqlColumn: col,
         distinctCount: distinctCount,
         values: [],
         truncated: false,
@@ -380,7 +441,7 @@ testWoo.toolkit = (function () {
     // DISTINCT 는 selectList 에 넣지 않고 opts 로 넘긴다 — T-SQL 은 DISTINCT 가 TOP 앞이다.
     if (!testWoo.probe) return { ok: false, error: "probe module not loaded" };
     var sampleQ = testWoo.probe.dialect().limitSelect(
-      columnName + " AS tw_val", tbl, columnName + " IS NOT NULL", limit,
+      col + " AS tw_val", tbl, col + " IS NOT NULL", limit,
       { distinct: true });
 
     var values = [];
@@ -395,6 +456,8 @@ testWoo.toolkit = (function () {
 
     return {
       ok: true,
+      name: colR.name,
+      sqlColumn: col,
       distinctCount: distinctCount,
       values: values,
       truncated: distinctCount > values.length,
@@ -455,11 +518,14 @@ testWoo.toolkit = (function () {
             if (results.length >= SEARCH_MATCH_CAP) break;
             var an = String(a.@name || "");
             var al = String(a.@label || "");
+            var asql = _sqlColumnOf(a);
             if (an.toLowerCase().indexOf(keyword) < 0 &&
-                al.toLowerCase().indexOf(keyword) < 0) continue;
+                al.toLowerCase().indexOf(keyword) < 0 &&
+                asql.toLowerCase().indexOf(keyword) < 0) continue;
             results.push({
               schemaId: sid,
               columnName: an,
+              sqlColumn: asql,
               label: al,
               type: String(a.@type || "string")
             });
@@ -501,7 +567,9 @@ testWoo.toolkit = (function () {
 
   register("describe_schema", {
     name: "describe_schema",
-    description: "Summarize schema attributes and links (max 4KB)",
+    description: "Summarize schema attributes and links. Each column returns the logical " +
+      "'name' and the physical 'sqlColumn' — ALWAYS use sqlColumn in SQL. " +
+      "Empty sqlColumn means the field is not stored as a SQL column and is not queryable",
     parameters: {
       type: "object",
       properties: {
@@ -517,8 +585,15 @@ testWoo.toolkit = (function () {
     parameters: {
       type: "object",
       properties: {
-        sql: { type: "string", description: "SELECT only SQL" },
-        keyColumn: { type: "string", description: "Grain key column name" }
+        sql: {
+          type: "string",
+          description: "SELECT only SQL. Use physical names: sqltable for tables and " +
+            "sqlColumn for columns, as reported by describe_schema"
+        },
+        keyColumn: {
+          type: "string",
+          description: "Grain key physical column (sqlColumn), e.g. sCustomer_id"
+        }
       },
       required: ["sql", "keyColumn"]
     }
@@ -531,7 +606,11 @@ testWoo.toolkit = (function () {
       type: "object",
       properties: {
         schemaId: { type: "string", description: "ns:name schema id" },
-        columnName: { type: "string", description: "Attribute/column name" },
+        columnName: {
+          type: "string",
+          description: "Logical attribute name or physical sqlColumn — both are accepted " +
+            "and resolved against the schema"
+        },
         limit: { type: "integer", description: "Max distinct values default 50" }
       },
       required: ["schemaId", "columnName"]
@@ -540,7 +619,8 @@ testWoo.toolkit = (function () {
 
   register("search_columns", {
     name: "search_columns",
-    description: "Search column names/labels by keyword in allowed namespaces",
+    description: "Search column names/labels/sqlColumn by keyword in allowed namespaces. " +
+      "Matches report both logical columnName and physical sqlColumn — use sqlColumn in SQL",
     parameters: {
       type: "object",
       properties: {

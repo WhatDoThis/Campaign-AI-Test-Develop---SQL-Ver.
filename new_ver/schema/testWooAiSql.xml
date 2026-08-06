@@ -1,11 +1,58 @@
 <!--
-woo:testWooAiSql (Test Woo AI Generated SQL History · Foundry 확장)
+woo:testWooAiSql (Test Woo AI Generated SQL History · 스키마 정의서)
 ====================================================================
-NL → plan_json → SQL 이력. usedFragments/compileHash/impactStatus.
+NL → plan_json → 최종 SQL 의 등록 이력. 워크플로 커스텀 액티비티가 런타임에
+읽어갈 ai_sql_id 의 원본이며, fragment 폐기 시 영향도 추적의 기준이 된다.
+
+[Main Functions]
+===========
+- Register 시점의 plan·SQL·사용 fragment 스냅샷 보관
+- fragment 폐기·변경 시 영향받는 이력 표시 (impact_status)
+- 재컴파일 없이 동일성 판정 (compile_hash)
+
+[Enumerations]
+=========
+- sqlHistoryStatus (default draft) : 이력 상태
+  · draft 작성 중 · validated 게이트 통과 · registered 등록 완료 · rejected 반려
+  ※ Register 경로는 항상 registered 로 기록한다
+- sqlImpactStatus (default ok) : 참조 fragment 변경 영향도
+  · ok 영향 없음
+  · affected 사용 fragment 가 폐기·변경됨 (재생성 권고)
+  · blocked 실행 불가
+
+[Keys / Indexes]
+=========
+- idx_wf : workflow_name. 특정 워크플로가 등록한 이력 조회용 (unique 아님)
+
+[Attributes]
+=========
+요청·결과
+- title           (string 200)     이력 제목. NL 앞 200자를 자동 사용
+- creator         (string 64)      등록 운영자 로그인
+- nl_request      (memo)           원문 자연어 요청
+- plan_json       (memo)           조합 계획 JSON (구 ir_json 아님)
+- sql_query       (memo)           컴파일 결과 최종 SQL. 클라이언트가 보낸 SQL 은 무시하고 서버 재컴파일분을 저장
+- summary_ko      (string 500)     조건 요약 한국어 문장
+- target_count    (long)           등록 시점 대상 건수. 현재 Studio 는 0 을 전송한다
+
+추적·영향도
+- used_fragments  (memo)           사용 fragment 배열 JSON. {name, version, fragmentId}
+- compile_hash    (string 64)      plan + SQL 해시. 동일 요청 재등록 판별
+- workflow_name   (string 64)      주입 대상 WF 인터널네임(WKF94 등).
+                                   정수 @id 는 패키지 이동 시 바뀌므로 쓰지 않는다
+- status          (enum 16)        위 sqlHistoryStatus
+- impact_status   (enum 16)        위 sqlImpactStatus. testWooLifecycle 이 갱신
+- creation_date   (datetime)       등록 시각
+
+부분 실행
+- excluded_slots  (memo)           실현 불가로 제외한 슬롯 JSON
+- has_exclusion   (boolean, false) excluded_slots 존재 여부. 저장 시 자동 계산
 
 [Dependencies]
 =========
-- testWooRepository.js, testWooLifecycle.js
+- Producers: testWooRepository.js saveAiSql, jssp/testWooAiRegister.jssp
+- Consumers: testWooLifecycle.js (영향도 스캔), jssp/testWooAiFragmentAdmin.jssp
+- Forms: input_form/testWooAiSql.xml, navtree [WOO] SQL History
 -->
 <srcSchema _cs="Test Woo AI Generated SQL (woo)" mappingType="sql" name="testWooAiSql" namespace="woo"
            label="Test Woo AI Generated SQL" labelSingular="Test Woo AI Generated SQL" xtkschema="xtk:srcSchema">

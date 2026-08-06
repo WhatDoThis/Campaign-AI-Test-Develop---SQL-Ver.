@@ -1,6 +1,10 @@
 # Log
 
 ## Log Index
+83. 2026-08-06 thinking 모델 reasoning 비활성 형식 교정 (max_tokens:0) + Pass0 토큰 env 연결 + Foundry 사고 예산 고정
+82. 2026-08-06 논리명→물리명(sqlname) 결함 수정 — 툴킷 sqlColumn 노출·해석 + 프롬프트 3종 + 스모크 4b/4c + 가이드 v1.6.0
+81. 2026-08-06 AI 스키마 5종 상단 정의서화 (이누머레이션·인덱스·속성 명세)
+80. 2026-08-06 Triage response_format 제거(Gemini tools 충돌) + G-C 모집단 분모 결함 수정
 79. 2026-08-06 workflow_id(long) → workflow_name(string) 전환 — WF 인터널네임 보관 (BAS-010042 해소)
 78. 2026-08-05 방언 지원 정책 명문화 — 미검증 DBMS 런타임 가드 + FDA 주석 + 문자열 대조 도구 (추가5 반영)
 77. 2026-08-05 SQL 방언 정합 M-1~M-3 (limitSelect DISTINCT TOP · 스모크 6a/6b, 06 리포트 반영)
@@ -82,6 +86,135 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+83. 2026-08-06 thinking 모델 reasoning 비활성 형식 교정 (max_tokens:0) + Pass0 토큰 env 연결 + Foundry 사고 예산 고정
+Purpose: Gemini 2.5 Flash 전환 후 Pass0 첫 호출에서 `finish_reason="length"` 로 실패하던 원인을 제거한다 Changes:
+
+**증상**: "서울에 사는 고객" 입력 → `[testWoo.llm] 응답이 max_tokens에서 잘렸습니다`. 라이브러리 0건이라 후보도 0건이고 NL 이 8자인데도 8192 토큰을 소진
+
+**원인**: thinking 모델은 사고 토큰이 `max_tokens` 에 합산된다. 예산 미지정 시 구글 기본값 dynamic(최대 8192)이 적용되어 본문 몫이 0 이 된다. 기존 `reasoning:{enabled:false}` 는 Gemini 계열에서 `thinkingBudget:0` 으로 내려가지 않는다 — 끄려면 `max_tokens:0` 이 필요하다
+
+**수정 — testWooLlm.js**
+- `reasoningOff()` 추가·export: `{enabled:false, max_tokens:0}` 단일 형식. `_chat`·`explainDedupDiff`·openrouter 어댑터 기본값이 모두 이 함수를 쓴다
+- `_pass0MaxTokens()` 추가: `testWooEnv.js llm.pass0MaxTokens` 를 실제로 읽는다. 기존에는 이 env 값을 읽는 곳이 없어 하드코딩 8192 만 적용됐다(Triage·Foundry 는 정상 참조 중)
+- `_lengthDiag(usage)` 추가: `finish_reason="length"` 메시지에 `completion`/`reasoning` 토큰 수를 붙이고, 사고 토큰이 절반 이상이면 "상한을 올리지 말고 reasoning 을 끄라" 로 안내를 분기
+
+**수정 — testWooFeasibility.js**: Triage 도 `testWoo.llm.reasoningOff()` 사용 (4096 상한이라 동일 증상 예정이었음)
+
+**수정 — testWooFoundry.js**: `reasoning:{enabled:true, effort:"high"}` → `{max_tokens:_reasoningBudget(maxTok)}`. `effort:"high"` 는 상한의 대부분을 사고에 배정해 본문 몫을 남기지 않을 수 있다. 절대 예산(상한의 1/4, 1024~8192)으로 고정해 3/4 를 fragment JSON·tool_calls 출력용으로 보장한다. Anthropic 하한 1024 도 충족
+
+**검증**: `checkRhinoSyntax` 19/19 통과
+
+Changed files: new_ver/js/testWooLlm.js, new_ver/js/testWooFeasibility.js, new_ver/js/testWooFoundry.js
+
+82. 2026-08-06 논리명→물리명(sqlname) 결함 수정 — 툴킷 sqlColumn 노출·해석 + 프롬프트 3종 + 스모크 4b/4c + 가이드 v1.6.0
+Purpose: 툴킷이 LLM 에게 논리 속성명만 노출하는데 실행 경로는 원시 SQL 이라 Foundry/Triage 가 실테이블에서 100% 실패하던 결함을 제거한다 Changes:
+
+**근본 원인 (실측 확인)**
+- ACC 는 스키마 속성에 `sqlname` 이 없으면 타입 접두사를 붙여 물리 컬럼명을 자동 생성한다
+- `woo:testWooSampleCustomer` 배포 스키마 실측: `customer_id`→`sCustomer_id`, `age`→`iAge`, `region`→`sRegion`, `marketing_consent`→`iMarketing_consent`, `birth_date`→`tsBirth_date`, PK `id`→`iTestWooSampleCustomerId`
+- 테이블명은 `sqltable` 선언값 그대로(`testWooSampleCustomer`). 네임스페이스 접두사 형태(`WooTestWooSampleCustomer`)는 존재하지 않음을 SQL 오류로 확인
+- `SELECT COUNT(*)`=101 vs `queryDef count`=100 → 차이 1건은 ACC PK=0 기술 레코드
+
+**파급 경로 (미발현 상태였던 이유: probe_values 스모크 미포함 + Foundry 완주 이력 없음)**
+- `describe_schema`/`search_columns` 가 `@name` 만 반환 → LLM 이 논리명 학습
+- `probe_values` 가 그 이름을 `COUNT(DISTINCT <col>)` 에 직삽 → `column does not exist`
+- `probe_sql` · 생성 fragment `sql_text` 도 논리명 → G-A 게이트 실패 → gateRetries 소진 → `needs_human_design`
+- Pass1 `grainKey` 예시가 `customer_id` → 컴파일러 `key_column mismatch` 로 매 요청 실패
+- `nms:recipient` 등 표준 스키마도 동일(Adobe 가 `sqlname="sEmail"` 명시)
+
+**수정 — testWooToolkit.js**
+- `_sqlColumnOf(attr)` 추가: `@sqlname` 추출
+- `_resolveSqlColumn(schemaId, requested)` 추가: 논리명·물리명 양방향 조회 → 물리명 반환. 스키마 미선언 식별자는 거부(정합성 + 임의 문자열 SQL 유입 차단). `sqlname` 없는 속성은 "XML 저장 필드라 조회 불가" 로 명시 실패
+- `_toolDescribeSchema` / `_toolSearchColumns`: 컬럼마다 `sqlColumn` 노출. search 는 `sqlname` 도 키워드 매칭 대상에 포함
+- `_toolProbeValues`: LLM 인자를 `_resolveSqlColumn` 으로 해석 후 SQL 조립, 응답에 `name`/`sqlColumn` 동봉
+- `DESCRIBE_JSON_CAP` 4096→6144: `sqlColumn` 추가로 `nms:recipient`(47컬럼)가 절단되는 것 방지
+- `env().grainKeyCandidates`: `["customer_id","iRecipientId","recipientId"]` → `["sCustomer_id","iRecipientId"]` (물리명 통일)
+- 도구 description 4종에 "SQL 에는 sqlColumn 사용" 명시
+
+**수정 — 프롬프트 3종**
+- `testWooFoundry.js` `_foundrySystemPrompt`: 물리명 강제 + keyColumn 도 sqlColumn
+- `testWooFeasibility.js` `_triageSystemPrompt`: evidence/alternatives 에 sqlColumn 보고
+- `testWooLlm.js` Pass1: `grainKey` 는 후보의 `key_column` 을 그대로 복사(예시에서 `customer_id` 제거)
+
+**문서 — 01_개발가이드.md v1.6.0**
+- 섹션2 "논리명 vs 물리명" 신설: 접두사 규칙표, 실측 대응표, 논리명/물리명 사용처 구분표, PK=0 기술 레코드
+- 샘플 fragment `sql_text`·`key_column` 을 실측 물리명으로 교정
+- 섹션6 "물리 컬럼명 추정 금지" 행을 `sqlColumn` 조회 절차로 대체 + 물리 테이블명·기술 레코드 행 추가
+
+**스모크 보강 — testWooSmoke.js** (결함이 배포 후에야 드러난 원인: `probe_values` 미점검)
+- `4b.sqlColumn`: `describe_schema("nms:recipient")` 가 `sqlColumn` 을 채우고 `name` 과 다른 컬럼이 1개 이상 존재하는지. SQL 실행 없음 → 비용 0, 표준 스키마라 환경 무관
+- `4c.probe_values`: `woo:testWooSampleCustomer` 에 **논리명** `region` 을 넣어 `sqlColumn=sRegion` 해석 + 실제 SQL 실행 확인. `describe_schema` 결과와 교차 검증하므로 물리명 하드코딩 없음
+- `twSkip()` + 요약 3상태(PASS/SKIP/FAIL) 도입: 샘플 스키마 미배포 시 4c 는 SKIP(PASS 로 세지 않음). 대형 표준 테이블은 `COUNT(DISTINCT)` 비용 때문에 4c 대상에서 제외
+- 고객 데이터 미출력 원칙 유지 — 값 목록 대신 `distinct`/`sampled` 건수만 기록
+
+**검증**: `checkRhinoSyntax` 19/19, `checkDialectSql` 6/6 통과. TS 린트 오류는 E4X 미지원 기존 전역 현상
+
+Changed files: new_ver/js/testWooToolkit.js, new_ver/js/testWooFoundry.js, new_ver/js/testWooFeasibility.js, new_ver/js/testWooLlm.js, new_ver/tools/testWooSmoke.js, docs/report/01_개발가이드.md
+
+81. 2026-08-06 AI 스키마 5종 상단 정의서화 (이누머레이션·인덱스·속성 명세)
+Purpose: 샘플 데이터 스키마 2종을 제외한 AI 스키마 5종의 상단 주석을, 열거형·인덱스·전 속성의 용도를 한 줄씩 기술한 정의서 형식으로 확장한다 Changes:
+
+**공통 구성** (기존 rule #6 골격 유지 + 섹션 추가)
+- `[Main Functions]` → `[Enumerations]` → `[Keys / Indexes]` → `[Attributes]` → `[Dependencies]`
+- 속성은 `name (type length) 설명` 한 줄 형식. 기능 그룹별로 소제목 구분
+- 코드 실동작을 확인한 뒤 기술. 문서상 계획과 코드가 다른 항목은 코드 기준으로 적고
+  미구현·예약 필드는 그 사실을 명시
+
+**스키마별 요점**
+- `testWooAiFragment` : status 6종 중 컴파일러는 active 만 통과, `active`(boolean) 는
+  navtree·폼 필터용이며 판정 근거가 아님을 명시. Stage A 스코어 가중치 실측값 기재
+  (sample_questions 8 · synonyms 6 · label 4 · tags 3 · description 2 · category 힌트 +10).
+  인덱스 5종의 용도(버전 중복 차단·dedup L0·현행 조회·후보 축소·카테고리 필터) 구분
+- `testWooAiSql` : impact_status 가 testWooLifecycle 갱신 대상임을 명시.
+  `target_count` 는 Studio 가 0 을 보내는 현재 상태를 그대로 기록
+- `testWooAiRequestQueue` : status 10종 전이 의미를 개별 기술(throttled 는 재시도 금지 등).
+  `clarify_answers`(읽기만) · `cost_estimate`(기록 경로 없음) 를 예약 필드로 표기
+- `testWooAiGapLog` : 개념 단위 집계 테이블임을 명시. `verdict` 가 열거형이 아닌
+  자유 문자열이라 값 검증이 코드 책임이라는 점 기재. 전용 navtree 노드·폼 없음
+- `testWooAiGolden` : 판정 기준이 fragment 부분집합 포함이며 SQL 문자열 비교가 아님을 명시.
+  `expected_count_min/max` · `expected_verdict` · `case_type` 은 러너 미사용(예약)
+
+**검증**
+- 스키마 7종 전체 well formed 확인(PowerShell `[xml]` 파싱)
+- XML 주석 내 이중 하이픈 잔여 0건 확인(주석 구분자 제외)
+- 의존 관계 기술은 navtree·input_form 실제 등록 여부와 대조.
+  Gap Log 의 navtree 목록 노드 부재, Golden 폼의 예약 필드 부재를 반영
+Changed files: new_ver/schema/{testWooAiFragment,testWooAiSql,testWooAiRequestQueue,testWooAiGapLog,testWooAiGolden}.xml
+
+80. 2026-08-06 Triage response_format 제거(Gemini tools 충돌) + G-C 모집단 분모 결함 수정
+Purpose: LLM 모델을 `google/gemini-2.5-flash` 로 전환한 뒤 Foundry 배치가 `[testWoo.llm.postChat] API error: Function calling with a response mime type: 'application/json' is unsupported` 로 실패. 원인 제거와, 그 다음 단계에서 반드시 걸릴 G-C 게이트 결함을 함께 처리한다 Changes:
+
+**결함 1 — Triage 가 tools + response_format 동시 전송 (P0, 실제 발생)**
+- `testWooLlm.js` `_buildBody` 는 `else if (!opts.tools)` 로 이미 상호배제 처리되어 있었으나,
+  `testWooFeasibility.js` `runTriageLoop` 은 body 를 **직접 구성**하며 우회했다
+- Google API 는 function calling 과 `responseMimeType: application/json` 병용을 거부한다.
+  Foundry `runToolLoop` 은 `response_format` 을 보내지 않아 무사했고 Triage 만 해당
+- `response_format: { type: "json_object" }` 제거 + 금지 이유 주석.
+  JSON 강제는 시스템 프롬프트("OUTPUT JSON ONLY on final turn")와 기존
+  `content.indexOf("{")`~`lastIndexOf("}")` 추출 로직이 이미 담당하므로 파싱부 변경 없음
+- 사전 격리 점검(WF JS 로 4개 요청 형태 직접 전송)에서 이 조합이 통과해 **오탐**이 났다.
+  OpenRouter 의 업스트림 라우팅 편차로 1회 표본이 우연히 수용된 것으로 판단 →
+  이후 파라미터 호환성은 1회 성공으로 판정하지 말고 실제 파이프라인까지 돌릴 것
+
+**결함 2 — G-C 게이트가 populationCountSql 미설정 시 상시 실패 (P0, 잠재)**
+- `testWooGates.js` `validateFragment` 가 분모 부재 시 `pop = probe.total` 로 폴백 →
+  `probe.total >= pop * 0.95` 가 `total >= total*0.95` 가 되어 **결과가 1건이라도 있으면 항상 실패**
+- `testWooEnv.js` 주석의 "비우면 G-C 완화" 와 코드 동작이 정반대였다
+- `pop = 0` 기본값으로 교정 → 기존 `pop > 0 &&` 가드가 상한 검사를 자연히 생략.
+  `sqlGetInt` 실패 시에도 `pop = 0` + `logWarning`(조용한 상시 실패 방지)
+- 실패 메시지 분리: `결과 0건` / `결과가 모집단의 95% 이상 (n/pop) — 필터 효과 없음`.
+  성공 메시지에 population 설정 여부 표기
+- `testWooEnv.js` `populationCountSql` 주석 정정: 용도 2곳(G-C, dedup near) 명시,
+  비었을 때 동작 명시, 예시를 `COUNT(DISTINCT customer_id)` → `COUNT(*)` 로 교체
+  (물리 컬럼명은 ACC 버전·DBMS 마다 달라 논리명으로 쓸 수 없음)
+
+**검증**
+- `checkRhinoSyntax.js` 19/19 통과
+- `response_format` 잔여 사용처는 `testWooLlm.js` `_buildBody` 1곳뿐이며 tools 와 상호배제 확인
+- 미처리(경미): `explainDedupDiff` 는 산문 응답을 요구하면서 `_buildBody` 기본값으로
+  `json_object` 가 붙는다. 예외는 아니고 near 설명이 JSON 형태로 저장되는 표시 문제
+Changed files: new_ver/js/testWooFeasibility.js, new_ver/js/testWooGates.js, new_ver/js/testWooEnv.js
 
 79. 2026-08-06 workflow_id(long) → workflow_name(string) 전환 — WF 인터널네임 보관 (BAS-010042 해소)
 Purpose: Studio 를 `?workflowId=WKF94`(워크플로 인터널네임)로 열면 큐 insert 가 `BAS-010042 Value 'WKF94' is not a valid integer` 로 실패했다. 정수 PK 대신 환경 이식이 가능한 인터널네임을 보관하도록 필드 타입·명칭을 전환한다 Changes:
