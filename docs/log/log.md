@@ -1,6 +1,10 @@
 # Log
 
 ## Log Index
+93. 2026-08-06 Pass0 Gemini 간헐 반복 루프 완화 — pass0MaxTokens 2048 · frequencyPenalty 0.3 · length 시 1회 재시도
+92. 2026-08-06 F-0~F-5·#91 검증 완료 — 스모크 14/14 · dryRun feasible→woo__customer__region__seoul gate.pass
+91. 2026-08-06 Triage no_column 오탐 차단 — describe_schema 필수(재지시·강등) + 스모크 9 forceGenerate
+90. 2026-08-06 Foundry 생성 단계 근원 수정 F-0~F-5 — 출력 계약·requireJson·형태 재시도·단계 예산·dryRunSlot
 89. 2026-08-06 fragment 생성 단계 진단 보강 (turn별 finish_reason·응답 본문 프리뷰) + 강제 턴 지시를 요청 사본에만 주입
 88. 2026-08-06 종료된 큐를 수기 재큐잉했을 때의 무동작 done 에 사유 기록 (fragment 0건 오인 방지)
 87. 2026-08-06 허용 namespace 를 woo 단독으로 확정 (ACC 수기 수정이 재배포마다 덮이던 원인 제거) + 스모크 4·4b·5 대상 전환 + grainKeyCandidates 정합
@@ -92,6 +96,119 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+93. 2026-08-06 Pass0 Gemini 간헐 반복 루프 완화 — pass0MaxTokens 2048 · frequencyPenalty 0.3 · length 시 1회 재시도
+Purpose: Studio 에서 Pass0 가 다시 `completion=8192 reasoning=0 contentChars=16166 [반복 루프 의심]` 으로 실패했다. #84(json_object 제거) 회귀가 아니라 Gemini 간헐 루프다 — 같은 날 스모크 Pass0 는 completion≈117 로 통과했다 Changes:
+
+**왜 “또”인가**
+- 진단 문구에 `stage=pass0` / `[반복 루프 의심]` 이 있으므로 **#84 코드는 배포된 상태**다
+- `response_format(json_object)` 는 로컬·호출부 모두 없음. 제거 후에도 Gemini 2.5 Flash 가
+  temperature=0 에서 같은 토큰을 반복하는 경우가 있다(포럼·실측)
+- 3:41 스모크 Pass0 PASS → 3:4x Studio 실패 = **간헐**. 회귀 아님
+
+**조치**
+- `pass0MaxTokens` 8192 → **2048** (슬롯 JSON 에 충분, 루프 시 과금·대기 축소)
+- `frequencyPenalty` 0.1 → **0.3**
+- `decomposeSlots`: length/반복 예외 시 penalty=0.6 + “short JSON only” 지시로 **1회 재시도**
+- 진단 문구를 “json_object 재도입 확인” → “Gemini 간헐·재시도/penalty 확인” 으로 정정
+
+**검증**
+- `node tools/checkRhinoSyntax.js` OK
+- 재배포: `testWooEnv.js` → `testWooLlm.js` → Studio 동일 NL 재시도
+  기대: 통과, 또는 저널에 `pass0 length/repeat — retry once` 후 통과
+
+Changed files: new_ver/js/testWooEnv.js, new_ver/js/testWooLlm.js, docs/log/log.md
+
+92. 2026-08-06 F-0~F-5·#91 검증 완료 — 스모크 14/14 · dryRun feasible→woo__customer__region__seoul gate.pass
+Purpose: ACC 에서 스모크·FoundryDryRun 으로 #90/#91 핫픽스를 실측 확인했다 Changes:
+
+**스모크 14/14 PASS**
+- 9.foundry.generate: `name=woo__customer__region__seoul attempts=1 tokens=4043`
+- triage `feasible/high canProceed=true` (forceGenerate 불필요 — 오탐 경로 해소)
+
+**생성 경로 (정상 궤적)**
+- Triage: search(서울→region/city) → describe SampleCustomer → probe_values sRegion
+- Generate: search(region/city/address) → probe_values → probe_sql → turn4 hasJson=true
+- SQL: `SELECT DISTINCT sCustomer_id FROM testWooSampleCustomer WHERE sRegion = '서울'`
+- F-0 스키마 키·F-1 hasJson·게이트 1회 통과 확인. 마크다운 펜스(```json)는 파서가 `{…}` 추출로 흡수
+
+**다음**: Studio NL → 큐 → WKF_testWooFoundry 배치 → awaiting_approval + fragment 1건
+
+Changed files: docs/log/log.md
+
+91. 2026-08-06 Triage no_column 오탐 차단 — describe_schema 필수(재지시·강등) + 스모크 9 forceGenerate
+Purpose: 스모크 9 기준선이 `triage blocked / no_column high` 로 끊겼다. 생성(F-0)은 실행조차 안 됐다. 원인은 모델이 서울/주소/도시(값·동의어)만 search_columns 하고 describe_schema 없이 컬럼 부재를 단정한 것 Changes:
+
+**기준선 (F-5 첫 실행)**
+- 13/14 PASS · FAIL 9.foundry.generate `reason=triage blocked attempts=0`
+- toolkit: search_columns(서울|주소|도시, woo) ×3 만 호출 → describe/probe 0회
+- `region`/`sRegion` 은 4c 에서 이미 존재 확인됨 → **no_column 은 오탐**
+- SCR-160012 는 스모크 요약 `logError`(실패 시 WF 중단) — 생성 경로 예외 아님
+
+**조치**
+- Triage 프롬프트: 위치 슬롯은 region/지역 검색 → list/describe → probe_values. 값 키워드만으로 no_column 금지
+- 루프: no_column 인데 describe_schema 없으면 재지시 후 턴 계속(마지막 턴 제외)
+- 강등: describe 없이 no_column → ambiguous (갭로그 오염·생성 차단의 false high 제거)
+- evidence 에 search_columns `matchCount` 기록
+- 스모크 9: `forceGenerate:true` — triage 오탐이 있어도 생성 경로(F-0)는 검증. triage 차단은 WARNING
+
+**검증**
+- `node tools/checkRhinoSyntax.js` 전수 OK
+- 재배포: Feasibility · Toolkit · Foundry · Smoke → 스모크 9 재실행
+  기대: (a) triage 가 describe→probe 후 feasible 이거나 (b) forced generate 후 gate.pass
+
+Changed files: new_ver/js/testWooFeasibility.js, new_ver/js/testWooToolkit.js, new_ver/js/testWooFoundry.js, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+90. 2026-08-06 Foundry 생성 단계 근원 수정 F-0~F-5 — 출력 계약·requireJson·형태 재시도·단계 예산·dryRunSlot
+Purpose: `fragment JSON missing` 의 근원은 출력 계약 부재이며 루프 종료 조건 불일치가 이를 증폭시켰다(리포트 08 자가진단 A·B). 생성 경로에 JSON 스키마·게이트 규칙·계측기를 넣고, 평문 턴·형태 실패가 재시도로 이어지게 한다 Changes:
+
+**근원 진단 (알고리즘 A·B)**
+- `_fragDocFromLlm` 이 읽는 9종 필드 중 프롬프트에 명시된 것은 name 패턴·scopeKey 힌트뿐.
+  `sqlText` 키 이름조차 없었다 → **계약 부재(A2)**
+- 프롬프트 "JSON only on the final turn" vs 코드 "툴 없는 첫 턴에 return" →
+  평문 한 줄이면 강제 턴(6) 전에 루프 종료 → **종료 조건 불일치(B3)** = #89 증상
+
+**F-5 (최우선) dryRunSlot 계측기**
+- `foundry.dryRunSlot(slotText, opts)` — 큐 Read/Write·publish·embedding·dedup 없음
+- triage(옵션) → generateFragmentForSlot → `{ok, triage, fragDoc, gate, attempts, …}`
+- `new_ver/workflow/testWooFoundryDryRun.js` 1회성 액티비티 예제
+- 스모크 **9.foundry.generate (billable)** — `TW_SMOKE_SLOT_TEXT` 로 dryRun, gate.pass 필수
+- 기준선: 배포 직후 dryRun 첫 실패 내용은 운영 저널에 그대로 남긴다(F-0 전·후 비교용).
+  로컬에서는 billable 호출 불가 → 구문 검사만 완료. **ACC 첫 dryRun 로그를 #90 후속으로 붙일 것**
+
+**F-0 출력 계약**
+- `_foundrySystemPrompt` 에 FRAGMENT_SCHEMA_EXAMPLE + SELECT-grain·WITH 금지·G1·G-B·G-C·
+  name 정규식·scopeKey="" · params 배열 규칙 전문
+- FINAL_TURN_NUDGE / JSON_NUDGE / shape·gate 되먹임에 동일 스키마 재고지
+- `_fragDocFromLlm`: 필수 필드(name/keyColumn/sqlText) 즉시 판정, params 배열·객체 양쪽 수용
+
+**F-1 루프 종료**
+- `runToolLoop(..., {requireJson:true})` — JSON 없으면 nudge 후 continue, 마지막 턴만 예외
+- `tool_calls` 판정은 배열 우선(finish_reason 의존 제거). 턴 로그에 `hasJson=`
+- Triage 루프에도 동일 tool_calls 판정 적용
+
+**F-2 형태 실패 재시도**
+- `_parseFragmentJson` / `_fragDocFromLlm` 을 attempt 루프 안 try/catch
+- `_shapeFeedback` → role:user 되먹임. 소진 시에만 `{fragDoc:null, shapeError}` 반환
+- `processQueueItem` last_error 에 shapeError 포함
+
+**F-3 히스토리 안전화**
+- `_sanitizeToolHistory` — 미응답 tool_calls 에 `{"error":"not executed"}` 더미
+- attempt≥2: `_compressForRetry` (system + 최초 user + assistant 본문 + 되먹임)
+- assistant 객체 재구성 금지(reasoning_details 보존). 압축 시에만 tool_calls 제거 슬림본
+
+**F-4 단계 예산**
+- env: `totalCallBudget:40`, `triageCallBudget:12`, `generateCallBudget:24`
+- `toolkit.setPhaseBudget(kind)` + invoke 시 phase 초과 메시지에 단계명 명시
+- triage / generateFragmentForSlot 진입 시 각각 setPhaseBudget
+
+**검증**
+- `node tools/checkRhinoSyntax.js` 전수 OK (dryRun WF 포함)
+- ACC: (1) Foundry.js·Toolkit·Env·Feasibility·Smoke 재배포
+  (2) `testWooFoundryDryRun` 또는 스모크 9번 → 기준선 기록
+  (3) Studio NL → 큐 → 배치 왕복
+
+Changed files: new_ver/js/testWooFoundry.js, new_ver/js/testWooToolkit.js, new_ver/js/testWooEnv.js, new_ver/js/testWooFeasibility.js, new_ver/workflow/testWooFoundryDryRun.js, new_ver/tools/testWooSmoke.js, docs/report/01_개발가이드.md, docs/report/00_ReportIndex.md, docs/log/log.md
 
 89. 2026-08-06 fragment 생성 단계 진단 보강 (turn별 finish_reason·응답 본문 프리뷰) + 강제 턴 지시를 요청 사본에만 주입
 Purpose: namespace 를 woo 로 좁힌 뒤 Triage 는 통과했으나(queueId=27283) 생성 단계가 `fragment JSON missing` 으로 실패했다. 어느 턴에서 왜 JSON 이 안 나왔는지 로그가 전혀 없어 원인 판정이 불가하다 Changes:

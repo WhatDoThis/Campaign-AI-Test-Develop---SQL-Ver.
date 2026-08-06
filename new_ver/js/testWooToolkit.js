@@ -14,10 +14,13 @@
  * 허용 namespace 는 cfg.foundry.namespaces 이며 오류 메시지에 목록을 함께 실어
  * 모델이 다음 턴에 자체 교정하도록 한다.
  *
+ * 단계 예산(F-4): setPhaseBudget("triage"|"generate") 로 단계별 카운터를 분리한다.
+ * 요청 전체 상한(totalCallBudget)은 유지하되, Triage 가 생성 예산을 잠식하지 않게 한다.
+ *
  * [Main Functions]
  * ===========
  * - register / specs / invoke / env
- * - resetRequest(요청 단위 1회) / markPhase(단계 구분자) / resetBudget(deprecated)
+ * - resetRequest(요청 단위 1회) / markPhase / setPhaseBudget / resetBudget(deprecated)
  * - getEvidenceLog / getEvidenceLogSince
  *
  * [Tools]
@@ -46,11 +49,16 @@ testWoo.toolkit = (function () {
   var _probeCalls = 0;
   var _probeValuesCalls = 0;
   var _searchColumnsCalls = 0;
+  var _phaseKind = "";
+  var _phaseCalls = 0;
+  var _phaseLimit = 0;
   var _evidenceLog = [];
   var _evidenceSeq = 0;
   var _schemaListCache = {};
 
-  var TOTAL_BUDGET = 20;
+  var TOTAL_BUDGET = 40;
+  var TRIAGE_PHASE_BUDGET = 12;
+  var GENERATE_PHASE_BUDGET = 24;
   var PROBE_BUDGET = 8;
   var PROBE_VALUES_BUDGET = 6;
   var SEARCH_COLUMNS_BUDGET = 8;
@@ -70,6 +78,8 @@ testWoo.toolkit = (function () {
       if (cfg.toolkit) {
         return {
           total: cfg.toolkit.totalCallBudget || TOTAL_BUDGET,
+          triage: cfg.toolkit.triageCallBudget || TRIAGE_PHASE_BUDGET,
+          generate: cfg.toolkit.generateCallBudget || GENERATE_PHASE_BUDGET,
           probeSql: cfg.toolkit.probeSqlBudget || PROBE_BUDGET,
           probeValues: cfg.toolkit.probeValuesBudget || PROBE_VALUES_BUDGET,
           searchColumns: cfg.toolkit.searchColumnsBudget || SEARCH_COLUMNS_BUDGET
@@ -78,6 +88,8 @@ testWoo.toolkit = (function () {
     } catch (eB) {}
     return {
       total: TOTAL_BUDGET,
+      triage: TRIAGE_PHASE_BUDGET,
+      generate: GENERATE_PHASE_BUDGET,
       probeSql: PROBE_BUDGET,
       probeValues: PROBE_VALUES_BUDGET,
       searchColumns: SEARCH_COLUMNS_BUDGET
@@ -94,7 +106,7 @@ testWoo.toolkit = (function () {
 
   function _allowedNamespaces() {
     var cfg = testWoo.cfg.getConfig();
-    var raw = String(cfg.foundry.namespaces || "nms,cus");
+    var raw = String(cfg.foundry.namespaces || "woo");
     var parts = raw.split(",");
     var out = {};
     for (var i = 0; i < parts.length; i++) {
@@ -122,6 +134,9 @@ testWoo.toolkit = (function () {
 
   function _appendEvidence(name, args, result) {
     _evidenceSeq++;
+    var matchCount = null;
+    if (result && result.matches && typeof result.matches.length === "number")
+      matchCount = result.matches.length;
     _evidenceLog.push({
       seq: _evidenceSeq,
       tool: name,
@@ -129,6 +144,7 @@ testWoo.toolkit = (function () {
       resultSummary: _summarizeResult(result),
       partialScan: !!(result && result.partialScan),
       schemaLoadFailed: !!(result && result.schemaLoadFailed),
+      matchCount: matchCount,
       at: formatDate(new Date(), "%4Y/%2M/%2D %02H:%02N:%02S")
     });
   }
@@ -152,9 +168,23 @@ testWoo.toolkit = (function () {
     _probeCalls = 0;
     _probeValuesCalls = 0;
     _searchColumnsCalls = 0;
+    _phaseKind = "";
+    _phaseCalls = 0;
+    _phaseLimit = 0;
     _evidenceLog = [];
     _evidenceSeq = 0;
     _schemaListCache = {};
+  }
+
+  // 단계별 예산 카운터를 연다. markPhase 직전에 호출한다.
+  // kind="triage"|"generate". 요청 전체 상한(total)과 별도로 단계 상한을 적용한다.
+  function setPhaseBudget(kind) {
+    _phaseKind = String(kind || "");
+    _phaseCalls = 0;
+    var b = _budgets();
+    if (_phaseKind === "triage") _phaseLimit = b.triage;
+    else if (_phaseKind === "generate") _phaseLimit = b.generate;
+    else _phaseLimit = 0;
   }
 
   // 카운터는 유지하고 evidenceLog에 단계 구분자만 넣는다.
@@ -194,6 +224,11 @@ testWoo.toolkit = (function () {
     var b = _budgets();
     if (_totalCalls >= b.total)
       return { error: "tool call budget exceeded (total " + b.total + ")" };
+    if (_phaseLimit > 0 && _phaseCalls >= _phaseLimit)
+      return {
+        error: "tool call budget exceeded (phase " + _phaseKind + " " +
+          _phaseLimit + ")"
+      };
     if (name === "probe_sql" && _probeCalls >= b.probeSql)
       return { error: "tool call budget exceeded (probe_sql " + b.probeSql + ")" };
     if (name === "probe_values" && _probeValuesCalls >= b.probeValues)
@@ -205,6 +240,7 @@ testWoo.toolkit = (function () {
     if (!entry) return { error: "unknown tool: " + name };
 
     _totalCalls++;
+    _phaseCalls++;
     if (name === "probe_sql") _probeCalls++;
     if (name === "probe_values") _probeValuesCalls++;
     if (name === "search_columns") _searchColumnsCalls++;
@@ -675,6 +711,7 @@ testWoo.toolkit = (function () {
     invoke: invoke,
     env: env,
     resetRequest: resetRequest,
+    setPhaseBudget: setPhaseBudget,
     markPhase: markPhase,
     resetBudget: resetBudget,
     getEvidenceLog: getEvidenceLog,

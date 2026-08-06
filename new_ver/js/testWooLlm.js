@@ -20,7 +20,9 @@
  *   JSON 강제는 시스템 프롬프트 "OUTPUT JSON ONLY" + _parseJson 의 {…} 추출로 대체한다.
  *   Ref: https://discuss.ai.google.dev/t/gemini-2-5-flash-repeats-tokens-until-max-tokens-reached-in-structured-output/107176
  * - 출력 상한은 단계별로 분리한다 (env llm.pass0MaxTokens / pass1MaxTokens).
+ *   Pass0 기본은 2048 — 슬롯 JSON 에 충분하고 반복 루프 과금을 막는다.
  * - 반복 루프 억제는 temperature 가 아니라 frequency_penalty 로만 한다.
+ * - Pass0 가 length/반복으로 잘리면 강한 penalty 로 1회 재시도한다(간헐 Gemini 루프).
  * - 프롬프트 본문은 로그에 남기지 않는다 (응답 content 앞뒤 200자만).
  *
  * [Dependencies]
@@ -83,8 +85,23 @@ testWoo.llm = (function () {
       systemLines.splice(systemLines.length - 1, 0, "Domain keyword examples: " + cfg.llm.pass0Examples);
     }
     var system = systemLines.join("\n");
-    var raw = _chat(cfg, system, String(nlRequest || ""), "pass0");
-    var parsed = _parseJson(raw, "pass0");
+    var nl = String(nlRequest || "");
+    var raw;
+    var parsed;
+    try {
+      raw = _chat(cfg, system, nl, "pass0");
+      parsed = _parseJson(raw, "pass0");
+    } catch (e0) {
+      // json_object 없이도 Gemini 가 간헐적으로 토큰을 반복한다(#84 후에도 실측).
+      // Pass0 는 짧은 JSON 이라 강한 penalty 1회 재시도로 대부분 회복된다.
+      if (!_isLengthOrRepeatError(e0)) throw e0;
+      logWarning("[testWoo.llm.decomposeSlots] pass0 length/repeat — retry once " +
+        "(frequency_penalty=0.6)");
+      var retrySys = system +
+        "\nCRITICAL: Output ONE short JSON object only. Do not repeat tokens or pad.";
+      raw = _chat(cfg, retrySys, nl, "pass0", { frequencyPenalty: 0.6 });
+      parsed = _parseJson(raw, "pass0");
+    }
     if (!parsed.slots || !_isArray(parsed.slots) || !parsed.slots.length)
       throw new Error("[testWoo.llm.decomposeSlots] slots missing");
     var maxSlots = cfg.search.maxSlots;
@@ -256,7 +273,10 @@ testWoo.llm = (function () {
         };
         if (opts.reasoning != null) body.reasoning = opts.reasoning;
         else body.reasoning = reasoningOff();
-        var fp = _frequencyPenalty();
+        var fp = (opts.frequencyPenalty != null) ?
+          Number(opts.frequencyPenalty) : _frequencyPenalty();
+        if (isNaN(fp) || fp < 0) fp = 0;
+        if (fp > FREQUENCY_PENALTY_MAX) fp = FREQUENCY_PENALTY_MAX;
         if (fp > 0) body.frequency_penalty = fp;
         // 원칙: 본 시스템은 response_format:{type:"json_object"} 를 사용하지 않는다.
         // Gemini 계열은 structured output 강제 시 토큰 반복 루프에 빠져 max_tokens 를
@@ -283,12 +303,20 @@ testWoo.llm = (function () {
   }
 
   // stage = "pass0" | "pass1" — 출력 상한과 진단 메시지의 단계 표기에 쓰인다.
-  function _chat(cfg, system, userContent, stage) {
+  // opts.frequencyPenalty 가 있으면 env 값 대신 그 값을 쓴다(Pass0 재시도용).
+  function _chat(cfg, system, userContent, stage, opts) {
+    opts = opts || {};
     var adapter = _provider(cfg);
-    var body = adapter.body(cfg.llm.model, system, userContent, _maxTokensFor(stage), {
-      reasoning: reasoningOff()
-    });
+    var bodyOpts = { reasoning: reasoningOff() };
+    if (opts.frequencyPenalty != null) bodyOpts.frequencyPenalty = opts.frequencyPenalty;
+    var body = adapter.body(cfg.llm.model, system, userContent,
+      _maxTokensFor(stage), bodyOpts);
     return _postJson(cfg.llm, body, adapter.headers(cfg.llm.apiKey));
+  }
+
+  function _isLengthOrRepeatError(e) {
+    var msg = String((e && e.message) || e || "");
+    return msg.indexOf("max_tokens") >= 0 || msg.indexOf("반복 루프") >= 0;
   }
 
   function postChat(cfg, bodyObj) {
@@ -568,7 +596,7 @@ testWoo.llm = (function () {
     }
     if (_looksRepetitive(text)) {
       return "[반복 루프 의심] 동일 패턴이 되풀이되며 출력 상한을 소진했습니다 — " + tail +
-        ". response_format(json_object) 재도입 여부와 프롬프트 길이를 확인하십시오.";
+        ". Gemini 간헐 루프(json_object 없이도 발생). Pass0 는 자동 재시도·frequency_penalty 확인.";
     }
     return "출력 상한을 올리거나 후보 수를 줄이세요 — " + tail +
       ". reasoning=0 인데 completion 이 상한이면 토큰 부족이 아니라 반복 루프일 수 있습니다.";

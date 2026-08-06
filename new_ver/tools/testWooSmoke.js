@@ -21,14 +21,16 @@
  * - 6a. 큐 더미 1건 insert → _getQueue/getQueueStatus 조회 → 삭제 (N-1 회귀 검출)
  * - 7. llm.pass0 실호출 — 슬롯 1건 이상 + max_tokens 절단 없음 (billable)
  * - 8. llm.embedding 실호출 — 벡터 길이 > 0 (billable · embedEnabled=false면 SKIP)
- * - 9. PASS/FAIL/SKIP 요약 출력, 실패 1건 이상이면 logError
+ * - 9. foundry.generate — dryRunSlot 로 Triage+생성 경로 즉시 검증 (billable · 큐 부작용 0)
+ * - 10. PASS/FAIL/SKIP 요약 출력, 실패 1건 이상이면 logError
  *
  * logError 는 WF 스크립트 실행을 즉시 중단시킨다(문서화된 동작). 그래서 개별 스텝 실패는
  * twFail(logWarning)로만 남기고, 전체 판정 logError 는 요약 맨 끝에서 한 번만 호출한다.
  *
- * 7·8 은 실제 과금이 발생한다. 그럼에도 필수인 이유: 1~6 은 전부 DB/스키마 계열이라
- * LLM 파라미터 결함(#80 tools 충돌 · #83 사고토큰 · #84 반복 루프)이 항상 사용자 입력
- * 시점에 처음 발현됐다. 부득이한 경우에만 TW_SMOKE_SKIP_LLM=true 로 건너뛴다.
+ * 7·8·9 는 실제 과금이 발생한다. 그럼에도 필수인 이유: 1~6 은 전부 DB/스키마 계열이라
+ * LLM 파라미터 결함(#80 tools 충돌 · #83 사고토큰 · #84 반복 루프)과 생성 단계
+ * 결함(#89 fragment JSON missing)이 항상 사용자 입력·배치 시점에 처음 발현됐다.
+ * 부득이한 경우에만 TW_SMOKE_SKIP_LLM=true 로 건너뛴다.
  *
  * [Dependencies]
  * =========
@@ -65,6 +67,8 @@ var TW_SMOKE_SKIP_LLM = false;
 var TW_SMOKE_DESCRIBE_ID = "woo:testWooAiFragment";
 // 5 검색 키워드. 위 코어 스키마의 속성이라 시드 여부와 무관하게 1건 이상 매칭된다.
 var TW_SMOKE_SEARCH_KEYWORD = "category";
+// 9.foundry.generate 기본 슬롯 — 샘플 테이블 sRegion 에 서울 값이 있어야 한다.
+var TW_SMOKE_SLOT_TEXT = "서울에 사는 고객";
 
 function twPass(step, note) {
   TW_SMOKE_RESULTS.push({ step: step, ok: true, note: String(note || "") });
@@ -495,7 +499,48 @@ function twStepLlmEmbedding() {
   }
 }
 
-// 9. 요약
+// 9. foundry.generate 드라이런 (billable) — 큐·WF 없이 생성 경로를 즉시 검증한다.
+// fragment JSON missing / 게이트 실패가 배치 5분 사이클에만 드러나던 사각지대를 덮는다.
+function twStepFoundryGenerate() {
+  if (TW_SMOKE_SKIP_LLM === true) {
+    twSkip("9.foundry.generate (billable)",
+      "TW_SMOKE_SKIP_LLM=true — LLM 스텝 생략 시 배포 완료 아님");
+    return true;
+  }
+  try {
+    // forceGenerate: triage 오탐(값 키워드만 검색 → no_column)이 있어도 생성 경로(F-0)는
+    // 검증한다. triage 결과는 로그에 남기고, PASS 조건은 여전히 gate.pass 이다.
+    var r = testWoo.foundry.dryRunSlot(TW_SMOKE_SLOT_TEXT, { forceGenerate: true });
+    if (r && r.triage && r.triage.canProceed === false)
+      logWarning("[smoke] 9.foundry.generate triage blocked (forced generate) verdict=" +
+        String(r.triage.verdict) + "/" + String(r.triage.confidence) +
+        " — " + String(r.triage.narrative || "").substring(0, 160));
+    if (!r || !r.fragDoc || !r.gate || r.gate.pass !== true) {
+      var detail = "";
+      if (r && r.shapeError) detail = "shapeError=" + r.shapeError;
+      else if (r && r.gateFailCodes && r.gateFailCodes.length)
+        detail = "gateFail=" + r.gateFailCodes.join("|");
+      else if (r && r.reason) detail = "reason=" + r.reason;
+      else detail = "no result";
+      if (r && r.rawContentPreview)
+        logWarning("[smoke] 9.foundry.generate rawPreview=" + r.rawContentPreview);
+      twFail("9.foundry.generate (billable)", detail +
+        " attempts=" + String(r ? r.attempts : 0));
+      return false;
+    }
+    twPass("9.foundry.generate (billable)",
+      "name=" + String(r.fragDoc.name) +
+      " attempts=" + String(r.attempts) +
+      " tokens=" + String(r.tokensUsed) +
+      (r.triage && r.triage.canProceed === false ? " (triage forced)" : ""));
+    return true;
+  } catch (e) {
+    twFail("9.foundry.generate (billable)", String(e.message || e));
+    return false;
+  }
+}
+
+// 10. 요약
 function twSummary() {
   var failed = 0;
   var skipped = 0;
@@ -533,5 +578,6 @@ if (twStepGlobals()) {
   twStepQueueRoundTrip();
   twStepLlmPass0();
   twStepLlmEmbedding();
+  twStepFoundryGenerate();
 }
 twSummary();

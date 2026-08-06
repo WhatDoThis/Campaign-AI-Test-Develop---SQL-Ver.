@@ -10,6 +10,9 @@
  * "tool loop exceeded" 로 끝난다. 허용 namespace 는 toolkit.env() 로 프롬프트에
  * 명시한다 — 알려주지 않으면 미허용 ns 를 찍어보며 턴을 낭비한다.
  *
+ * no_column 오탐 방지: describe_schema 없이 no_column 을 내면 루프에서 재지시하고,
+ * 강등 규칙은 ambiguous 로 내린다(값 키워드만 검색해 region 컬럼을 놓치는 실측 대응).
+ *
  * [Main Functions]
  * ===========
  * - triage(slot, cfg, nlContext)
@@ -41,6 +44,7 @@ testWoo.feasibility = (function () {
   var TURNS_DEFAULT = 6;
   var FINAL_TURN_NUDGE = "FINAL TURN — no more tool calls are allowed. " +
     "Output the verdict JSON now, using only the evidence already gathered. " +
+    "If you never called describe_schema, you MUST NOT answer no_column — use ambiguous. " +
     "If the evidence is insufficient, answer verdict=\"ambiguous\" with the reason.";
 
   function _trim(s) {
@@ -70,6 +74,13 @@ testWoo.feasibility = (function () {
     }
   }
 
+  var NO_COLUMN_WITHOUT_DESCRIBE_NUDGE =
+    "You claimed no_column (or have only searched literal values) without describe_schema. " +
+    "REQUIRED next steps: (1) search_columns for concept synonyms such as region, 지역, city — " +
+    "NOT the city/value itself; (2) list_schemas on allowed namespaces; " +
+    "(3) describe_schema on customer/sample tables; (4) probe_values for the literal value. " +
+    "Then output the verdict JSON.";
+
   function _triageSystemPrompt() {
     return [
       "You are a feasibility triage agent for LG U+ Adobe Campaign audience SQL.",
@@ -77,12 +88,17 @@ testWoo.feasibility = (function () {
       "Use tools (list_schemas, describe_schema, search_columns, probe_values) for evidence.",
       _envBlock(),
       "search_columns matches column NAMES/LABELS only — never data values. " +
-        "For a literal value (e.g. a city name) find the candidate column first, " +
-        "then call probe_values on it.",
-      "Budget: few turns. Do not repeat a search with synonyms more than twice; " +
-        "move to describe_schema/probe_values instead.",
+        "Searching a city name like 서울 returns 0 matches even when a region column exists.",
+      "Location/city slots (서울, 부산, …): search keywords region, 지역, city first. " +
+        "Then list_schemas → describe_schema on woo customer/sample tables → " +
+        "probe_values(schemaId, columnName) for the city value. " +
+        "Do NOT conclude no_column from value-keyword searches alone.",
+      "Budget: few turns. At most two value-keyword searches, then switch to " +
+        "concept synonyms + describe_schema/probe_values.",
       "Never invent SQL. Never substitute a similar column silently — put substitutes in alternatives only.",
       "If value existence is uncertain, call probe_values before claiming no_value.",
+      "no_column with high confidence REQUIRES describe_schema evidence. " +
+        "Without it, answer ambiguous (not no_column).",
       "describe_schema reports a logical 'name' and a physical 'sqlColumn'. Report the " +
         "physical sqlColumn in evidence and alternatives so downstream SQL is valid; " +
         "an empty sqlColumn means the field is not SQL-queryable.",
@@ -92,7 +108,8 @@ testWoo.feasibility = (function () {
       '"evidence":{"schemasScanned":[],"columnsConsidered":[],"valueProbes":[]},',
       '"alternatives":[{"type":"column|value|rephrase","label":"...","detail":"...","schemaId":"","columnName":""}],',
       '"clarifyQuestion":"..."}',
-      "Few-shot balance: treat missing schema concepts as no_column; missing values need probe_values."
+      "Few-shot balance: treat missing schema concepts as no_column only after describe_schema; " +
+        "missing values need probe_values."
     ].join("\n");
   }
 
@@ -135,8 +152,8 @@ testWoo.feasibility = (function () {
       var msg = ch.message || {};
       messages.push(msg);
 
-      if (!lastTurn && ch.finish_reason === "tool_calls" &&
-          msg.tool_calls && msg.tool_calls.length) {
+      // tool_calls 유무는 finish_reason 이 아니라 배열로 판정 (Gemini 가 stop 으로 올 수 있음)
+      if (!lastTurn && msg.tool_calls && msg.tool_calls.length) {
         for (var i = 0; i < msg.tool_calls.length; i++) {
           var tc = msg.tool_calls[i];
           var fn = tc.function || {};
@@ -169,7 +186,29 @@ testWoo.feasibility = (function () {
         throw new Error("[testWoo.feasibility] triage JSON missing (turn " + (t + 1) +
           "/" + turns + ", finish_reason=" + String(ch.finish_reason) +
           ", contentLen=" + content.length + ")");
-      return JSON.parse(content.substring(start, end + 1));
+
+      var parsed;
+      try {
+        parsed = JSON.parse(content.substring(start, end + 1));
+      } catch (eP) {
+        throw new Error("[testWoo.feasibility] triage JSON parse error: " +
+          String(eP.message || eP));
+      }
+
+      // describe_schema 없이 no_column 을 내면 오탐(값 키워드만 검색한 경우).
+      // 남은 턴이 있으면 재지시 후 계속 — 마지막 턴은 강등 규칙이 처리한다.
+      var v = _trim(parsed.verdict || "");
+      if (v === "no_column" && !lastTurn) {
+        var evLog = testWoo.toolkit.getEvidenceLog ?
+          testWoo.toolkit.getEvidenceLog() : [];
+        if (!_hasToolCall(evLog, "describe_schema")) {
+          logInfo("[testWoo.feasibility] no_column without describe_schema — nudge turn=" +
+            (t + 1));
+          messages.push({ role: "user", content: NO_COLUMN_WITHOUT_DESCRIBE_NUDGE });
+          continue;
+        }
+      }
+      return parsed;
     }
     // 도달 불가 — 마지막 턴은 항상 반환 또는 예외로 끝난다 (방어적 잔존)
     throw new Error("[testWoo.feasibility] triage tool loop exceeded (turns=" + turns + ")");
@@ -234,6 +273,13 @@ testWoo.feasibility = (function () {
     }
     if (verdict === "no_column" && !_hasToolCall(log, "search_columns")) {
       verdict = "ambiguous";
+      demoted = true;
+    }
+    // describe_schema 없이 no_column 은 값 키워드 검색만으로 컬럼 부재를 단정한 오탐이다.
+    // (실측: 서울/주소/도시 검색 → region 컬럼을 못 보고 no_column high)
+    if (verdict === "no_column" && !_hasToolCall(log, "describe_schema")) {
+      verdict = "ambiguous";
+      evidence.noDescribeBeforeNoColumn = true;
       demoted = true;
     }
     // 스키마 로드가 전멸했으면 "컬럼 없음"이 아니라 "확인 불가"다.
@@ -306,6 +352,7 @@ testWoo.feasibility = (function () {
     }
 
     // 이 슬롯 triage 단계에서 발생한 툴 호출만 강등 근거로 쓴다(이전 슬롯 근거 전용 차단).
+    if (testWoo.toolkit.setPhaseBudget) testWoo.toolkit.setPhaseBudget("triage");
     var phaseStart = testWoo.toolkit.markPhase ?
       testWoo.toolkit.markPhase("triage:" + slotId) : 0;
     var raw = runTriageLoop(cfg, slotText, slotId, nlContext);

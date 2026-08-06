@@ -53,11 +53,13 @@ testWoo.env = (function () {
      * provider: "openrouter" | "anthropic" (롤백)
      * useProxy: true면 HttpClientRequest.execute(true)
      * pass0Examples: Pass0 system에 붙는 도메인 키워드 예시 (비우면 생략)
-     * pass0MaxTokens / pass1MaxTokens: 단계별 출력 상한. Pass1은 후보 카드 전량을 받아
-     *   CNF 계획을 만들므로 출력이 더 길다 → 상한을 분리한다(권장 동일값, fragment가
-     *   쌓이면 pass1만 올린다). 사고 토큰이 합산되는 모델 기준 기본 8192
+     * pass0MaxTokens / pass1MaxTokens: 단계별 출력 상한.
+     *   Pass0 는 슬롯 JSON 수십~수백 토큰이면 충분하다. 8192 로 두면 Gemini 간헐
+     *   반복 루프가 그 상한까지 채워 과금·지연이 커진다 → Pass0 기본 2048.
+     *   Pass1 은 후보 카드 전량 → 8192 유지. fragment 가 쌓이면 pass1 만 올린다.
      * repetitionGuardEnabled / frequencyPenalty: 반복 루프 억제.
-     *   true + 0 초과일 때만 body에 frequency_penalty를 넣는다. 가드 0~1, 권장 0.1
+     *   true + 0 초과일 때만 body에 frequency_penalty를 넣는다. 가드 0~1, 권장 0.3
+     *   (0.1 은 json_object 제거 후에도 Gemini 간헐 반복을 못 막는 실측이 있었다)
      *   temperature는 0 유지(결정성 우선) — 0이 오히려 반복을 유도할 때가 있어 penalty로만 처리
      * ------------------------------------------------------------------ */
     llm: {
@@ -66,12 +68,12 @@ testWoo.env = (function () {
       pass0Examples: "",
       embedModel: "openai/text-embedding-3-small",
       embedEnabled: true,
-      pass0MaxTokens: 8192,
+      pass0MaxTokens: 2048,
       pass1MaxTokens: 8192,
       triageMaxTokens: 4096,
       foundryMaxTokens: 16384,
       repetitionGuardEnabled: true,
-      frequencyPenalty: 0.1
+      frequencyPenalty: 0.3
     },
 
     /* ------------------------------------------------------------------
@@ -136,9 +138,14 @@ testWoo.env = (function () {
 
     /* ------------------------------------------------------------------
      * toolkit — LLM tool calling 요청당 호출 상한 (OWASP LLM06)
+     * totalCallBudget: 요청 전체. triage+generate 합산 상한. 권장 40
+     * triageCallBudget / generateCallBudget: 단계별 상한 (setPhaseBudget).
+     *   산출: triage ≈ maxTurns(6) × ~2콜, generate ≈ maxTurns(6) × attempts(3)
      * ------------------------------------------------------------------ */
     toolkit: {
-      totalCallBudget: 20,
+      totalCallBudget: 40,
+      triageCallBudget: 12,
+      generateCallBudget: 24,
       probeSqlBudget: 8,
       probeValuesBudget: 6,
       searchColumnsBudget: 8
