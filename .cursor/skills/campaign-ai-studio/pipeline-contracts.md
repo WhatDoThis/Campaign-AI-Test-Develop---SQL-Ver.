@@ -4,7 +4,7 @@
 
 | Endpoint | Auth | Body | Success shape |
 |----------|------|------|---------------|
-| `testWooAiGenerate.jssp` | Generate | `{ nl_request, workflow_id? }` | `{ ok, passed, plan, sql, chips, summary, results }` |
+| `testWooAiGenerate.jssp` | Generate | `{ nl_request, workflow_name? }` | `{ ok, passed, plan, sql, chips, summary, results }` |
 | `testWooAiValidate.jssp` | Generate | `{ action:"validate", plan }` | `{ ok, passed, results, sql, summary, chips, plan }` |
 | `testWooAiValidate.jssp` | Generate | `{ action:"count", plan }` | `{ ok, sql, keyColumn, funnel:[], … }` |
 | `testWooAiValidate.jssp` | Generate | `{ action:"catalog" }` | `{ ok, categories }` |
@@ -26,7 +26,7 @@ Required fields: `name`, `label`, `category`, `tags`, `key_column`, `sql_text`, 
 
 ## SQL history (`woo:testWooAiSql`)
 
-Key fields: `nl_request`, `plan_json`, `sql_query`, `status`, `workflow_id`.
+Key fields: `nl_request`, `plan_json`, `sql_query`, `status`, `workflow_name` (WF internal name, e.g. `WKF94` — not the integer `@id`).
 
 Status enum: `draft` | `validated` | `registered` | `rejected`.
 

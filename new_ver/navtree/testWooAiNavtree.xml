@@ -74,7 +74,7 @@ Administration > Configuration > Navigation hierarchies > woo:testWooAiNav
             <node xpath="@nl_request"/>
             <node xpath="@status"/>
             <node xpath="@target_count"/>
-            <node xpath="@workflow_id"/>
+            <node xpath="@workflow_name"/>
             <node xpath="@creation_date"/>
           </columns>
           <orderBy>

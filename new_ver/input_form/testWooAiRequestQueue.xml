@@ -13,7 +13,7 @@ ACC Input forms 에 본 XML 전체 재등록(type=notebook 줄 확인)
     <input xpath="@last_error"/>
     <input xpath="@missing_slots_json"/>
     <input xpath="@created_by"/>
-    <input xpath="@workflow_id"/>
+    <input xpath="@workflow_name"/>
     <input xpath="@created_at"/>
     <input xpath="@updated_at"/>
   </container>

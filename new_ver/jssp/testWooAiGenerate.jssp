@@ -36,7 +36,7 @@ try {
           unmatched: unmatched
         }),
         created_by: currentLogin(),
-        workflow_id: p.workflow_id || 0
+        workflow_name: p.workflow_name || ""
       });
       jsonOut({
         ok: true,

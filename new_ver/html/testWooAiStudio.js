@@ -21,7 +21,7 @@
 
   var TITLE_MAX = 200; // schema woo:testWooAiSql @title length
   var params = new URLSearchParams(location.search);
-  var WORKFLOW_ID = params.get("workflowId") || "";
+  var WORKFLOW_NAME = params.get("workflowName") || "";
   var BASE = "/woo/";
 
   var state = { plan: null, sql: "", summary: "", passed: false, nl: "", aiSqlId: null, queuePoll: null };
@@ -194,7 +194,7 @@
     var nl = $("nl").value.trim();
     if (!nl) return;
     state.nl = nl; clearErr(); setBusy(true);
-    post("testWooAiGenerate.jssp", { nl_request: nl, workflow_id: WORKFLOW_ID })
+    post("testWooAiGenerate.jssp", { nl_request: nl, workflow_name: WORKFLOW_NAME })
       .then(function (res) {
         if (res.status === "queued" && res.queueId) {
           hideResultCards();
@@ -252,7 +252,7 @@
     var title = (state.nl || "").slice(0, TITLE_MAX);
     post("testWooAiRegister.jssp", {
       plan: state.plan,
-      workflow_id: WORKFLOW_ID || 0,
+      workflow_name: WORKFLOW_NAME,
       title: title,
       target_count: 0,
       nl_request: state.nl
@@ -343,7 +343,7 @@
   function init() {
     var login = window.__TW_LOGIN__ || "";
     $("wfInfo").textContent = "user: " + (login || "?") +
-      " / workflow: " + (WORKFLOW_ID || "n/a") + " / register\u2192ai_sql_id";
+      " / workflow: " + (WORKFLOW_NAME || "n/a") + " / register\u2192ai_sql_id";
     $("btnGen").addEventListener("click", generate);
     $("btnReg").addEventListener("click", register);
     $("nl").addEventListener("keydown", function (e) {

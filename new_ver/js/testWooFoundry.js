@@ -60,7 +60,7 @@ testWoo.foundry = (function () {
             <node expr="@id"/><node expr="@nl_text"/><node expr="@slots_json"/>
             <node expr="@missing_slots_json"/><node expr="@plan_json"/>
             <node expr="@status"/><node expr="@attempt_count"/>
-            <node expr="@tokens_used"/><node expr="@created_by"/><node expr="@workflow_id"/>
+            <node expr="@tokens_used"/><node expr="@created_by"/><node expr="@workflow_name"/>
             <node expr="@slot_results"/><node expr="@evidence_log"/><node expr="@partial_preview"/>
           </select>
           <where><condition expr={"@id = " + Number(id)}/></where>
@@ -85,7 +85,7 @@ testWoo.foundry = (function () {
       attempt_count: Number(r.@attempt_count) || 0,
       tokens_used: Number(r.@tokens_used) || 0,
       created_by: String(r.@created_by),
-      workflow_id: Number(r.@workflow_id) || 0,
+      workflow_name: String(r.@workflow_name || ""),
       slot_results: String(r.@slot_results || "[]"),
       evidence_log: String(r.@evidence_log || "[]"),
       partial_preview: String(r.@partial_preview || "")

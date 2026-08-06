@@ -23,7 +23,7 @@ NL → plan_json → SQL 이력. usedFragments/compileHash/impactStatus.
 
   <element autopk="true" label="Test Woo AI Generated SQL" name="testWooAiSql" sqltable="testWooAiSql">
     <dbindex name="idx_wf">
-      <keyfield xpath="@workflow_id"/>
+      <keyfield xpath="@workflow_name"/>
     </dbindex>
 
     <attribute label="Title"           length="200" name="title"         type="string"/>
@@ -35,7 +35,7 @@ NL → plan_json → SQL 이력. usedFragments/compileHash/impactStatus.
     <attribute label="Generated SQL"   name="sql_query"     type="memo"/>
     <attribute label="Summary KO"      length="500" name="summary_ko"    type="string"/>
     <attribute label="Target Count"    name="target_count"  type="long"/>
-    <attribute label="Workflow ID"     name="workflow_id"   type="long"/>
+    <attribute label="Workflow Name"   length="64"  name="workflow_name" type="string"/>
     <attribute label="Excluded Slots"  name="excluded_slots" type="memo"/>
     <attribute label="Has Exclusion"   name="has_exclusion" type="boolean" default="false"/>
     <attribute enum="sqlHistoryStatus" label="Status" length="16" name="status" type="string"/>

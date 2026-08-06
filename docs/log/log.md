@@ -1,6 +1,7 @@
 # Log
 
 ## Log Index
+79. 2026-08-06 workflow_id(long) → workflow_name(string) 전환 — WF 인터널네임 보관 (BAS-010042 해소)
 78. 2026-08-05 방언 지원 정책 명문화 — 미검증 DBMS 런타임 가드 + FDA 주석 + 문자열 대조 도구 (추가5 반영)
 77. 2026-08-05 SQL 방언 정합 M-1~M-3 (limitSelect DISTINCT TOP · 스모크 6a/6b, 06 리포트 반영)
 76. 2026-08-05 Adobe API 오용 수정 N-1~N-6 + 배포 스모크 (05 리포트 반영)
@@ -81,6 +82,44 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+79. 2026-08-06 workflow_id(long) → workflow_name(string) 전환 — WF 인터널네임 보관 (BAS-010042 해소)
+Purpose: Studio 를 `?workflowId=WKF94`(워크플로 인터널네임)로 열면 큐 insert 가 `BAS-010042 Value 'WKF94' is not a valid integer` 로 실패했다. 정수 PK 대신 환경 이식이 가능한 인터널네임을 보관하도록 필드 타입·명칭을 전환한다 Changes:
+
+**결함 원인**
+- 스키마는 `workflow_id type="long"` 인데 Studio URL 파라미터가 검증 없이
+  `p.workflow_id` → `doc.@workflow_id` 로 그대로 대입되어 Write 시점에 ACC 가 거부
+- 영향 2경로: `enqueueRequest`(큐 insert, 실제 발생) / `saveAiSql`(Register, 동일 원인 잠재)
+
+**인터널네임 채택 근거**
+- 이 필드는 조회·조인에 쓰이지 않는 순수 추적용(navtree 열 + 입력폼 표시)
+- 정수 `@id` 는 autopk 라 패키지 배포 시 환경마다 값이 달라짐. 인터널네임은 유지됨
+- 운영자가 `WKF94` 를 콘솔 검색창에 바로 넣어 워크플로를 찾을 수 있음
+- 향후 레이블 조인이 필요해도 OOTB `xtk:workflow` 는 `@internalName` 에 내부 키가 있어 가능
+
+**변경 내용**
+- 스키마 2종: `workflow_id`(long) → `workflow_name`(string, length=64).
+  `testWooAiSql` 의 `idx_wf` keyfield xpath 도 함께 전환(unique 아닌 dbindex 로 충돌 없음)
+- `testWooRepository.js`: `WF_NAME_MAX=64` 상수 + `_wfName()` 헬퍼 신설(trim + 초과 시
+  절단하며 `logWarning`). `saveAiSql`·`enqueueRequest` 두 write 지점에 적용
+- `testWooFoundry.js`: `_getQueue` select 노드와 반환 필드를 문자열로 전환(`Number()` 제거)
+- JSSP 2종: Generate·Register 페이로드 키를 `workflow_name` 으로, 기본값 `0` → `""`
+- URL 파라미터: `?workflowId=` → `?workflowName=` (Studio.jssp, 클라이언트 JS 2종)
+- 클라이언트 JS 2종 동기 유지: `WORKFLOW_ID` → `WORKFLOW_NAME` (선언·generate·register·푸터 4곳)
+- 버튼 패치: `document.value.@id` → `@internalName`, URL 파라미터명 및 주석 갱신
+- 스모크: `workflow_id: 0` → `workflow_name: ""`
+- 문서: 개발가이드 이력 필드표·API 계약·Studio 접속 URL·큐 필드표, 스킬 pipeline-contracts.md
+
+**검증**
+- `checkRhinoSyntax.js` 19/19 통과
+- 변경 XML 6종 well-formed 확인(PowerShell `[xml]` 파싱)
+- 저장소 전역 `workflow_id`/`WORKFLOW_ID`/`workflowId` 잔여 참조 0건
+  (과거 리포트 `04_SQL생성추가_추가2.md` 는 이력 문서라 원문 유지)
+
+**배포 주의**
+- 스키마 2종 재배포 후 **DB 구조 갱신 필수**(정수 → 문자열 컬럼 타입 변경).
+  기존 행의 `0` 은 `"0"` 으로 남으므로 필요 시 갱신 후 정리
+Changed files: new_ver/schema/{testWooAiRequestQueue,testWooAiSql}.xml, new_ver/input_form/{testWooAiRequestQueue,testWooAiSql}.xml, new_ver/navtree/testWooAiNavtree.xml, new_ver/js/{testWooRepository,testWooFoundry}.js, new_ver/jssp/{testWooAiGenerate,testWooAiRegister,testWooAiStudio,testWooAiStudioJs}.jssp, new_ver/html/testWooAiStudio.js, new_ver/workflow/testWooXtkWorkflowButtonPatch.xml, new_ver/tools/testWooSmoke.js, docs/report/01_개발가이드.md, .cursor/skills/campaign-ai-studio/pipeline-contracts.md
 
 78. 2026-08-05 방언 지원 정책 명문화 — 미검증 DBMS 런타임 가드 + FDA 주석 + 문자열 대조 도구 (추가5 반영)
 Purpose: docs/report/06_SQL생성추가_추가5.md(추가4 개정판) 반영. M-1 A/B/C·M-2·M-3 은 로그 #77 에서 이미 적용 완료이며, 본 항목은 개정판에서 **신규 추가된 수정 D/E 와 방언 지원 정책**만 처리한다 Changes:

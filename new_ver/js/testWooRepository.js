@@ -20,6 +20,7 @@ testWoo.repo = (function () {
   var QUEUE_SCHEMA = "woo:testWooAiRequestQueue";
   var FRAG_SCHEMA = "woo:testWooAiFragment";
   var GAP_SCHEMA = "woo:testWooAiGapLog";
+  var WF_NAME_MAX = 64;
 
   function nowStr() {
     return formatDate(new Date(), "%4Y/%2M/%2D %02H:%02N:%02S");
@@ -27,6 +28,14 @@ testWoo.repo = (function () {
 
   function _trim(s) {
     return String(s == null ? "" : s).replace(/^\s+|\s+$/g, "");
+  }
+
+  // 워크플로 인터널네임(WKF94 등)을 보관한다. 정수 @id 는 패키지 이동 시 바뀌므로 쓰지 않는다.
+  function _wfName(v) {
+    var s = _trim(v);
+    if (s.length <= WF_NAME_MAX) return s;
+    logWarning("[testWoo.repo] workflow_name 길이 초과로 절단: " + s);
+    return s.substring(0, WF_NAME_MAX);
   }
 
   function saveAiSql(rec) {
@@ -59,7 +68,7 @@ testWoo.repo = (function () {
     doc.@sql_query = rec.sql_query;
     doc.@summary_ko = rec.summary_ko || "";
     doc.@target_count = rec.target_count != null ? rec.target_count : 0;
-    doc.@workflow_id = rec.workflow_id || 0;
+    doc.@workflow_name = _wfName(rec.workflow_name);
     doc.@excluded_slots = rec.excluded_slots || "";
     doc.@has_exclusion = hasExclusion;
     doc.@status = rec.status || "draft";
@@ -127,7 +136,7 @@ testWoo.repo = (function () {
     doc.@status = "queued";
     doc.@attempt_count = 0;
     doc.@created_by = rec.created_by || "";
-    doc.@workflow_id = rec.workflow_id || 0;
+    doc.@workflow_name = _wfName(rec.workflow_name);
     doc.@created_at = nowStr();
     doc.@updated_at = nowStr();
     xtk.session.Write(doc);

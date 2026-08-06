@@ -231,7 +231,7 @@ function twStepQueueRoundTrip() {
       slots_json: "[]",
       missing_slots_json: "[]",
       created_by: "smoke",
-      workflow_id: 0
+      workflow_name: ""
     });
     if (!qid) {
       twFail("6a.queue.write-read", "enqueueRequest returned no id");

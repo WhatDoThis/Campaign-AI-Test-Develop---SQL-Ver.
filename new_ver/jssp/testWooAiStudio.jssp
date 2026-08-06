@@ -54,9 +54,9 @@ function _twCookie(name) {
   return "";
 }
 
-var _wf = String(request.getParameter("workflowId") || "");
+var _wf = String(request.getParameter("workflowName") || "");
 var _studioUrl = "/woo/testWooAiStudio.jssp";
-if (_wf) _studioUrl += "?workflowId=" + encodeURIComponent(_wf);
+if (_wf) _studioUrl += "?workflowName=" + encodeURIComponent(_wf);
 var _logonUrl = "/nl/jsp/logon.jsp?target=" + encodeURIComponent(_studioUrl);
 
 var _login = "";

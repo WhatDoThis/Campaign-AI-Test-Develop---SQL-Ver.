@@ -57,7 +57,7 @@ try {
       sql_query: compiled.sql,
       summary_ko: compiled.summary || p.summary,
       target_count: p.target_count != null ? p.target_count : 0,
-      workflow_id: p.workflow_id || 0,
+      workflow_name: p.workflow_name || "",
       excluded_slots: p.excluded_slots ? JSON.stringify(p.excluded_slots) : "",
       status: "registered"
     });

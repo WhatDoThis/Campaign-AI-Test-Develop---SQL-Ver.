@@ -11,16 +11,17 @@
   [Apply]
   1) Console: Administration > Configuration > Input forms → xtk:workflow
   2) Insert the block below between run toolbar and property panel
-  3) Click opens Test Woo AI Studio with current workflow id
+  3) Click opens Test Woo AI Studio with current workflow internal name
+     (@internalName, not @id — the integer pk changes on package import)
 -->
 <container type="visibleGroup" name="testWooAiGenerateBar" label="Test Woo AI">
   <static type="button" name="btnTestWooAiGenerate" label="AI Generate" img="xtk:ai.png">
     <enter>
       <![CDATA[
-        // TODO(env): confirm how to read current workflow id in console form context
-        var wfId = document.value ? document.value.@id : "";
+        // TODO(env): confirm how to read current workflow internalName in console form context
+        var wfName = document.value ? document.value.@internalName : "";
         var activity = "customActivity";
-        var url = "/woo/testWooAiStudio.jssp?workflowId=" + encodeURIComponent(wfId) +
+        var url = "/woo/testWooAiStudio.jssp?workflowName=" + encodeURIComponent(wfName) +
                   "&activity=" + encodeURIComponent(activity);
         // TODO(env): confirm console window-open API
         window.open(url, "testWooAiStudio", "width=1000,height=800");

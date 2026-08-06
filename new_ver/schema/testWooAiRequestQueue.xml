@@ -48,7 +48,7 @@ woo:testWooAiRequestQueue (Foundry 비동기 요청 큐 · Triage 확장)
     <attribute label="Tokens Used"        name="tokens_used"         type="long" default="0"/>
     <attribute label="Cost Estimate"      name="cost_estimate"       type="double"/>
     <attribute label="Created By"         length="64"  name="created_by"        type="string"/>
-    <attribute label="Workflow ID"        name="workflow_id"         type="long"/>
+    <attribute label="Workflow Name"      length="64"  name="workflow_name"     type="string"/>
     <attribute label="Created At"         name="created_at"          type="datetime"/>
     <attribute label="Updated At"         name="updated_at"          type="datetime"/>
   </element>
