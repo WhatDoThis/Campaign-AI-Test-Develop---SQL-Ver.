@@ -11,7 +11,8 @@
  * ===========
  * - jsonOut / errOut / handleApiError : JSON 응답·에러(클라이언트 요약 + errId)
  * - readPayload                       : getUTF8Parameter("payload") + body fallback
- * - twSessionTokenFromRequest / twBindOperator : Cookie 헤더 → logon()
+ * - twSessionTokenFromRequest / twLogonWithToken / twBindOperator
+ *                                     : Cookie 헤더 → logonWithToken() (logon 폴백)
  * - twCheckRemoteAddr                 : Env security.allowedCidr (비우면 통과)
  * - currentLogin / requireRight       : named right (fail-closed)
  * - requireStudioCsrf                 : X-Requested-With + Origin/Referer host 정확 일치
@@ -21,6 +22,7 @@
  * - JSSP bind: TW_RESPONSE / TW_REQUEST / TW_DOCUMENT
  * - testWooEnv.js security.allowedCidr (선택)
  * Ref: https://experienceleague.adobe.com/developer/campaign-api/api/f-logon.html
+ *      (logon(sessionToken)은 JST-310036 로 폐기 경고 — logonWithToken 사용)
  * Ref: https://experienceleague.adobe.com/developer/campaign-api/api/m-HttpServletRequest-getUTF8Parameter.html
  * Ref: KA-14685 (setContentType charset)
  */
@@ -169,7 +171,20 @@ function twSessionTokenFromRequest() {
   return "";
 }
 
-// 6. logon(sessionToken) — 주의: logon은 127.0.0.1로 기록되어 보안 존 검사를 우회함
+// 6. 세션 토큰 바인딩 — logon(sessionToken)은 폐기됐다(JST-310036).
+// 현행 API는 logonWithToken(token)이고 logon()은 logonEscalation이 돌려준 컨텍스트를
+// 복원할 때만 유효하다. 빌드에 logonWithToken이 없을 수 있어 존재 확인 후 폴백한다
+// (Rhino에서 미정의 식별자의 typeof는 예외 없이 "undefined"를 준다).
+// 주의: 두 방식 모두 127.0.0.1로 기록되어 보안 존 검사를 우회한다 — API는 AllowedCidr로 보완.
+function twLogonWithToken(tok) {
+  if (typeof logonWithToken === "function") {
+    logonWithToken(tok);
+    return "logonWithToken";
+  }
+  logon(tok);
+  return "logon(deprecated)";
+}
+
 function twBindOperator() {
   var login = currentLogin();
   if (login) return login;
@@ -181,9 +196,9 @@ function twBindOperator() {
     throw err;
   }
   try {
-    logon(tok);
+    twLogonWithToken(tok);
   } catch (eLogon) {
-    var err2 = new Error("NOT_AUTHENTICATED: logon(sessionToken) failed: " +
+    var err2 = new Error("NOT_AUTHENTICATED: session token bind failed: " +
       (eLogon && eLogon.message ? eLogon.message : eLogon));
     err2.code = "AUTH";
     throw err2;

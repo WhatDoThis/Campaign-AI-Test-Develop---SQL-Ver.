@@ -8,6 +8,12 @@
  * 노출하고(sqlColumn), 원시 SQL 에는 물리명만 쓴다. ACC 는 sqlname 생략 시 타입
  * 접두사를 붙여 생성하므로(customer_id → sCustomer_id) 논리명은 SQL 에서 실패한다.
  *
+ * 실패 가시성: invoke 실패는 사유까지 logWarning 하고, search_columns 는 미허용·조회실패
+ * namespace 를 skippedNamespaces + partialScan 으로 돌려준다. 조용히 건너뛰면
+ * "조사했으나 0건"으로 위장되어 Triage 가 근거 없이 no_column 을 낸다.
+ * 허용 namespace 는 cfg.foundry.namespaces 이며 오류 메시지에 목록을 함께 실어
+ * 모델이 다음 턴에 자체 교정하도록 한다.
+ *
  * [Main Functions]
  * ===========
  * - register / specs / invoke / env
@@ -96,6 +102,12 @@ testWoo.toolkit = (function () {
       if (n) out[n] = true;
     }
     return out;
+  }
+
+  function _allowedList(allowed) {
+    var ns = [];
+    for (var k in allowed) if (allowed.hasOwnProperty(k)) ns.push(k);
+    return ns;
   }
 
   function _summarizeArgs(args) {
@@ -204,24 +216,29 @@ testWoo.toolkit = (function () {
       result = { error: String(e.message || e) };
     }
     _appendEvidence(name, argsObj, result);
+    var ok = !!(result && !result.error);
+    // 실패 사유를 저널에 남긴다. ok=false 만 찍으면 원인 추적에 evidence_log 조회가 필요하다.
     logInfo("[testWoo.toolkit] invoke name=" + name +
-      " args=" + _summarizeArgs(argsObj) +
-      " ok=" + (result && !result.error));
+      " args=" + _summarizeArgs(argsObj) + " ok=" + ok);
+    if (!ok)
+      logWarning("[testWoo.toolkit] invoke failed name=" + name +
+        " reason=" + String((result && result.error) || "unknown"));
     return result;
   }
 
   function env() {
     var dbms = "";
     try { dbms = String(application.getDBMSType() || ""); } catch (e) {}
-    var ns = [];
-    var allowed = _allowedNamespaces();
-    for (var k in allowed) if (allowed.hasOwnProperty(k)) ns.push(k);
+    var ns = _allowedList(_allowedNamespaces());
     return {
       dbmsType: dbms,
       allowedNamespaces: ns,
       maxProbeRows: 100,
       // 물리 컬럼명. SQL 에 그대로 넣을 수 있는 형태여야 한다(논리명 금지).
-      grainKeyCandidates: ["sCustomer_id", "iRecipientId"]
+      // 허용 namespace 안에 실재하는 키만 넣는다 — Triage 프롬프트에 그대로 들어가므로
+      // 닿을 수 없는 키(nms:recipient 의 iRecipientId)를 남기면 그 키로 SQL 을 만들다
+      // 게이트에서 실패하며 턴을 소진한다. namespaces 를 넓히면 함께 되돌린다.
+      grainKeyCandidates: ["sCustomer_id"]
     };
   }
 
@@ -307,8 +324,12 @@ testWoo.toolkit = (function () {
     var limit = args.limit != null ? Number(args.limit) : 50;
     if (limit > 200) limit = 200;
     var allowed = _allowedNamespaces();
+    // 허용 목록을 함께 돌려준다 — 모델이 다음 턴에 스스로 고칠 수 있어야 턴을 낭비하지 않는다
     if (!ns || !allowed[ns])
-      return { error: "namespace not allowed: " + ns };
+      return {
+        error: "namespace not allowed: " + ns +
+          " (allowed: " + _allowedList(allowed).join(",") + ")"
+      };
 
     var esc = ns.replace(/'/g, "''");
     var q = xtk.queryDef.create(
@@ -482,26 +503,38 @@ testWoo.toolkit = (function () {
     var nsArg = _trim(args.namespaces || "");
     var allowed = _allowedNamespaces();
     var namespaces = [];
+    var rejected = [];
     if (nsArg) {
       var parts = nsArg.split(",");
       for (var i = 0; i < parts.length; i++) {
         var n = _trim(parts[i]);
         if (allowed[n]) namespaces.push(n);
+        else if (n) rejected.push(n);
       }
     } else {
-      for (var k in allowed) if (allowed.hasOwnProperty(k)) namespaces.push(k);
+      namespaces = _allowedList(allowed);
     }
-    if (!namespaces.length) return { error: "no allowed namespaces" };
+    if (!namespaces.length)
+      return {
+        error: "no allowed namespaces (requested: " + (nsArg || "-") +
+          " / allowed: " + _allowedList(allowed).join(",") + ")"
+      };
 
     var results = [];
     var scanned = 0;
     var totalCandidates = 0;
     var capHit = false;
     var loadFailed = 0;
+    // 조회하지 못한 namespace 를 조용히 건너뛰면 "조사했으나 0건"으로 위장되어
+    // Triage 가 근거 없이 no_column 을 낸다 → 반드시 결과에 노출한다.
+    var skippedNamespaces = rejected;
 
     for (var ni = 0; ni < namespaces.length; ni++) {
       var schemas = _cachedSchemaList(namespaces[ni]);
-      if (!schemas) continue;
+      if (!schemas) {
+        skippedNamespaces.push(namespaces[ni]);
+        continue;
+      }
       totalCandidates += schemas.length;
       var loaded = 0;
       for (var si = 0; si < schemas.length; si++) {
@@ -542,13 +575,18 @@ testWoo.toolkit = (function () {
 
     // partialScan=true 는 "전수 조사 아님" — no_column 확신도를 medium 이하로 제한하는 근거
     // schemaLoadFailed=true 는 근거 자체가 없다는 뜻 — no_column 판정 금지 근거
+    if (skippedNamespaces.length)
+      logWarning("[testWoo.toolkit.search_columns] namespace 조회 실패·미허용으로 스킵: " +
+        skippedNamespaces.join(","));
     return {
       matches: results,
       scanned: scanned,
       totalCandidates: totalCandidates,
       schemaLoadFailed: (scanned === 0 && loadFailed > 0),
       loadFailed: loadFailed,
-      partialScan: capHit || scanned < totalCandidates
+      skippedNamespaces: skippedNamespaces,
+      allowedNamespaces: _allowedList(allowed),
+      partialScan: capHit || skippedNamespaces.length > 0 || scanned < totalCandidates
     };
   }
 

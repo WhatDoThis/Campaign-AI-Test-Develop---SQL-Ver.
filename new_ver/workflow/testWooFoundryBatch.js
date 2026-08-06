@@ -21,5 +21,6 @@ if (!cfg.foundry.enabled) {
   logInfo("[testWooFoundryBatch] foundry disabled — skip");
 } else {
   var result = testWoo.foundry.processBatch();
-  logInfo("[testWooFoundryBatch] processed=" + result.processed);
+  logInfo("[testWooFoundryBatch] processed=" + result.processed +
+    " failed=" + (result.failed || 0));
 }

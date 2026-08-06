@@ -1,9 +1,9 @@
 <%/*
  * testWooAiStudio.jssp (Studio UI shell)
  * =====================================
- * Cookie __sessiontoken → logon(tok) 바인딩.
+ * Cookie __sessiontoken → logonWithToken(tok) 바인딩 (구 logon 은 JST-310036 폐기 경고).
  * 미인증 시 하드 redirect 대신 안내 페이지(target 미동작 사례 대비).
- * logon()은 127.0.0.1로 기록되어 보안 존을 우회함 — API는 AllowedCidr로 보완.
+ * 토큰 바인딩은 127.0.0.1로 기록되어 보안 존을 우회함 — API는 AllowedCidr로 보완.
  *
  * [ACC encoding]
  * UI 한글은 HTML &#x…; 엔티티.
@@ -66,7 +66,10 @@ if (!_login) {
   var _tok = _twCookie("__sessiontoken");
   if (_tok) {
     try {
-      logon(_tok);
+      // logon(sessionToken)은 JST-310036 으로 폐기 — 현행 API는 logonWithToken.
+      // Common 을 로드하지 않는 UI 셸이라 여기서 직접 가드한다.
+      if (typeof logonWithToken === "function") logonWithToken(_tok);
+      else logon(_tok);
       _login = String(application.operator.login || "");
     } catch (eBind) { _login = ""; }
   }

@@ -26,7 +26,7 @@ LG U+ Adobe Campaign **AI 대상자 추출 시스템**. 마케터 자연어 → 
 | LLM server-side only | JSSP + `HttpClientRequest`; never browser direct API key |
 | Namespace `woo` | Files/schemas/forms: `testWoo*` camel; global JS object: `testWoo.*` (NOT `woo.*`) |
 | **No raw DB DML** | CRUD = `xtk.session.Write` + queryDef; seed = `testWooSampleSeed.js`; read SQL = `sqlSelect` only; **never sqlExec / INSERT SQL** |
-| Foundry default off | `testWooEnv.js` → `foundry.enabled: false` until explicitly enabled |
+| Foundry ON (test env) | `testWooEnv.js` → `foundry.enabled: true` (log #85). 미매칭 슬롯 → 큐 → `WKF_testWooFoundry` 배치. 끄면 unmatched 오류 UI 로 되돌아간다 |
 
 ## Pipeline (current)
 

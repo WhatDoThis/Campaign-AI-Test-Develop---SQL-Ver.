@@ -10,7 +10,7 @@
  * [Dependencies]
  * =========
  * - testWoo.llm.postEmbedding (또는 내부 _postJson)
- * - testWoo.cfg
+ * - testWoo.cfg — 활성 플래그·모델은 cfg.llm.embedEnabled / cfg.llm.embedModel
  * - loadLibrary("woo:testWooEmbedding.js")
  */
 var testWoo = testWoo || {};
@@ -75,7 +75,9 @@ testWoo.embedding = (function () {
   function embed(textArray) {
     if (!textArray || !textArray.length) return null;
     var cfg = testWoo.cfg.getConfig();
-    if (!cfg.foundry.embedEnabled) return null;
+    // 플래그는 cfg.llm.embedEnabled 다(testWooConfig 가 env llm 섹션에서 싣는다).
+    // cfg.foundry.embedEnabled 는 존재하지 않아 임베딩이 항상 비활성으로 새던 경로였다.
+    if (!cfg.llm.embedEnabled) return null;
     if (!cfg.llm.apiKey || !cfg.llm.embedModel) {
       logWarning("[testWoo.embedding.embed] embed disabled or options missing");
       return null;

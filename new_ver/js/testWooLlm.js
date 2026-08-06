@@ -10,8 +10,18 @@
  * - selectPlan (Pass 1 → CNF)
  * - generatePlan (Pass0→StageA→Pass1)
  * - postChat / postEmbedding — 오류에 httpStatus/isRateLimited/isOutOfCredit 부착
- * - explainDedupDiff (dedup near 판정 차이 설명 · 실패해도 판정에 영향 없음)
+ * - explainDedupDiff (dedup near 판정 차이 설명 · 평문 우선 · 판정에 영향 없음)
  * - reasoningOff — reasoning 비활성 body 조각 (Triage/Foundry 공용 · 형식 단일화)
+ *
+ * [설계 원칙]
+ * =========
+ * - response_format:{type:"json_object"} 를 **사용하지 않는다.** Gemini 계열은
+ *   structured output 강제 시 같은 토큰을 반복하다 max_tokens 를 소진한다.
+ *   JSON 강제는 시스템 프롬프트 "OUTPUT JSON ONLY" + _parseJson 의 {…} 추출로 대체한다.
+ *   Ref: https://discuss.ai.google.dev/t/gemini-2-5-flash-repeats-tokens-until-max-tokens-reached-in-structured-output/107176
+ * - 출력 상한은 단계별로 분리한다 (env llm.pass0MaxTokens / pass1MaxTokens).
+ * - 반복 루프 억제는 temperature 가 아니라 frequency_penalty 로만 한다.
+ * - 프롬프트 본문은 로그에 남기지 않는다 (응답 content 앞뒤 200자만).
  *
  * [Dependencies]
  * =========
@@ -73,8 +83,8 @@ testWoo.llm = (function () {
       systemLines.splice(systemLines.length - 1, 0, "Domain keyword examples: " + cfg.llm.pass0Examples);
     }
     var system = systemLines.join("\n");
-    var raw = _chat(cfg, system, String(nlRequest || ""));
-    var parsed = _parseJson(raw);
+    var raw = _chat(cfg, system, String(nlRequest || ""), "pass0");
+    var parsed = _parseJson(raw, "pass0");
     if (!parsed.slots || !_isArray(parsed.slots) || !parsed.slots.length)
       throw new Error("[testWoo.llm.decomposeSlots] slots missing");
     var maxSlots = cfg.search.maxSlots;
@@ -132,8 +142,8 @@ testWoo.llm = (function () {
       'OUTPUT JSON ONLY: {"grainKey":"<key_column of chosen fragments>","include":[{"any":[{"fragment":"<name>","label":"<ko>","params":{}}]}],"exclude":[{"fragment":"<name>","label":"<ko>","params":{}}],"unmatched":[]}'
     ].join("\n");
     var user = "NL:\n" + String(nlRequest || "");
-    var raw = _chat(cfg, system, user);
-    var plan = _parseJson(raw);
+    var raw = _chat(cfg, system, user, "pass1");
+    var plan = _parseJson(raw, "pass1");
     _validatePlanShape(plan);
     var n = _countFragments(plan);
     if (n > cfg.search.maxSlots)
@@ -175,6 +185,9 @@ testWoo.llm = (function () {
   }
 
   var LLM_MAX_TOKENS = 8192; // reasoning 토큰이 max_tokens 에 합산되는 모델 기준 기본값
+  var FREQUENCY_PENALTY_MAX = 1;
+  // 단계별 출력 상한 env 키. Pass1 은 후보 카드 전량을 받아 CNF 를 만들므로 출력이 더 길다.
+  var STAGE_TOKEN_KEY = { pass0: "pass0MaxTokens", pass1: "pass1MaxTokens" };
 
   // reasoning 을 끄는 유일한 형식. thinking 모델은 사고 토큰을 max_tokens 에 합산하므로
   // 끄지 못하면 본문 몫이 0 이 되어 finish_reason="length" + 빈 응답이 온다.
@@ -185,15 +198,30 @@ testWoo.llm = (function () {
     return { enabled: false, max_tokens: 0 };
   }
 
-  // Pass0/Pass1 출력 상한. testWooEnv.js llm.pass0MaxTokens 를 따른다
+  // 단계별 출력 상한. testWooEnv.js llm.pass0MaxTokens / pass1MaxTokens 를 따른다
   // (Triage·Foundry 와 동일하게 env 직접 참조 — cfg.llm 은 이 값을 싣지 않는다).
-  function _pass0MaxTokens() {
+  function _maxTokensFor(stage) {
+    var key = STAGE_TOKEN_KEY[String(stage || "pass0")] || STAGE_TOKEN_KEY.pass0;
     var v = null;
     try {
-      if (testWoo.env && testWoo.env.getEnv) v = testWoo.env.getEnv().llm.pass0MaxTokens;
+      if (testWoo.env && testWoo.env.getEnv) v = testWoo.env.getEnv().llm[key];
     } catch (eEnv) { v = null; }
     var n = Number(v);
     return (v != null && !isNaN(n) && n > 0) ? n : LLM_MAX_TOKENS;
+  }
+
+  // 반복 루프 억제. temperature:0 은 결정성을 위해 유지하되(0 이 오히려 반복을 유도할 수
+  // 있으므로) frequency_penalty 로만 억제한다. 0 이면 키 자체를 body 에 넣지 않는다.
+  // 미지원 모델이면 OpenRouter 가 무시하며, 거부 시 _httpError 에 원문이 남는다.
+  function _frequencyPenalty() {
+    var L = null;
+    try {
+      if (testWoo.env && testWoo.env.getEnv) L = testWoo.env.getEnv().llm;
+    } catch (eEnv) { L = null; }
+    if (!L || L.repetitionGuardEnabled !== true) return 0;
+    var n = Number(L.frequencyPenalty);
+    if (isNaN(n) || n <= 0) return 0;
+    return n > FREQUENCY_PENALTY_MAX ? FREQUENCY_PENALTY_MAX : n;
   }
 
   var _PROVIDERS = {
@@ -228,8 +256,16 @@ testWoo.llm = (function () {
         };
         if (opts.reasoning != null) body.reasoning = opts.reasoning;
         else body.reasoning = reasoningOff();
-        if (opts.responseFormat != null) body.response_format = opts.responseFormat;
-        else if (!opts.tools) body.response_format = { type: "json_object" };
+        var fp = _frequencyPenalty();
+        if (fp > 0) body.frequency_penalty = fp;
+        // 원칙: 본 시스템은 response_format:{type:"json_object"} 를 사용하지 않는다.
+        // Gemini 계열은 structured output 강제 시 토큰 반복 루프에 빠져 max_tokens 를
+        // 소진한다(#80 Triage 와 동일 조치). JSON 강제는 시스템 프롬프트의
+        // "OUTPUT JSON ONLY" 지시 + _parseJson 의 {…} 추출로 대체한다.
+        // Ref: https://discuss.ai.google.dev/t/gemini-2-5-flash-repeats-tokens-until-max-tokens-reached-in-structured-output/107176
+        // 아래 pass-through 는 tools 와의 상호배제만 유지하기 위한 것이며 호출부는 없다.
+        if (opts.responseFormat != null && !opts.tools)
+          body.response_format = opts.responseFormat;
         if (opts.tools) {
           body.tools = opts.tools;
           body.tool_choice = opts.tool_choice || "auto";
@@ -246,11 +282,11 @@ testWoo.llm = (function () {
     return p;
   }
 
-  function _chat(cfg, system, userContent) {
+  // stage = "pass0" | "pass1" — 출력 상한과 진단 메시지의 단계 표기에 쓰인다.
+  function _chat(cfg, system, userContent, stage) {
     var adapter = _provider(cfg);
-    var body = adapter.body(cfg.llm.model, system, userContent, _pass0MaxTokens(), {
-      reasoning: reasoningOff(),
-      responseFormat: { type: "json_object" }
+    var body = adapter.body(cfg.llm.model, system, userContent, _maxTokensFor(stage), {
+      reasoning: reasoningOff()
     });
     return _postJson(cfg.llm, body, adapter.headers(cfg.llm.apiKey));
   }
@@ -273,9 +309,24 @@ testWoo.llm = (function () {
     return wrap;
   }
 
+  // 임베딩 엔드포인트는 chat endpoint(옵션 testWooAiLlmEndpoint)의 호스트를 재사용한다.
+  // 하드코딩하면 프로바이더 교체·프록시 환경에서 어긋나고, 호스트가 chat 과 달라지는 경우
+  // serverConf.xml urlPermission 에 그 호스트를 별도로 추가해야 한다.
+  var CHAT_PATH_RE = /\/chat\/completions\/?$/i;
+
+  function _embedEndpoint(chatEndpoint) {
+    var url = String(chatEndpoint || "");
+    if (!url)
+      throw new Error("[testWoo.llm.postEmbedding] endpoint empty (option testWooAiLlmEndpoint)");
+    if (CHAT_PATH_RE.test(url)) return url.replace(CHAT_PATH_RE, "/embeddings");
+    logWarning("[testWoo.llm._embedEndpoint] endpoint 가 /chat/completions 형태가 아니라 " +
+      "임베딩 경로를 유도할 수 없습니다 — 그대로 사용 host=" + _hostOf(url));
+    return url;
+  }
+
   function postEmbedding(cfg, inputArray) {
     if (!cfg.llm.apiKey) throw new Error("[testWoo.llm.postEmbedding] apiKey missing");
-    var embedUrl = "https://openrouter.ai/api/v1/embeddings";
+    var embedUrl = _embedEndpoint(cfg.llm.endpoint);
     var body = { model: cfg.llm.embedModel, input: inputArray };
     var raw = _postJson(
       { apiKey: cfg.llm.apiKey, endpoint: embedUrl, useProxy: cfg.llm.useProxy },
@@ -289,6 +340,30 @@ testWoo.llm = (function () {
     }
   }
 
+  // 봉투(choices/content)에서 본문만 꺼낸다. 산문을 요구하므로 JSON 을 강제하지 않고,
+  // 응답이 JSON 이면 첫 문자열 값을 설명으로 쓴다. 설명은 dedup 판정에 영향이 없다.
+  function _explanationText(rawResponse) {
+    var text = String(rawResponse || "");
+    try {
+      var wrap = JSON.parse(text);
+      if (wrap && wrap.choices && wrap.choices[0] && wrap.choices[0].message)
+        text = String(wrap.choices[0].message.content || "");
+      else if (wrap && wrap.content && wrap.content.length && wrap.content[0].text)
+        text = String(wrap.content[0].text);
+    } catch (eWrap) {}
+    var t = _trim(text);
+    if (t.indexOf("{") === 0) {
+      try {
+        var obj = JSON.parse(t);
+        for (var k in obj) {
+          if (!Object.prototype.hasOwnProperty.call(obj, k)) continue;
+          if (typeof obj[k] === "string" && _trim(obj[k])) return _trim(obj[k]).substring(0, 500);
+        }
+      } catch (eObj) {}
+    }
+    return t.substring(0, 500);
+  }
+
   function explainDedupDiff(candidate, match, diffCount) {
     var cfg = testWoo.cfg.getConfig();
     _requireLlmOpts(cfg);
@@ -298,16 +373,13 @@ testWoo.llm = (function () {
       "\nSymmetric diff count: " + diffCount +
       "\nDo not include customer PII.";
     var adapter = _provider(cfg);
+    // 산문 2~3문장을 요구하면서 json_object 를 강제하면 Pass0 와 동일한 반복 루프 조건이
+    // 된다(L-1). responseFormat 을 넘기지 않으므로 어댑터도 response_format 을 붙이지 않는다.
     var body = adapter.body(cfg.llm.model, system, user, 1024, {
       reasoning: reasoningOff()
     });
     var raw = _postJson(cfg.llm, body, adapter.headers(cfg.llm.apiKey));
-    try {
-      var wrap = JSON.parse(String(raw));
-      if (wrap.choices && wrap.choices[0] && wrap.choices[0].message)
-        return String(wrap.choices[0].message.content || "");
-    } catch (e) {}
-    return String(raw).substring(0, 500);
+    return _explanationText(raw);
   }
 
   function _errText(e) {
@@ -444,9 +516,33 @@ testWoo.llm = (function () {
     }
   }
 
+  // 응답 본문이 같은 패턴을 되풀이하다 상한에 부딪혔는지 추정한다.
+  // 짧은 NL 입력에서 본문이 상한을 채우는 것은 정상 생성이 아니라 반복 루프다.
+  function _looksRepetitive(text) {
+    var t = String(text || "");
+    if (t.length < 400) return false;
+    var head = t.substring(0, 200);
+    var tail = t.substring(t.length - 200);
+    if (head === tail) return true;
+    for (var len = 12; len <= 40; len++) {
+      var unit = tail.substring(0, len);
+      var hits = 0;
+      var pos = 0;
+      while (pos <= tail.length - len) {
+        var at = tail.indexOf(unit, pos);
+        if (at < 0) break;
+        hits++;
+        pos = at + len;
+      }
+      if (hits >= 3) return true;
+    }
+    return false;
+  }
+
   // finish_reason="length" 원인 분기 안내. reasoning 토큰이 대부분이면 상한을 올리는 게
-  // 아니라 reasoning 을 꺼야 한다(thinking 모델은 사고 토큰이 max_tokens 에 합산됨).
-  function _lengthDiag(usage) {
+  // 아니라 reasoning 을 꺼야 하고, reasoning=0 인데 상한을 채웠다면 반복 루프다.
+  // 프롬프트에는 고객 실데이터가 섞일 수 있으므로 응답 content 만 로그에 남긴다.
+  function _lengthDiag(usage, content, stage) {
     var reason = 0;
     var completion = 0;
     try {
@@ -456,17 +552,30 @@ testWoo.llm = (function () {
           reason = Number(usage.completion_tokens_details.reasoning_tokens) || 0;
       }
     } catch (eU) {}
-    var tail = "completion=" + completion + " reasoning=" + reason;
+    var text = String(content == null ? "" : content);
+    var tail = "stage=" + String(stage || "?") +
+      " completion=" + completion + " reasoning=" + reason +
+      " contentChars=" + text.length;
+    if (text.length) {
+      logWarning("[testWoo.llm] length-cut head200: " + text.substring(0, 200));
+      logWarning("[testWoo.llm] length-cut tail200: " +
+        text.substring(text.length > 200 ? text.length - 200 : 0));
+    }
     if (reason > 0 && reason >= completion / 2) {
       return "사고(reasoning) 토큰이 출력 상한을 소진했습니다 — " + tail +
         ". max_tokens 를 올리는 대신 reasoning 을 끄십시오" +
         "(thinking 모델은 reasoning:{enabled:false} 만으로는 꺼지지 않아 max_tokens:0 이 필요).";
     }
-    return "출력 상한을 올리거나 후보 수를 줄이세요 — " + tail + ".";
+    if (_looksRepetitive(text)) {
+      return "[반복 루프 의심] 동일 패턴이 되풀이되며 출력 상한을 소진했습니다 — " + tail +
+        ". response_format(json_object) 재도입 여부와 프롬프트 길이를 확인하십시오.";
+    }
+    return "출력 상한을 올리거나 후보 수를 줄이세요 — " + tail +
+      ". reasoning=0 인데 completion 이 상한이면 토큰 부족이 아니라 반복 루프일 수 있습니다.";
   }
 
   // OpenAI 호환 봉투(choices) 우선 → Anthropic envelope 폴백
-  function _parseJson(rawResponse) {
+  function _parseJson(rawResponse, stage) {
     var text = String(rawResponse || "");
     var wrap = null;
     try { wrap = JSON.parse(text); } catch (eParse) { wrap = null; }
@@ -484,11 +593,11 @@ testWoo.llm = (function () {
       if (wrap.choices && wrap.choices.length) {
         var ch = wrap.choices[0];
         if (ch.finish_reason === "length") {
-          // 사고 토큰이 출력 상한을 다 먹었는지를 메시지에서 바로 구분할 수 있게 한다.
-          // reasoning 이 대부분이면 후보 수를 줄여도 해결되지 않는다.
+          // 사고 토큰 소진 / 반복 루프 / 진짜 절단을 메시지에서 바로 구분할 수 있게 한다.
+          // 응답 본문은 _lengthDiag 가 앞뒤 200자만 logWarning 으로 남긴다.
           throw new Error(
             "[testWoo.llm] 응답이 max_tokens에서 잘렸습니다. " +
-            _lengthDiag(wrap.usage)
+            _lengthDiag(wrap.usage, ch.message ? ch.message.content : "", stage)
           );
         }
         if (ch.finish_reason === "error") {

@@ -53,6 +53,12 @@ testWoo.env = (function () {
      * provider: "openrouter" | "anthropic" (롤백)
      * useProxy: true면 HttpClientRequest.execute(true)
      * pass0Examples: Pass0 system에 붙는 도메인 키워드 예시 (비우면 생략)
+     * pass0MaxTokens / pass1MaxTokens: 단계별 출력 상한. Pass1은 후보 카드 전량을 받아
+     *   CNF 계획을 만들므로 출력이 더 길다 → 상한을 분리한다(권장 동일값, fragment가
+     *   쌓이면 pass1만 올린다). 사고 토큰이 합산되는 모델 기준 기본 8192
+     * repetitionGuardEnabled / frequencyPenalty: 반복 루프 억제.
+     *   true + 0 초과일 때만 body에 frequency_penalty를 넣는다. 가드 0~1, 권장 0.1
+     *   temperature는 0 유지(결정성 우선) — 0이 오히려 반복을 유도할 때가 있어 penalty로만 처리
      * ------------------------------------------------------------------ */
     llm: {
       provider: "openrouter",
@@ -61,28 +67,36 @@ testWoo.env = (function () {
       embedModel: "openai/text-embedding-3-small",
       embedEnabled: true,
       pass0MaxTokens: 8192,
+      pass1MaxTokens: 8192,
       triageMaxTokens: 4096,
-      foundryMaxTokens: 16384
+      foundryMaxTokens: 16384,
+      repetitionGuardEnabled: true,
+      frequencyPenalty: 0.1
     },
 
     /* ------------------------------------------------------------------
      * foundry — Fragment Foundry 비동기 생성
-     * enabled: false면 미매칭 시 큐 대신 기존 unmatched 오류 UI
+     * enabled: true = 미매칭 슬롯을 큐에 적재하고 WKF_testWooFoundry 배치가 생성한다.
+     *   false면 큐 대신 기존 unmatched 오류 UI (LLM 과금 없음)
      * maxTurns: tool calling 루프 최대 턴. 권장 6, 가드 1~12
      * batchSize: WKF 한 번에 queued 처리 건수. 권장 3, 가드 1~10
      * maxNewFragments: 요청당 신규 INSERT 상한. 초과 시 needs_human_design
-     * namespaces: toolkit list_schemas/probe_values 허용 ns (쉼표)
+     * namespaces: toolkit(list_schemas/describe_schema/probe_values/search_columns) 허용 ns.
+     *   테스트 범위는 woo 하나다. nms 를 열면 LLM 이 표준 스키마 50건을 훑다가 턴을 소진하고
+     *   nms:common 같은 기술 스키마로 오답을 낸다(실측). cus 는 이 인스턴스에 0건이다.
+     *   운영에서 nms:recipient 대상 fragment 가 필요해지면 그때 넓히고, 스모크 4·4b 의
+     *   대상 스키마도 함께 표준 스키마로 되돌린다.
      * tokenBudget / dailyBudget: 비용 가드 (현재 Foundry에서 부분 미적용)
      * gateRetries: fragment 게이트 실패 시 LLM 자가수정 재시도. 권장 2
      * staleProcessingMinutes: processing 정체 레코드를 queued 로 되돌리는 기준(분).
      *   권장 30. WF 실행이 비정상 종료된 큐를 배치 시작 시 1회 복구
      * ------------------------------------------------------------------ */
     foundry: {
-      enabled: false,
+      enabled: true,
       maxTurns: 6,
       batchSize: 3,
       maxNewFragments: 3,
-      namespaces: "nms,cus,woo",
+      namespaces: "woo",
       tokenBudget: 60000,
       dailyBudget: 500000,
       gateRetries: 2,
@@ -92,6 +106,9 @@ testWoo.env = (function () {
     /* ------------------------------------------------------------------
      * triage — SQL 생성 전 실현가능성 판정 (03 스펙)
      * enabled: false면 Foundry가 triage 없이 바로 SQL 생성
+     * maxTurns: 슬롯당 tool calling 턴 상한. 권장 6, 가드 2~12
+     *   마지막 턴은 tool_choice:"none" 으로 판정 JSON 을 강제한다(턴 소진 실패 방지).
+     *   턴이 모자라면 판정 대신 "tool loop exceeded" 가 나므로 근거 조사량에 맞춘다.
      * minConfidence: "high"|"medium"|"low" — medium 미만이면 SQL 생성 금지
      * clarifyMaxRounds: ambiguous 재질의 상한 (슬롯당). 권장 2
      * partialExecutionAllowed: partially_infeasible 시 미리보기 SQL 허용
@@ -100,6 +117,7 @@ testWoo.env = (function () {
      * ------------------------------------------------------------------ */
     triage: {
       enabled: true,
+      maxTurns: 6,
       minConfidence: "medium",
       clarifyMaxRounds: 2,
       partialExecutionAllowed: true,

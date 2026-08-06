@@ -8,11 +8,12 @@ response.setContentType("application/javascript;charset=utf-8");
  * ==================================================
  * HTML ↔ 서버 JSSP. LLM/SQL은 서버만. CNF plan 기반 UI.
  * 등록 = 이력 저장(ai_sql_id). chips는 서버 응답만.
- * 인증은 Cookie + 서버 logon() — X-Security-Token 헤더 미사용(ACC 미해석).
+ * 인증은 Cookie + 서버 logonWithToken() — X-Security-Token 헤더 미사용(ACC 미해석).
  *
  * [Main Functions]
  * ===========
  * - generate / validate / register
+ * - pollQueue — Foundry 큐 상태 폴링 (QUEUE_POLL_MS 20초 × QUEUE_POLL_MAX 30회 = 10분)
  *
  * [Dependencies]
  * =========
@@ -25,6 +26,10 @@ response.setContentType("application/javascript;charset=utf-8");
   "use strict";
 
   var TITLE_MAX = 200; // schema woo:testWooAiSql @title length
+  // Foundry 배치가 5분 주기이므로 5초 폴링은 저널에 인증 로그만 쌓는다(JST-310036 노이즈).
+  // 20초 × 30회 = 10분 대기 (총 대기 시간은 기존과 동일).
+  var QUEUE_POLL_MS = 20000;
+  var QUEUE_POLL_MAX = 30;
   var params = new URLSearchParams(location.search);
   var WORKFLOW_NAME = params.get("workflowName") || "";
   var BASE = "/woo/";
@@ -92,7 +97,7 @@ response.setContentType("application/javascript;charset=utf-8");
       el.className = "banner warn";
       el.innerHTML =
         "<strong>[\uC9C4\uD589 \uC911]</strong> " + _queueStatusLabel(status) + idPart +
-        "<br/>\uC774 \uD654\uBA74\uC744 \uB2EB\uC9C0 \uB9C8\uC138\uC694. \uC57D 5\uBD84 \uAC04\uACA9\uC73C\uB85C \uC0C1\uD0DC\uAC00 \uAC31\uC2E0\uB429\uB2C8\uB2E4." +
+        "<br/>\uC774 \uD654\uBA74\uC744 \uB2EB\uC9C0 \uB9C8\uC138\uC694. \uC57D 20\uCD08 \uAC04\uACA9\uC73C\uB85C \uC0C1\uD0DC\uB97C \uD655\uC778\uD558\uBA70, fragment \uC0DD\uC131 \uBC30\uCE58\uB294 \uC57D 5\uBD84 \uC8FC\uAE30\uB85C \uB3D9\uC791\uD569\uB2C8\uB2E4." +
         (lastError ? "<br/>" + esc(lastError) : "");
       return;
     }
@@ -122,7 +127,7 @@ response.setContentType("application/javascript;charset=utf-8");
 
   function pollQueue(queueId, reviewUrl) {
     var attempts = 0;
-    var maxAttempts = 120;
+    var maxAttempts = QUEUE_POLL_MAX;
     if (state.queuePoll) clearInterval(state.queuePoll);
     state.queuePoll = setInterval(function () {
       attempts++;
@@ -146,7 +151,7 @@ response.setContentType("application/javascript;charset=utf-8");
           "<strong>[\uC2DC\uAC04 \uCD08\uACFC]</strong> \uC0C1\uD0DC \uC870\uD68C\uB97C \uC911\uB2E8\uD588\uC2B5\uB2C8\uB2E4 (queueId=" + queueId + "). " +
           "\uC6B4\uC601 \uB2F4\uB2F9\uC790\uC5D0\uAC8C \uD655\uC778 \uD6C4, \uC2B9\uC778\uC774 \uB418\uC5C8\uC73C\uBA74 \uAC19\uC740 \uC9C8\uEBAC\uC744 \uB2E4\uC2DC [\uC0DD\uC131]\uD574 \uC8FC\uC138\uC694.";
       }
-    }, 5000);
+    }, QUEUE_POLL_MS);
     _renderQueueHint("queued", queueId, reviewUrl, "");
   }
 

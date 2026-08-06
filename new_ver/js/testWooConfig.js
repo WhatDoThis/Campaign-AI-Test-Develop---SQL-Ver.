@@ -81,6 +81,7 @@ testWoo.cfg = (function () {
       },
       triage: {
         enabled: E.triage.enabled,
+        maxTurns: E.triage.maxTurns,
         minConfidence: E.triage.minConfidence,
         clarifyMaxRounds: E.triage.clarifyMaxRounds,
         partialExecutionAllowed: E.triage.partialExecutionAllowed,

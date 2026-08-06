@@ -4,12 +4,17 @@
  * 슬롯별 triage → feasible만 SQL 생성. infeasible은 정상 종료(재시도 제외).
  * 진입 시 'sql' named right 프리플라이트, 배치 단위 단일 실행 가드, 스테일 큐 복구.
  *
+ * WF 안에서 logError 는 스크립트 실행을 즉시 중단시키고 인스턴스를 오류 정지시킨다.
+ * 따라서 건별 실패는 (1) 큐 저장 먼저 → (2) logWarning 순서로만 처리한다. 순서를
+ * 뒤집으면 status/err_id/evidence_log 가 유실되고 큐가 processing 에 갇힌다.
+ * Ref: https://experienceleague.adobe.com/en/docs/campaign/automation/workflows/advanced-management/javascript-scripts-and-templates
+ *
  * [Main Functions]
  * ===========
  * - processBatch : 프리플라이트 → 스테일 복구 → 단일 실행 가드 → queued 순차 처리
  * - processQueueItem : 슬롯별 triage → 생성(게이트 자가수정) → dedup → publish
  * - generateFragmentForSlot : tool 루프 + 게이트 실패 되먹임 재생성
- * - runToolLoop : LLM tool calling 루프 (예산 초기화는 하지 않음)
+ * - runToolLoop : LLM tool calling 루프 (마지막 턴 tool_choice:"none" 으로 응답 강제)
  * - peekQueue : 읽기 전용 큐 조회 (스모크의 getIfExists 파싱 검증 전용)
  *
  * [Dependencies]
@@ -29,6 +34,8 @@ testWoo.foundry = (function () {
   var DEFAULT_STALE_MS = 30 * 60 * 1000;
   var SCHEMA_HINT = "스키마 배포가 선행되지 않았습니다. " +
     "woo:testWooAiRequestQueue 재등록 → Update database structure 후 다시 실행하세요.";
+  var FINAL_TURN_NUDGE = "FINAL TURN — no more tool calls are allowed. " +
+    "Output the fragment JSON now, using only the evidence already gathered.";
 
   function _trim(s) {
     return String(s == null ? "" : s).replace(/^\s+|\s+$/g, "");
@@ -227,11 +234,17 @@ testWoo.foundry = (function () {
     var maxTok = (testWoo.env && testWoo.env.getEnv) ?
       testWoo.env.getEnv().llm.foundryMaxTokens : 16384;
     for (var t = 0; t < turns; t++) {
+      // 마지막 턴은 tool_choice:"none" + 최종 지시로 fragment JSON 을 강제한다.
+      // 지시문은 요청 사본(concat)에만 넣는다 — msgs 에 남기면 게이트 되먹임 재시도가
+      // 같은 messages 를 재사용하면서 다음 시도의 툴 사용까지 막는다.
+      var lastTurn = (t === turns - 1);
+      var reqMsgs = lastTurn ?
+        msgs.concat([{ role: "user", content: FINAL_TURN_NUDGE }]) : msgs;
       var body = {
         model: cfg.llm.model,
-        messages: msgs,
+        messages: reqMsgs,
         tools: specs,
-        tool_choice: "auto",
+        tool_choice: lastTurn ? "none" : "auto",
         parallel_tool_calls: false,
         max_tokens: maxTok,
         // Foundry 는 사고가 필요하지만 effort:"high" 는 상한의 대부분을 사고에 배정해
@@ -248,8 +261,16 @@ testWoo.foundry = (function () {
       var ch = wrap.choices[0];
       var msg = ch.message || {};
       msgs.push(msg);
+      // 턴별 종료 사유를 남긴다. 이게 없으면 "fragment JSON missing" 이 어느 턴에서
+      // 무엇 때문에 났는지(툴 호출 차단·평문 응답·빈 본문) 구분할 수 없다.
+      logInfo("[testWoo.foundry.runToolLoop] turn=" + (t + 1) + "/" + turns +
+        " finish_reason=" + String(ch.finish_reason) +
+        " toolCalls=" + String(msg.tool_calls ? msg.tool_calls.length : 0) +
+        " contentLen=" + String(msg.content == null ? -1 : String(msg.content).length) +
+        (lastTurn ? " (forced answer)" : ""));
 
-      if (ch.finish_reason === "tool_calls" && msg.tool_calls && msg.tool_calls.length) {
+      if (!lastTurn && ch.finish_reason === "tool_calls" &&
+          msg.tool_calls && msg.tool_calls.length) {
         for (var i = 0; i < msg.tool_calls.length; i++) {
           var tc = msg.tool_calls[i];
           var fn = tc.function || {};
@@ -269,9 +290,17 @@ testWoo.foundry = (function () {
         }
         continue;
       }
-      return { messages: msgs, wrap: wrap, content: msg.content, tokensUsed: tokensUsed };
+      // length 는 반복 루프 신호일 수 있다 — foundryMaxTokens 문제와 구분해 남긴다
+      if (ch.finish_reason === "length")
+        throw new Error("[testWoo.foundry.runToolLoop] 응답이 max_tokens(" + maxTok +
+          ")에서 절단됨 — foundryMaxTokens 상향 또는 반복 루프 확인 (turn " + (t + 1) + ")");
+      return {
+        messages: msgs, wrap: wrap, content: msg.content, tokensUsed: tokensUsed,
+        finishReason: String(ch.finish_reason), turn: t + 1, lastTurn: lastTurn
+      };
     }
-    throw new Error("[testWoo.foundry] tool loop 한도 초과");
+    // 도달 불가 — 마지막 턴은 항상 반환 또는 예외로 끝난다 (방어적 잔존)
+    throw new Error("[testWoo.foundry] tool loop 한도 초과 (turns=" + turns + ")");
   }
 
   function _foundrySystemPrompt() {
@@ -290,12 +319,26 @@ testWoo.foundry = (function () {
     ].join("\n");
   }
 
-  function _parseFragmentJson(content) {
+  // 실패 시 응답 본문 앞뒤 200자를 남긴다 — 평문 응답인지 빈 본문인지 구분해야
+  // 프롬프트 문제와 API 동작 문제를 가릴 수 있다. 프롬프트 본문은 남기지 않는다.
+  function _contentPreview(text) {
+    if (!text.length) return "(empty)";
+    if (text.length <= 400) return text;
+    return text.substring(0, 200) + " … " + text.substring(text.length - 200);
+  }
+
+  function _parseFragmentJson(content, loop) {
     var text = String(content || "");
     var start = text.indexOf("{");
     var end = text.lastIndexOf("}");
-    if (start < 0 || end <= start)
-      throw new Error("[testWoo.foundry] fragment JSON missing");
+    if (start < 0 || end <= start) {
+      var ctx = loop ?
+        (" turn=" + String(loop.turn) + " finish_reason=" + String(loop.finishReason) +
+          (loop.lastTurn ? " (forced answer)" : "")) : "";
+      logWarning("[testWoo.foundry] fragment JSON 없음 — 응답 본문: " + _contentPreview(text));
+      throw new Error("[testWoo.foundry] fragment JSON missing (contentLen=" +
+        text.length + ctx + ")");
+    }
     return JSON.parse(text.substring(start, end + 1));
   }
 
@@ -330,7 +373,7 @@ testWoo.foundry = (function () {
       var loop = runToolLoop(cfg, messages, specs, cfg.foundry.maxTurns);
       messages = loop.messages;
       tokensUsed += Number(loop.tokensUsed) || 0;
-      var fragDoc = _fragDocFromLlm(_parseFragmentJson(loop.content), queueId);
+      var fragDoc = _fragDocFromLlm(_parseFragmentJson(loop.content, loop), queueId);
       var gate = testWoo.gates.validateFragment(fragDoc);
       lastGate = gate;
       if (gate.pass) {
@@ -496,8 +539,8 @@ testWoo.foundry = (function () {
     var pf = _preflight();
     if (!pf.ok) {
       var permErrId = _errId("FFPERM");
-      logError("[testWoo.foundry][" + permErrId + "] " + pf.message);
       _updateQueue(queueId, { status: "failed", last_error: pf.message, err_id: permErrId });
+      logWarning("[testWoo.foundry][" + permErrId + "] " + pf.message);
       return { ok: false, reason: pf.code, errId: permErrId };
     }
 
@@ -533,8 +576,17 @@ testWoo.foundry = (function () {
         });
         return { ok: false, reason: "missing_slots_json parse failed" };
       }
+      // 종료 상태 전이는 missing_slots_json 을 "[]" 로 비운다. 그래서 완료된 행을 수기로
+      // queued 로 되돌리면 여기로 들어와 아무 일도 하지 않은 채 done 이 된다.
+      // 그 done 을 "생성 성공" 으로 오인하지 않도록 사유를 남긴다(fragment 0건의 원인).
       if (!missing.length) {
-        _updateQueue(queueId, { status: "done" });
+        _updateQueue(queueId, {
+          status: "done",
+          last_error: "처리할 미매칭 슬롯이 없습니다 — 이미 처리가 끝난 요청입니다. " +
+            "다시 생성하려면 Studio 에서 같은 요청을 새로 보내세요."
+        });
+        logInfo("[testWoo.foundry] missing_slots_json 비어 있음 — queueId=" + queueId +
+          " 처리 없이 done (재생성은 신규 요청 필요)");
         return { ok: true, reason: "no missing slots" };
       }
 
@@ -713,9 +765,9 @@ testWoo.foundry = (function () {
       // 402/429 는 문자열 검색이 아니라 HTTP 상태코드로 판정 (SQL 오류 메시지 오탐 방지)
       var throttled = !!(e && (e.isRateLimited === true || e.isOutOfCredit === true));
       var errId = _errId(throttled ? "FFTHR" : "FF");
-      logError("[testWoo.foundry][" + errId + "] " + msg);
+      var status = throttled ? "throttled" : "failed";
       var patch = {
-        status: throttled ? "throttled" : "failed",
+        status: status,
         last_error: msg,
         err_id: errId,
         slot_results: JSON.stringify(slotResults),
@@ -724,7 +776,16 @@ testWoo.foundry = (function () {
       };
       // throttled 는 자동 재시도 금지 원칙에 따라 attempt_count 를 증가시키지 않는다
       if (throttled) patch.attempt_count = claim.prevAttempt;
-      _updateQueue(queueId, patch);
+      // 저장을 먼저. 로그가 앞서면 WF 가 여기서 끊겨 상태·근거가 남지 않는다.
+      try {
+        _updateQueue(queueId, patch);
+      } catch (eU) {
+        logWarning("[testWoo.foundry][" + errId + "] queue update failed queueId=" +
+          queueId + " / " + String(eU.message || eU));
+      }
+      // 건별 실패로 배치를 중단시키지 않는다(다음 queued 건 처리 계속). 실패 근거는 큐 행에 있다.
+      logWarning("[testWoo.foundry][" + errId + "] " + status + " queueId=" + queueId +
+        " / " + msg);
       return { ok: false, reason: msg, errId: errId, throttled: throttled };
     }
   }
@@ -733,7 +794,8 @@ testWoo.foundry = (function () {
     var cfg = testWoo.cfg.getConfig();
     if (!cfg.foundry.enabled) return { processed: 0 };
 
-    // 프리플라이트 실패 시 큐 상태를 바꾸지 않고 배치 전체를 중단한다 (재시도 가능)
+    // 프리플라이트 실패는 권한 설정 문제이므로 큐 상태를 건드리지 않고 배치를 중단한다.
+    // logError 는 WF 인스턴스를 오류 정지시킨다 — 권한을 부여한 뒤 수동 재시작이 필요하다.
     var pf = _preflight();
     if (!pf.ok) {
       logError("[testWoo.foundry][" + _errId("FFPERM") + "] " + pf.message);
@@ -760,8 +822,15 @@ testWoo.foundry = (function () {
     var res = q.ExecuteQuery();
     var ids = [];
     for each (var r in res.testWooAiRequestQueue) ids.push(Number(r.@id));
-    for (var i = 0; i < ids.length; i++) processQueueItem(ids[i]);
-    return { processed: ids.length, recovered: recovered };
+    var failed = 0;
+    for (var i = 0; i < ids.length; i++) {
+      var r = processQueueItem(ids[i]);
+      if (!r || !r.ok) failed++;
+    }
+    if (failed > 0)
+      logWarning("[testWoo.foundry] batch 실패 " + failed + "/" + ids.length +
+        "건 — 큐 행의 err_id/last_error 를 확인하세요.");
+    return { processed: ids.length, failed: failed, recovered: recovered };
   }
 
   // 읽기 전용 큐 조회 (부작용 없음). 스모크가 _getQueue 의 getIfExists 파싱을

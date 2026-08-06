@@ -12,12 +12,23 @@
  * - 3. sqlSelect 반환 XML 구조 logInfo (파싱 가정 검증용)
  * - 4. describe_schema 속성 배열 비어있지 않은지 (N-2 회귀 검출)
  * - 4b. describe_schema 가 물리 컬럼명(sqlColumn)을 노출하는지 (논리명 유출 회귀)
+ *      4·4b 대상은 TW_SMOKE_DESCRIBE_ID — 허용 namespace(woo)를 벗어나면 툴이 거부한다
  * - 4c. probe_values 가 논리명을 물리명으로 해석해 실제 SQL 을 실행하는지
  * - 5. search_columns 1건 이상 매칭
+ * - 5c. list_schemas 허용 namespace 전수 조회 (Triage 프롬프트에 주입되는 목록 검증)
  * - 5b. 방언별 limitSelect 생성 SQL 문자열 검증 (M-1 회귀, 실행 없음)
  * - 6b. 무매치 id 조회 → 예외 아닌 null (getIfExists 규약)
  * - 6a. 큐 더미 1건 insert → _getQueue/getQueueStatus 조회 → 삭제 (N-1 회귀 검출)
- * - 7. PASS/FAIL 요약 출력, 실패 1건 이상이면 logError
+ * - 7. llm.pass0 실호출 — 슬롯 1건 이상 + max_tokens 절단 없음 (billable)
+ * - 8. llm.embedding 실호출 — 벡터 길이 > 0 (billable · embedEnabled=false면 SKIP)
+ * - 9. PASS/FAIL/SKIP 요약 출력, 실패 1건 이상이면 logError
+ *
+ * logError 는 WF 스크립트 실행을 즉시 중단시킨다(문서화된 동작). 그래서 개별 스텝 실패는
+ * twFail(logWarning)로만 남기고, 전체 판정 logError 는 요약 맨 끝에서 한 번만 호출한다.
+ *
+ * 7·8 은 실제 과금이 발생한다. 그럼에도 필수인 이유: 1~6 은 전부 DB/스키마 계열이라
+ * LLM 파라미터 결함(#80 tools 충돌 · #83 사고토큰 · #84 반복 루프)이 항상 사용자 입력
+ * 시점에 처음 발현됐다. 부득이한 경우에만 TW_SMOKE_SKIP_LLM=true 로 건너뛴다.
  *
  * [Dependencies]
  * =========
@@ -46,6 +57,14 @@ loadLibrary("woo:testWooFoundry.js");
 var TW_SMOKE_RESULTS = [];
 // preflight 가 돌려준 접속 DBMS — 어떤 DB에서 나온 결과인지 요약에 남긴다.
 var TW_SMOKE_DBMS = "(unknown)";
+// 7·8(LLM 실호출)만 건너뛰는 비상 플래그. 기본 false — 켜면 배포 완료로 볼 수 없다.
+var TW_SMOKE_SKIP_LLM = false;
+
+// 4·4b 대상 스키마. env foundry.namespaces 가 woo 로 한정돼 nms:recipient 는 툴에서 거부된다.
+// 시드 의존이 없는(=항상 배포되는) 코어 스키마를 쓴다 — 샘플 테이블은 미배포일 수 있다.
+var TW_SMOKE_DESCRIBE_ID = "woo:testWooAiFragment";
+// 5 검색 키워드. 위 코어 스키마의 속성이라 시드 여부와 무관하게 1건 이상 매칭된다.
+var TW_SMOKE_SEARCH_KEYWORD = "category";
 
 function twPass(step, note) {
   TW_SMOKE_RESULTS.push({ step: step, ok: true, note: String(note || "") });
@@ -123,7 +142,7 @@ function twStepSqlSelectShape() {
 
 // 4. describe_schema — 속성이 실제로 채워지는지 (N-2 회귀 검출)
 function twStepDescribeSchema() {
-  var res = testWoo.toolkit.invoke("describe_schema", { id: "nms:recipient" });
+  var res = testWoo.toolkit.invoke("describe_schema", { id: TW_SMOKE_DESCRIBE_ID });
   if (!res || res.error) {
     twFail("4.describe_schema", res ? String(res.error) : "no result");
     return false;
@@ -138,10 +157,10 @@ function twStepDescribeSchema() {
 
 // 4b. describe_schema 가 물리 컬럼명(@sqlname)을 노출하는지 — 실행 없이 스키마만 읽는다.
 // 논리명을 원시 SQL 에 넣으면 'column does not exist' 로 실패하므로 도구는 반드시
-// sqlColumn 을 함께 줘야 한다. 표준 스키마는 Adobe 가 sqlname 을 명시하므로
-// (email → sEmail) name 과 다른 컬럼이 반드시 1개 이상 존재한다.
+// sqlColumn 을 함께 줘야 한다. 우리 스키마는 sqlname 을 선언하지 않지만 ACC 가 배포 시
+// 타입 접두사로 생성하므로(name → sName) name 과 다른 컬럼이 반드시 1개 이상 존재한다.
 function twStepSqlColumnExposed() {
-  var res = testWoo.toolkit.invoke("describe_schema", { id: "nms:recipient" });
+  var res = testWoo.toolkit.invoke("describe_schema", { id: TW_SMOKE_DESCRIBE_ID });
   if (!res || res.error || !res.columns || !res.columns.length) {
     twFail("4b.sqlColumn", (res && res.error) ? String(res.error) : "columns empty");
     return false;
@@ -213,7 +232,7 @@ function twStepProbeValuesResolve() {
 
 // 5. search_columns — 1건 이상 매칭
 function twStepSearchColumns() {
-  var res = testWoo.toolkit.invoke("search_columns", { keyword: "email" });
+  var res = testWoo.toolkit.invoke("search_columns", { keyword: TW_SMOKE_SEARCH_KEYWORD });
   if (!res || res.error) {
     twFail("5.search_columns", res ? String(res.error) : "no result");
     return false;
@@ -224,11 +243,51 @@ function twStepSearchColumns() {
     return false;
   }
   if (!res.matches || !res.matches.length) {
-    twFail("5.search_columns", "0 matches for 'email'");
+    twFail("5.search_columns", "0 matches for '" + TW_SMOKE_SEARCH_KEYWORD + "'");
+    return false;
+  }
+  if (res.skippedNamespaces && res.skippedNamespaces.length) {
+    twFail("5.search_columns", "조회하지 못한 namespace: " +
+      res.skippedNamespaces.join(",") + " — 허용 목록/스키마 배포 확인");
     return false;
   }
   twPass("5.search_columns", "matches=" + res.matches.length +
     " scanned=" + String(res.scanned) + " partialScan=" + String(res.partialScan));
+  return true;
+}
+
+// 5c. list_schemas — 허용 namespace 전수 조회 (비과금)
+// WF 저널에 ok=false 로만 남던 실패를 배포 시점에 사유까지 드러낸다. 허용 namespace 는
+// Triage 프롬프트에 그대로 주입되므로 여기서 깨지면 슬롯 판정이 근거 없이 흔들린다.
+function twStepListSchemas() {
+  var ns = [];
+  try {
+    ns = testWoo.toolkit.env().allowedNamespaces || [];
+  } catch (eE) {
+    twFail("5c.list_schemas", "toolkit.env() 실패: " + String(eE.message || eE));
+    return false;
+  }
+  if (!ns.length) {
+    twFail("5c.list_schemas", "허용 namespace 0건 — env foundry.namespaces 확인");
+    return false;
+  }
+  logInfo("[smoke] allowedNamespaces=" + ns.join(",") + " (env foundry.namespaces)");
+
+  var bad = [];
+  var counts = [];
+  for (var i = 0; i < ns.length; i++) {
+    var res = testWoo.toolkit.invoke("list_schemas", { namespace: ns[i] });
+    if (!res || res.error || !res.schemas) {
+      bad.push(ns[i] + " → " + (res ? String(res.error) : "no result"));
+      continue;
+    }
+    counts.push(ns[i] + "=" + res.schemas.length + "건");
+  }
+  if (bad.length) {
+    twFail("5c.list_schemas", bad.join(" | "));
+    return false;
+  }
+  twPass("5c.list_schemas", counts.join(" · "));
   return true;
 }
 
@@ -368,14 +427,75 @@ function twStepQueueRoundTrip() {
                                  _operation="delete" id={qid}/>);
         logInfo("[smoke] cleanup: queue id=" + qid + " deleted");
       } catch (eDel) {
-        logError("[smoke] cleanup FAILED — 수동 삭제 필요: queue id=" + qid +
+        // logError 는 WF 스크립트를 즉시 중단시켜 이후 스텝과 요약 출력까지 막는다.
+        // 실패는 FAIL 로 남기고 판정은 마지막 요약에서 한 번에 낸다.
+        twFail("6a.queue.cleanup", "수동 삭제 필요: queue id=" + qid +
           " (" + String(eDel.message || eDel) + ")");
       }
     }
   }
 }
 
-// 7. 요약
+// 7. llm.pass0 실호출 (billable) — LLM 파라미터 결함을 사용자 입력 전에 검출한다.
+// finish_reason="length" 는 토큰 부족이 아니라 반복 루프 회귀 신호이므로 즉시 FAIL.
+function twStepLlmPass0() {
+  if (TW_SMOKE_SKIP_LLM === true) {
+    twSkip("7.llm.pass0 (billable)", "TW_SMOKE_SKIP_LLM=true — LLM 스텝 생략 시 배포 완료 아님");
+    return true;
+  }
+  try {
+    var slots = testWoo.llm.decomposeSlots("서울에 사는 고객");
+    if (!slots || !slots.length) {
+      twFail("7.llm.pass0 (billable)", "slots 0건 — Pass0 파싱 결함");
+      return false;
+    }
+    twPass("7.llm.pass0 (billable)", "slots=" + slots.length +
+      " first='" + String(slots[0].text) + "'");
+    return true;
+  } catch (e) {
+    var msg = String(e.message || e);
+    if (msg.indexOf("max_tokens") >= 0) {
+      twFail("7.llm.pass0 (billable)", "max_tokens 절단 — 반복 루프 회귀 의심 " +
+        "(response_format 재도입 여부 확인): " + msg);
+      return false;
+    }
+    twFail("7.llm.pass0 (billable)", msg);
+    return false;
+  }
+}
+
+// 8. llm.embedding 실호출 (billable) — chat 과 엔드포인트 경로가 달라
+// urlPermission 적용 범위가 다를 수 있다. 미지원·권한 오류는 SKIP 이 아니라 FAIL.
+function twStepLlmEmbedding() {
+  if (TW_SMOKE_SKIP_LLM === true) {
+    twSkip("8.llm.embedding (billable)", "TW_SMOKE_SKIP_LLM=true");
+    return true;
+  }
+  try {
+    // getConfig 까지 try 안에서 — 여기서 예외가 나가면 요약(9)이 출력되지 않는다.
+    var cfg = testWoo.cfg.getConfig();
+    if (!cfg.llm.embedEnabled) {
+      twSkip("8.llm.embedding", "env llm.embedEnabled=false — dedup L2 미사용 상태");
+      return true;
+    }
+    var res = testWoo.llm.postEmbedding(cfg, ["테스트"]);
+    var vec = (res && res.data && res.data[0]) ? res.data[0].embedding : null;
+    if (!vec || !vec.length) {
+      twFail("8.llm.embedding (billable)", "비어 있는 벡터 — model=" +
+        String(cfg.llm.embedModel));
+      return false;
+    }
+    twPass("8.llm.embedding (billable)", "dim=" + vec.length +
+      " model=" + String(cfg.llm.embedModel));
+    return true;
+  } catch (e) {
+    twFail("8.llm.embedding (billable)", "실패 — 임베딩 호스트 urlPermission 과 embedModel 을 " +
+      "확인할 것. dedup L2 없이 운용하려면 env llm.embedEnabled=false: " + String(e.message || e));
+    return false;
+  }
+}
+
+// 9. 요약
 function twSummary() {
   var failed = 0;
   var skipped = 0;
@@ -407,8 +527,11 @@ if (twStepGlobals()) {
   twStepSqlColumnExposed();
   twStepProbeValuesResolve();
   twStepSearchColumns();
+  twStepListSchemas();
   twStepDialectSql();
   twStepQueueMiss();
   twStepQueueRoundTrip();
+  twStepLlmPass0();
+  twStepLlmEmbedding();
 }
 twSummary();

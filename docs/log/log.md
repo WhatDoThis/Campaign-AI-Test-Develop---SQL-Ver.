@@ -1,6 +1,12 @@
 # Log
 
 ## Log Index
+89. 2026-08-06 fragment 생성 단계 진단 보강 (turn별 finish_reason·응답 본문 프리뷰) + 강제 턴 지시를 요청 사본에만 주입
+88. 2026-08-06 종료된 큐를 수기 재큐잉했을 때의 무동작 done 에 사유 기록 (fragment 0건 오인 방지)
+87. 2026-08-06 허용 namespace 를 woo 단독으로 확정 (ACC 수기 수정이 재배포마다 덮이던 원인 제거) + 스모크 4·4b·5 대상 전환 + grainKeyCandidates 정합
+86. 2026-08-06 Foundry 배치 첫 실행 실패 정리 — logError 선행으로 큐 상태 유실(SCR-160012) + Triage 턴 소진 강제 응답 + 허용 namespace 프롬프트 주입
+85. 2026-08-06 logon(sessionToken) 폐기 대응 (logonWithToken · JST-310036) + 큐 폴링 20초 정합 + Foundry 상시 ON
+84. 2026-08-06 json_object 반복 루프 근원 제거 (R-1~R-4 · L-1~L-3) — length 진단 강화 + 스모크 LLM 스텝 + 단계별 토큰 상한
 83. 2026-08-06 thinking 모델 reasoning 비활성 형식 교정 (max_tokens:0) + Pass0 토큰 env 연결 + Foundry 사고 예산 고정
 82. 2026-08-06 논리명→물리명(sqlname) 결함 수정 — 툴킷 sqlColumn 노출·해석 + 프롬프트 3종 + 스모크 4b/4c + 가이드 v1.6.0
 81. 2026-08-06 AI 스키마 5종 상단 정의서화 (이누머레이션·인덱스·속성 명세)
@@ -86,6 +92,271 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+89. 2026-08-06 fragment 생성 단계 진단 보강 (turn별 finish_reason·응답 본문 프리뷰) + 강제 턴 지시를 요청 사본에만 주입
+Purpose: namespace 를 woo 로 좁힌 뒤 Triage 는 통과했으나(queueId=27283) 생성 단계가 `fragment JSON missing` 으로 실패했다. 어느 턴에서 왜 JSON 이 안 나왔는지 로그가 전혀 없어 원인 판정이 불가하다 Changes:
+
+**진행 상황 (woo 단독 효과 확인)**
+- Triage 가 `search_columns namespaces="woo"` 로 정상 조사 → `describe_schema
+  woo:testWooSampleCustomer` 까지 도달. #87 이전의 nms 배회가 사라졌다
+- `invoke failed … reason=namespace not allowed: nms (allowed: woo)` /
+  `no allowed namespaces (requested: cus / allowed: woo)` — #86 에서 넣은 사유 로깅과
+  허용목록 동봉이 실제로 동작. 모델이 다음 턴에 woo 로 자체 교정했다
+- 실패는 큐 행에 정상 기록(`failed queueId=27283` + err_id) + 배치는 계속 진행 → #86 검증 완료
+
+**진단 보강 (원인 판정 불가 상태 해소)**
+- `runToolLoop` 이 턴마다 `finish_reason` / `toolCalls` / `contentLen` 을 logInfo.
+  강제 턴에는 `(forced answer)` 표시 — 평문 응답·빈 본문·툴 차단을 구분한다
+- `_parseFragmentJson` 실패 시 응답 본문 앞뒤 200자를 logWarning + 오류 메시지에
+  `contentLen`/`turn`/`finish_reason` 을 실었다. 프롬프트 본문은 남기지 않는다
+- `runToolLoop` 반환값에 `finishReason`/`turn`/`lastTurn` 추가 (호출부 진단용)
+
+**강제 턴 지시 주입 방식 교정**
+- #86 에서 Foundry 는 messages 재사용 때문에 지시문을 넣지 못했는데, 요청 사본
+  (`msgs.concat([...])`)에만 넣으면 히스토리 오염 없이 강제할 수 있다 → 지시문 추가
+- Triage 는 재시도 루프가 없어 기존 push 방식을 유지
+
+**검증**
+- `node tools/checkRhinoSyntax.js` 19/19 OK
+- 원인 자체는 미확정 — 재배포 후 다음 실행의 `turn=…finish_reason=…` 과 본문 프리뷰로 확정
+
+Changed files: new_ver/js/testWooFoundry.js, docs/log/log.md
+
+88. 2026-08-06 종료된 큐를 수기 재큐잉했을 때의 무동작 done 에 사유 기록 (fragment 0건 오인 방지)
+Purpose: 큐 27581 이 `Done` 인데 fragment 가 0건이라는 보고. 해당 배치 실행에는 toolkit 호출이 한 건도 없었다 — `missing_slots_json` 이 비어 있어 아무 일도 하지 않고 `done` 이 된 경로였다. 상태만 보면 성공과 구분되지 않아 사유를 남긴다 Changes:
+
+**구조적 원인**
+- 종료 상태 전이(`_finalizeInfeasible` / `awaiting_approval`)는 `missing_slots_json` 을 `"[]"` 로
+  비운다. 설계상 자동 재큐잉이 없으므로(사용자가 같은 NL 을 다시 요청해야 한다) 정상 동작이다
+- 그러나 완료된 행을 **수기로 `queued` 로 되돌리면** `missing.length === 0` 분기로 들어가
+  `status: "done"` 만 찍고 종료한다. 저널에도 `processed=1 failed=0` 한 줄만 남아
+  "정상 처리됐는데 fragment 가 없다" 로 보인다
+- 직전 안내(#87 응답)에서 "status/attempt_count 를 되돌리면 재사용 가능" 이라고만 적어
+  이 경로를 유발했다. `missing_slots_json` 복원이 빠져 있었다
+
+**조치**
+- `processQueueItem` 의 무매칭 분기에 `last_error` 안내문 기록 +
+  `logInfo`("처리 없이 done · 재생성은 신규 요청 필요"). 상태 필드만 보고도 구분된다
+- 판정 자체는 변경하지 않았다(`ok:true` / `done` 유지) — 실패가 아니라 처리 대상 부재이므로
+
+**검증**
+- `node tools/checkRhinoSyntax.js` 19/19 OK
+
+Changed files: new_ver/js/testWooFoundry.js, docs/log/log.md
+
+87. 2026-08-06 허용 namespace 를 woo 단독으로 확정 (ACC 수기 수정이 재배포마다 덮이던 원인 제거) + 스모크 4·4b·5 대상 전환 + grainKeyCandidates 정합
+Purpose: 사용자가 ACC 에서 `foundry.namespaces` 를 `woo` 로 계속 고쳤는데 재배포마다 `nms,cus,woo` 로 되돌아갔다. 원인은 로컬 `testWooEnv.js` 가 초기 커밋부터 `nms,cus,woo` 였다는 것 — 소스를 사용자 의도대로 바꾸고 여기에 묶인 스모크·프롬프트 값을 함께 맞춘다 Changes:
+
+**원인**
+- ACC 배포는 로컬 파일 붙여넣기라 **로컬이 유일한 원본**이다. #86 안내가 "Env 재배포" 였으므로
+  수기 수정본이 그때마다 덮였다. `git log -S"namespaces:"` 결과 이 값은 초기 커밋 이후 무변경
+- #85 시점 배포본이 `woo` 단독이었다는 점은 #86 에서 미확정으로 남긴 `list_schemas nms/cus
+  ok=false` 를 설명한다 — queryDef 예외가 아니라 **"namespace not allowed"** 였다.
+  이번 스모크 5c 가 `nms=50건 · cus=0건 · woo=7건` 으로 반대편(전부 허용)을 확인해 확정됨
+
+**결정 — namespaces: "nms,cus,woo" → "woo"**
+- 테스트 범위는 `woo:testWooSampleCustomer` 하나다. nms 개방의 실측 손해:
+  Triage 가 `search_columns namespaces="nms,cus"`(woo 제외!) 로 4회, 이어서
+  `describe_schema nms:common`(기술 스키마) 로 흘렀다. `sRegion` 에 `서울` 이 있는
+  올바른 테이블을 스스로 배제한 것이다. `cus` 는 이 인스턴스에 스키마 0건
+- env 주석에 근거와 "운영에서 nms:recipient 가 필요해지면 스모크 4·4b 와 함께 되돌린다" 명시
+
+**연동 조정 (namespaces 축소로 깨지는 지점)**
+- 스모크 4·4b 가 `nms:recipient` 를 쓰고 있어 그대로면 "namespace not allowed" FAIL.
+  `TW_SMOKE_DESCRIBE_ID = "woo:testWooAiFragment"` 상수로 전환 — 코어 스키마는 시드 여부와
+  무관하게 항상 배포되므로 샘플 테이블(4c 처럼 SKIP 대상)보다 적합하다.
+  `sqlname` 미선언이어도 ACC 가 타입 접두사로 생성하므로(`name`→`sName`) 4b 전제는 유지된다
+- 스모크 5 키워드 `email` → `TW_SMOKE_SEARCH_KEYWORD = "category"` (같은 이유로 시드 비의존)
+- 스모크 5 에 `skippedNamespaces` 비어있음 검사 추가 (#86 에서 노출시킨 값의 실사용)
+- `toolkit.env().grainKeyCandidates` 에서 `iRecipientId` 제거 → `["sCustomer_id"]`.
+  #86 이후 이 값이 Triage 프롬프트에 실려 나가므로, 닿을 수 없는 키를 남기면 그 키로 SQL 을
+  만들다 게이트에서 실패하며 턴을 소진한다(다음 회귀 예방)
+
+**#86 수정 실증 (사용자 실행 로그)**
+- 스모크 13/13 PASS (5c 신설분 포함) · `dbms=postgresql (dialect verified)`
+- Foundry 배치: `processed=1 failed=0` — `tool loop exceeded` 와 `SCR-160012` 재현 없음.
+  마지막 턴 강제 응답이 동작해 예외 대신 판정으로 종료됐다
+
+**검증**
+- `node tools/checkRhinoSyntax.js` 19/19 OK
+- 잔여 `nms:recipient` 참조 0건(주석 설명만) · 가이드 v1.6.3
+
+Changed files: new_ver/js/testWooEnv.js, new_ver/js/testWooToolkit.js, new_ver/tools/testWooSmoke.js, docs/report/01_개발가이드.md, docs/log/log.md
+
+86. 2026-08-06 Foundry 배치 첫 실행 실패 정리 — logError 선행으로 큐 상태 유실(SCR-160012) + Triage 턴 소진 강제 응답 + 허용 namespace 프롬프트 주입
+Purpose: `WKF_testWooFoundry` 첫 실행이 `SCR-160012` 로 정지했다. 저널의 `triage tool loop exceeded` 는 증상이고, 실패가 큐에 기록되지 않아 원인 추적이 막힌 구조가 본질이다. 실패 기록·툴 루프 종료·프롬프트 근거를 함께 교정한다 Changes:
+
+**결함 1 (P0) — logError 가 상태 저장보다 앞서 실행돼 실패 근거가 유실**
+- ACC WF 의 `logError` 는 로그만 남기지 않는다. **스크립트 실행을 즉시 중단하고 인스턴스를
+  오류 정지**시킨다 → `catch` 블록의 `logError` 뒤에 있던 `_updateQueue` 가 실행되지 않았다
+  https://experienceleague.adobe.com/en/docs/campaign/automation/workflows/advanced-management/javascript-scripts-and-templates
+- 결과: 큐 27581 이 `processing` + `last_error`/`err_id`/`evidence_log` 공백으로 갇혔고,
+  `_hasProcessing()` 가드 때문에 **`staleProcessingMinutes`(30분) 동안 배치 전체가 스킵**됐다.
+  `SCR-160012` 도 예외가 아니라 이 `logError` 자체가 원인이다
+- `testWooFoundry.js`: `processQueueItem` 의 catch·프리플라이트 분기에서 **저장 → 로그** 순서로
+  교정하고 건별 실패 로그를 `logWarning` 으로 낮췄다(배치가 다음 queued 건을 계속 처리)
+- `_updateQueue` 자체 실패도 try/catch 로 감싸 배치를 죽이지 않게 했다
+- `processBatch` 는 실패 건수를 세어 요약 `logWarning` 을 남기고 `failed` 를 반환.
+  배치 WF 스크립트 로그도 `processed=n failed=n` 으로 확장
+- 배치 전체 중단이 맞는 프리플라이트(`sql` right 미보유)만 `logError` 유지 — 주석에
+  "수동 재시작 필요" 를 명시(기존 "재시도 가능" 은 사실과 달랐다)
+
+**결함 2 (P0) — Triage 툴 루프가 최종 응답을 강제하지 않음**
+- `runTriageLoop` 의 턴 상한이 `for (t=0; t<4; t++)` 하드코딩이었고, 마지막 턴에도
+  `tool_choice:"auto"` 라 모델이 4턴 전부를 툴 호출로 쓰면 판정 없이 예외로 끝났다
+  (실제 로그: `search_columns` 4회 → `list_schemas` 3회 → `describe_schema` 1회 → 예외)
+- 마지막 턴에 `tool_choice:"none"` + 최종 지시 메시지로 **판정 JSON 을 강제**한다.
+  근거가 부족하면 `ambiguous` 로 답하게 해 강등 규칙이 정상 동작하도록 유도
+- 턴 상한을 `triage.maxTurns`(env 신설, 권장 6 · 가드 2~12)로 분리
+- `finish_reason="length"` 를 별도 진단으로 분기(기존에는 "triage JSON missing" 으로 위장),
+  JSON 부재 오류에 turn/finish_reason/contentLen 을 실었다
+- `testWooFoundry.runToolLoop` 도 동일 결함이라 마지막 턴 강제 + `length` 진단을 대칭 적용.
+  되먹임 재시도가 messages 를 재사용하므로 Foundry 쪽은 지시 문장을 넣지 않았다
+
+**결함 3 (P1) — 툴 실패 사유가 어디에도 남지 않음**
+- `list_schemas namespace=nms/cus` 가 `ok=false` 인데 저널에 사유가 없어 원인 판정이 불가했다
+  (`invoke` 가 `ok=` 만 찍었고, 사유가 담긴 `evidence_log` 는 결함 1 때문에 저장 실패)
+- `invoke` 실패 시 사유를 `logWarning` 으로 남긴다
+- `list_schemas` 미허용 오류에 **허용 목록을 동봉**해 모델이 다음 턴에 자체 교정하게 했다
+- `search_columns` 가 조회 실패·미허용 namespace 를 조용히 건너뛰던 경로를 노출:
+  `skippedNamespaces` + `allowedNamespaces` 반환 + `partialScan:true` 강제 + `logWarning`.
+  조용한 스킵은 "조사했으나 0건" 으로 위장돼 근거 없는 `no_column` 을 만든다
+
+**결함 4 (P1) — 허용 namespace·값 검색 방법을 모델에 알려주지 않음**
+- `toolkit.env()` 가 구현돼 있으나 **어디서도 호출되지 않았다**. 툴 설명의 `e.g. nms, cus, woo`
+  는 예시일 뿐이어서 모델이 ns 를 찍어보며 턴을 낭비했다
+- Triage 시스템 프롬프트에 `dbms` / `allowedNamespaces` / `grainKeyCandidates` 를 주입
+- `search_columns` 는 컬럼 이름·라벨만 매칭한다는 점과, `서울` 같은 값은 컬럼을 먼저 찾고
+  `probe_values` 로 확인해야 한다는 점을 명시(실제로 값 4종을 컬럼명으로 검색해 턴을 소진했다)
+
+**스모크·문서**
+- `testWooSmoke.js` **5c 신설** — `toolkit.env().allowedNamespaces` 전수 `list_schemas` 조회.
+  WF 저널에서 `ok=false` 로만 보였던 실패를 배포 시점에 사유까지 드러낸다(비과금)
+- 6a 정리 실패를 `logError` → `twFail` 로 교체(요약 출력이 잘리는 것을 방지)
+- 가이드 v1.6.2 섹션6 에 **8) WF 로깅·툴 루프 규약** 신설 + 스모크 표 5c + 완료 체크 2항
+- 스킬 `acc-rhino-constraints.md` 에 WF `logError` 중단 규약 추가, JSSP 인증 예시를
+  `logonWithToken` 가드로 갱신(#85 코드와 문서 불일치 해소)
+
+**검증**
+- `node tools/checkRhinoSyntax.js` 19/19 OK · `node tools/checkDialectSql.js` 6/6 OK
+- 배포 전 조치: 큐 27581 은 `processing` 에 갇혀 있다 → 재배포 후 `queued` 로 되돌리거나
+  30분 스테일 복구를 기다려야 배치가 다시 돈다. WF 인스턴스도 오류 정지 상태이므로 재시작 필요
+
+Changed files: new_ver/js/testWooFoundry.js, new_ver/js/testWooFeasibility.js, new_ver/js/testWooToolkit.js, new_ver/js/testWooEnv.js, new_ver/js/testWooConfig.js, new_ver/workflow/testWooFoundryBatch.js, new_ver/tools/testWooSmoke.js, docs/report/01_개발가이드.md, .cursor/skills/campaign-ai-studio/acc-rhino-constraints.md, docs/log/log.md
+
+85. 2026-08-06 logon(sessionToken) 폐기 대응 (logonWithToken · JST-310036) + 큐 폴링 20초 정합 + Foundry 상시 ON
+Purpose: 로그 #84 배포 후 실환경 확인에서 Studio 큐 폴링이 5초마다 `JST-310036 The 'logon' JavaScript method is deprecated` 를 저널에 남겼다. 폐기 API 를 교체하고, 폴링 주기가 Foundry 배치 주기(5분)와 어긋나 노이즈를 만드는 구조를 함께 정리한다 Changes:
+
+**실환경 확인 결과 (#84 검증 완료분)**
+- 스모크 12/12 PASS · `dbms=postgresql (dialect verified)`
+- `7.llm.pass0 (billable)` PASS `slots=1` / `8.llm.embedding (billable)` PASS `dim=1536`
+- Studio `서울에 사는 고객` → Pass0 usage `completion_tokens=104`, `reasoning_tokens=0`
+  (수정 전 8192 소진) → **R-1 반복 루프 제거 확정**
+- 8번 PASS 는 L-2 의 `cfg.foundry.embedEnabled` → `cfg.llm.embedEnabled` 교정이 실제로
+  임베딩을 켰다는 증거다(그 전에는 항상 즉시 null). 이후 dedup L2 가 실동한다
+- `foundry.enabled=true` 로 미매칭 요청이 큐에 적재됨(queueId=27581, `queued`) — 설계대로 동작
+
+**결함 1 — logon(sessionToken) 폐기 (JST-310036)**
+- 근거: `logon()` 은 `logonEscalation` 이 돌려준 **컨텍스트 복원용으로만** 유효하고, 세션 토큰
+  바인딩의 현행 API 는 `logonWithToken(token)` 이다. 다른 대체는 `logonWithUser(login, password)`
+  / `logonWithContext(context)`
+  https://experienceleague.adobe.com/developer/campaign-api/api/f-logon.html
+- `testWooCommon.js`: `twLogonWithToken(tok)` 신설 — `typeof logonWithToken === "function"` 확인 후
+  호출, 부재 빌드에서는 `logon(tok)` 폴백(Rhino 는 미정의 식별자의 typeof 에 예외를 던지지 않는다).
+  `twBindOperator` 가 이를 사용하고 실패 메시지를 "session token bind failed" 로 일반화
+- `testWooAiStudio.jssp`: Common 을 로드하지 않는 UI 셸이라 동일 가드를 인라인
+- `testWooAiAuthDebug.jssp`: 동일 가드 + 응답에 `bindMethod`(`logonWithToken` / `logon(deprecated)`)
+  추가 — 어느 경로로 바인딩됐는지 진단에 남긴다
+- 오류가 아니라 경고였으므로 기능 영향은 없었다. 다만 폴링 1회마다 1건씩 쌓여 진짜 오류를 묻는다
+
+**결함 2 — 큐 폴링 주기가 배치 주기와 불일치**
+- `pollQueue` 가 5초 간격 × 120회였다. Foundry 배치는 5분 주기라 10분 창에서 상태가 바뀔 기회는
+  2회뿐인데 조회는 120회 발생 → 저널 인증 로그 120건
+- UI 문구도 "약 5분 간격으로 상태가 갱신됩니다" 로 코드(5초)와 반대였다
+- `QUEUE_POLL_MS = 20000` · `QUEUE_POLL_MAX = 30` 상수로 분리(하드코딩 제거, 총 대기 10분 유지)
+- 문구 정정: "약 20초 간격으로 상태를 확인하며, fragment 생성 배치는 약 5분 주기로 동작합니다"
+- `new_ver/html/testWooAiStudio.js` 와 `new_ver/jssp/testWooAiStudioJs.jssp` **양쪽 동시 수정**
+  (동기 규칙). 수정 후 두 파일에서 상수 4개 존재·잔여 `, 5000)` 0건을 스크립트로 대조
+
+**Foundry 상시 ON 확정**
+- `testWooEnv.js` `foundry.enabled: false` → **`true`**. ACC 배포본만 켜져 있어 다음 재배포 때
+  되돌아갈 상태였다
+- `.cursor/skills/campaign-ai-studio/SKILL.md` 의 "Foundry default off" 행을 현행(ON)으로 교체.
+  끄면 unmatched 오류 UI 로 복귀한다는 점과 LLM 과금 유무를 함께 명시
+- env 주석도 true/false 동작 대비로 재작성
+
+**검증**
+- `checkRhinoSyntax` 19/19 통과
+- Studio JS 2종 동기 대조 스크립트 통과(상수 4항목 · 레거시 5000 잔여 0)
+- **미실행(환경 필요)**: 재배포 후 저널에 JST-310036 미발생 확인, `AuthDebug` 의 `bindMethod`
+  값 확인, 폴링 20초 반영 확인
+
+Changed files: new_ver/js/testWooCommon.js, new_ver/js/testWooEnv.js, new_ver/jssp/{testWooAiStudio,testWooAiStudioJs,testWooAiAuthDebug}.jssp, new_ver/html/testWooAiStudio.js, .cursor/skills/campaign-ai-studio/SKILL.md, docs/log/log.md
+
+84. 2026-08-06 json_object 반복 루프 근원 제거 (R-1~R-4 · L-1~L-3) — length 진단 강화 + 스모크 LLM 스텝 + 단계별 토큰 상한
+Purpose: `docs/report/07_SQL생성추가_디버깅1.md` 반영. #83 이 잡지 못한 `finish_reason="length"` 의 실제 원인(structured output 반복 루프)을 제거하고, 이 계열 결함이 매번 마케터 입력 시점에 처음 발현되던 구조를 스모크로 차단한다 Changes:
+
+**#83 진단이 왜 부분 정답이었나**
+- #83 은 "사고 토큰이 max_tokens 를 먹는다"로 보고 `reasoningOff()` = `{enabled:false, max_tokens:0}` 를 적용했다. 이 조치 자체는 성공했다 — 이후 usage 가 `reasoning=0` 으로 바뀌었다
+- 그런데 `completion=8192`(상한)는 그대로였다. NL 이 8자인데 본문이 상한을 채우는 것은 정상 생성이 아니라 **같은 토큰을 반복하다 상한에 부딪힌 것**이다
+- 재현 조건은 JSON 강제 출력(`response_format:{type:"json_object"}`). Gemini 2.5 Flash 계열의 알려진 결함이다
+  https://discuss.ai.google.dev/t/gemini-2-5-flash-repeats-tokens-until-max-tokens-reached-in-structured-output/107176
+- #80 에서 Triage 의 `response_format` 만 제거했고 `_chat`(Pass0/Pass1 공용)·`explainDedupDiff` 에는 그대로 남아 있었다. 같은 지뢰를 한 곳만 치운 상태였다
+
+**원칙 명문화: 본 시스템은 `response_format:{type:"json_object"}` 를 사용하지 않는다**
+- JSON 강제는 시스템 프롬프트 `OUTPUT JSON ONLY` + `_parseJson` 의 `indexOf("{")`~`lastIndexOf("}")` 추출이 담당한다(파싱부 무변경)
+- `testWooLlm.js` 상단 `[설계 원칙]` 섹션과 어댑터 주석, 가이드 섹션6 규약표에 근거 URL 과 함께 고정
+
+**R-1 (P0) `_chat` + 어댑터 기본값에서 json_object 제거 — testWooLlm.js**
+- `_chat` 이 넘기던 `responseFormat: {type:"json_object"}` 삭제
+- openrouter 어댑터의 `else if (!opts.tools) body.response_format = {type:"json_object"}` **기본 주입 삭제**. `tools` 와의 상호배제 pass-through 만 남겼고(`opts.responseFormat != null && !opts.tools`) 현재 호출부는 0곳
+- 전수 grep 결과 코드상 잔여 사용처 0곳. 문서(02·03 리포트)의 기술은 이력이라 원문 유지
+
+**R-3 (P1) `_lengthDiag` 진단 강화 — 이번 디버깅이 길어진 직접 원인 제거**
+- 기존에는 예외만 던져 응답 본문이 사라져 "반복 루프"와 "진짜 절단"을 구분할 수 없었다
+- `_lengthDiag(usage, content, stage)` 로 확장: `stage`/`completion`/`reasoning`/`contentChars` 를 메시지에, **응답 content 앞 200자·뒤 200자**를 `logWarning` 으로 남긴다
+- `_looksRepetitive(text)` 신설 — 앞/뒤 200자 동일 또는 뒤 200자에서 12~40자 단위가 3회 이상 반복이면 `"[반복 루프 의심]"` 문구를 메시지에 포함
+- 사용자 노출 메시지에 힌트 추가: "reasoning=0 인데 completion 이 상한이면 토큰 부족이 아니라 반복 루프일 수 있습니다"
+- **프롬프트 본문은 로그에 남기지 않는다**(고객 실데이터 유입 가능) — 응답 content 만
+- 로컬 검증: 파일에서 `_looksRepetitive` 본문을 추출해 실행 — 반복 문자열 `true`, 슬롯 12개 정상 JSON(1239자, 키가 구조적으로 반복됨) `false`, 400자 미만 `false`
+
+**R-2 (P1) 반복 루프 억제 파라미터 — testWooEnv.js / testWooLlm.js**
+- env `llm.repetitionGuardEnabled: true` · `llm.frequencyPenalty: 0.1` 추가(가드 0~1)
+- `_frequencyPenalty()` 가 플래그 true + 0 초과일 때만 `frequency_penalty` 를 body 에 넣는다(0 이면 키 자체를 넣지 않음). 상한 1 로 클램프
+- `temperature` 는 **0 유지**(결정성 우선). 반복 억제는 penalty 로만 처리
+- 적용 범위는 openrouter 어댑터 body 1곳. Triage·Foundry 는 body 를 직접 구성하고 `tools` 사용(structured output 미사용)이라 리포트 지시대로 대상에서 제외
+- **리포트와의 명명 차이**: 리포트는 `FREQUENCY_PENALTY`/`REPETITION_GUARD_ENABLED`/`PASS1_MAX_TOKENS` 로 지시했으나, `testWooEnv.js` llm 섹션은 기존 항목이 전부 camelCase(`pass0MaxTokens` 등)라 섹션 내 일관성을 택했다(UPPER_SNAKE 는 guard 섹션 관례)
+
+**R-4 (P0) 스모크에 LLM 실호출 스텝 추가 — 재발 방지 근원 조치**
+- 스모크 1~6 은 전부 DB/스키마 계열이라 LLM 결함이 스모크를 통과한 뒤 **항상 사용자 입력 시점에** 처음 발현됐다. #80(tools 충돌)·#83(사고 토큰)·금번(반복 루프) 유출 경로가 동일하다(#82 의 "스모크 미포함" 과 같은 구조)
+- `7.llm.pass0 (billable)`: `decomposeSlots("서울에 사는 고객")` → 슬롯 1건 이상. 예외 메시지에 `max_tokens` 가 있으면 "반복 루프 회귀 의심" 으로 FAIL
+- `8.llm.embedding (billable)`: `cfg.llm.embedEnabled` true 일 때만 `postEmbedding` → 벡터 길이 > 0. 실패는 SKIP 아닌 FAIL, `embedEnabled=false` 면 SKIP
+- `TW_SMOKE_SKIP_LLM`(기본 false) 로 7·8 만 건너뛸 수 있게 하되, 켜면 배포 완료로 보지 않는다
+
+**L-1 (P1) explainDedupDiff 의 json_object 제거 + 평문 우선 파싱**
+- #80 에서 "미처리(경미)" 로 분류했으나 경미하지 않았다. 산문 2~3문장을 요구하며 JSON 을 강제하는 R-1 과 동일 조건이라 near 설명이 상시 실패한다(`max_tokens` 1024 라 피해만 작았음)
+- R-1 로 기본 주입이 사라졌고, `_explanationText(raw)` 신설로 봉투(choices/content)에서 본문만 꺼낸 뒤 **평문을 그대로** 설명으로 쓴다. content 가 JSON 이면 첫 문자열 값을 쓰고, 실패해도 dedup 판정에 영향 없다는 원칙은 유지
+
+**L-2 (P2) postEmbedding 엔드포인트 + embedEnabled 참조 경로 결함**
+- 하드코딩 `https://openrouter.ai/api/v1/embeddings` 제거 → `_embedEndpoint()` 가 `cfg.llm.endpoint` 의 `/chat/completions` 를 `/embeddings` 로 치환해 **같은 호스트 재사용**. 형태가 다르면 `logWarning` 후 원본 사용. 호스트가 달라지면 urlPermission 추가 필요를 주석·가이드에 명시
+- **추가 발견(실행 이력이 없던 진짜 이유)**: `testWooEmbedding.embed()` 가 `cfg.foundry.embedEnabled` 를 읽는데 이 필드는 존재하지 않는다(Config 는 `cfg.llm.embedEnabled` 로 싣는다) → env 가 `embedEnabled:true` 여도 임베딩이 **항상 즉시 null 반환**. `cfg.llm.embedEnabled` 로 교정
+- 그 결함 덕분에 dedup L2 우회 경로(`candVec` null → L1 점수만으로 L3 진행)가 사실상 상시 검증돼 있었다 — `embedEnabled:false` 로도 판정이 동작함은 코드 경로상 확인, 실환경 재확인은 스모크 8 SKIP 케이스로 수행
+
+**L-3 (P2) pass0MaxTokens 가 Pass1 에도 적용되던 문제**
+- env `llm.pass1MaxTokens: 8192` 신설(기본 Pass0 와 동일값)
+- `_pass0MaxTokens()` → `_maxTokensFor(stage)` 로 교체, `_chat(cfg, system, user, stage)` 가 `"pass0"`/`"pass1"` 을 받아 해당 상한 사용
+- `_parseJson(raw, stage)` 로 단계를 전달해 `_lengthDiag` 메시지에 `stage=pass0|pass1` 표기. fragment 가 쌓여 Pass1 이 절단되면 `pass1MaxTokens` 만 올린다
+
+**문서**
+- `01_개발가이드.md` v1.6.1: 섹션6 에 **7) LLM 요청 파라미터 규약** 신설(json_object 금지 · tools 병용 금지 · reasoningOff 단일 형식 · 단계별 상한 · frequency_penalty · 임베딩 호스트 재사용 · length 진단 판독 요령), 스모크 표에 7·8 추가 + "LLM 스텝 생략 시 배포 완료 불인정" 명시, 완료 체크 2행 추가
+- `00_ReportIndex.md`: `07_SQL생성추가_디버깅1.md` 등재
+
+**검증**
+- `node tools/checkRhinoSyntax.js` 19/19 · `node tools/checkDialectSql.js` 6/6 통과
+- `_looksRepetitive` 실동 검증(위 R-3)
+- **미실행(환경 필요)**: R-1 단독 실행 검증(Studio "서울에 사는 고객"), 스모크 7·8, dedup near 설명 채움, Pass1 절단 미발생
+
+Changed files: new_ver/js/testWooLlm.js, new_ver/js/testWooEnv.js, new_ver/js/testWooEmbedding.js, new_ver/tools/testWooSmoke.js, docs/report/{00_ReportIndex,01_개발가이드}.md, docs/log/log.md
 
 83. 2026-08-06 thinking 모델 reasoning 비활성 형식 교정 (max_tokens:0) + Pass0 토큰 env 연결 + Foundry 사고 예산 고정
 Purpose: Gemini 2.5 Flash 전환 후 Pass0 첫 호출에서 `finish_reason="length"` 로 실패하던 원인을 제거한다 Changes:

@@ -32,6 +32,18 @@ req.execute(useProxy);  // sync — blocks until response
 var respBody = req.response.body.toString();  // NO "utf-8" string arg
 ```
 
+## Workflow logging (logError aborts the script)
+
+In workflow JS, `logError()` **interrupts execution** and puts the instance in error status
+([doc](https://experienceleague.adobe.com/en/docs/campaign/automation/workflows/advanced-management/javascript-scripts-and-templates)).
+Code after `logError` never runs.
+
+| Rule | Why |
+|------|-----|
+| Persist state (`xtk.session.Write` / `_updateQueue`) **before** logging | Otherwise status/err_id/evidence are lost and the row stays `processing` |
+| Per-item failure in a batch → `logWarning` | `logError` stops the whole batch at the first bad item |
+| `logError` only for batch-level config errors | WF pauses → needs manual restart after the fix |
+
 ## queryDef pagination
 
 ```javascript
@@ -58,7 +70,9 @@ Single row with `sql_text`: `lineCount=1`, filter by `@name`.
 loadLibrary("woo:testWooCommon.js");
 var token = request.getCookies()["__sessiontoken"];
 if (!token) { /* redirect logon.jsp */ }
-logon(token);
+// logon(token) is deprecated (JST-310036) — guard for older builds
+if (typeof logonWithToken === "function") logonWithToken(token);
+else logon(token);
 testWoo.common.requireRight("testWooAiSqlGenerate");
 ```
 
