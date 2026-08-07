@@ -1,6 +1,20 @@
 # Log
 
 ## Log Index
+110. 2026-08-07 InspectAiTarget — activityCount long↔int SOAP 타입 오류 → string outs
+109. 2026-08-07 WebApp형 Studio 임베드 — Inspect/Bind ai_sql-id · 확장 폼 iframe
+108. 2026-08-07 AI Studio 다이얼로그 — nothingToEdit/Save 로 OK(닫기) 활성
+107. 2026-08-07 AI Studio 호스트 — 폼 하드코딩 제거 · Option testWooAiStudioBaseUrl 단일 소스
+106. 2026-08-07 AI Studio 다이얼로그 — URL·WF명 자동/readOnly · baseUrl은 인풋폼에서 고정
+105. 2026-08-07 AI Studio 진입점 — 캠페인 Targeting용 Properties 옆 flatSubFormButton 으로 변경
+104. 2026-08-07 xtk:workflow 저장 XML-110013 — xpathTargetDataSource 제거 안내(ref 무관)
+103. 2026-08-07 섹션7 문구 정리 — 확장(entity-schema+ref), “상속 불가” 논쟁 표현 제거
+102. 2026-08-07 woo:testWooExtendWorkflow — Workflow 확장 폼 + ref 연결 · AI Studio 탭
+101. 2026-08-07 testWooAiWorkflowUi — methods를 srcSchema 직속으로 이동 (XML-110013)
+100. 2026-08-07 섹션7a·7b — soapCall BuildStudioUrl · listSql/getSql · Studio 우측 SQL 패널
+99. 2026-08-06 개발가이드 v1.7.0 — 섹션7 WF캔버스↔Studio↔커스텀 액티비티 (다음 적용)
+98. 2026-08-06 Fragment 생애주기 설계 — 승인→라벨 · enum+certified · merged_into_id (런타임 변경 없음)
+97. 2026-08-06 Studio 검증 결과 UI — PASS/FAIL·게이트 코드를 한글 라벨로 표시
 95. 2026-08-06 스모크 9c list_schemas namespace 누락 수정 (args={} → allowed ns)
 94. 2026-08-06 리포트09 부분 핫픽스 — E-1 예산132 · C-1 sanitize순서 · E-2 tokenBudget · A-1 자가검증 · 스모크9c
 93. 2026-08-06 Pass0 Gemini 간헐 반복 루프 완화 — pass0MaxTokens 2048 · frequencyPenalty 0.3 · length 시 1회 재시도
@@ -98,6 +112,136 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+110. 2026-08-07 InspectAiTarget — activityCount long↔int SOAP 타입 오류 → string outs
+Purpose: 폼 soapCall 이 int 로 보내고 메서드가 long 을 기대해 발생한 타입 불일치 해소 Changes:
+
+- hasActivity·activityCount out 을 string 으로 통일 (스키마·JS·확장 폼)
+
+Changed files: new_ver/schema/testWooAiWorkflowUi.xml, new_ver/js/testWooWorkflowUi.js, new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
+
+109. 2026-08-07 WebApp형 Studio 임베드 — Inspect/Bind ai_sql-id · 확장 폼 iframe
+Purpose: AI Studio를 확장 폼(콘솔 WebView)에 임베드하고, CA 존재 확인 및 Register 후 ai_sql-id 캔버스 반영 Changes:
+
+- SOAP BuildStudioUrl(embed iframe HTML) · InspectAiTarget · BindAiSqlId
+- testWooExtendWorkflow: iframe/html · CA status · Apply to canvas
+- Studio ?embed=1 레이아웃 · Register 안내 문구
+- 가이드 섹션7 주 UX를 임베드로 승격 (외부 브라우저는 폴백)
+
+Changed files: new_ver/js/testWooWorkflowUi.js, new_ver/schema/testWooAiWorkflowUi.xml, new_ver/input_form/testWooExtendWorkflow.xml, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/workflow/testWooXtkWorkflowRedirectPatch.xml, new_ver/workflow/testWooSampleCustomActivityContract.xml, docs/report/01_개발가이드.md, AGENTS.md, docs/log/log.md
+
+108. 2026-08-07 AI Studio 다이얼로그 — nothingToEdit/Save 로 OK(닫기) 활성
+Purpose: URL 안내 전용 서브폼에서 OK가 비활성(저장할 필드 없음)이던 문제 해소 Changes:
+
+- aiStudio form에 nothingToEdit/nothingToSave=true (OOTB View population 패턴)
+
+Changed files: new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
+
+107. 2026-08-07 AI Studio 호스트 — 폼 하드코딩 제거 · Option testWooAiStudioBaseUrl 단일 소스
+Purpose: 호스트는 이미 둔 Option을 쓰고 폼/JS에 URL을 박지 않음. 자동 표시·readOnly UX는 유지 Changes:
+
+- BuildStudioUrl(workflowName)만 — getOption(testWooAiStudioBaseUrl) 필수
+- 확장 폼 soapCall 에서 baseUrl 파라미터·하드코딩 제거
+- 가이드 재배포 순서 정리
+
+Changed files: new_ver/input_form/testWooExtendWorkflow.xml, new_ver/js/testWooWorkflowUi.js, new_ver/schema/testWooAiWorkflowUi.xml, docs/report/01_개발가이드.md, docs/log/log.md
+
+106. 2026-08-07 AI Studio 다이얼로그 — URL·WF명 자동/readOnly · baseUrl은 인풋폼에서 고정
+Purpose: 사용자가 URL을 입력·수정하지 않도록 하고, 호스트는 개발자가 확장 폼 soapCall에서만 바꾸게 함 Changes:
+
+- testWooExtendWorkflow: form enter 시 BuildStudioUrl · internalName/URL readOnly · base=lgu-test
+- BuildStudioUrl(workflowName, baseUrl) 시그니처 · JS fallback 동일 호스트
+- 가이드 섹션7 진입 UX 문구 갱신
+
+Changed files: new_ver/input_form/testWooExtendWorkflow.xml, new_ver/js/testWooWorkflowUi.js, new_ver/schema/testWooAiWorkflowUi.xml, docs/report/01_개발가이드.md, docs/log/log.md
+
+105. 2026-08-07 AI Studio 진입점 — 캠페인 Targeting용 Properties 옆 flatSubFormButton 으로 변경
+Purpose: 캠페인 Targeting 임베드에는 iconbox 좌측 탭이 안 보임. Properties와 같은 툴바 버튼으로 진입점 이동 Changes:
+
+- testWooExtendWorkflow: lib/aiStudio 서브폼으로 UI 본체 정리
+- RedirectPatch: Properties </input> 다음 insert 스니펫
+- 가이드 섹션7 진입점·체크리스트를 캠페인 Targeting 기준으로 수정
+
+Changed files: new_ver/input_form/testWooExtendWorkflow.xml, new_ver/workflow/testWooXtkWorkflowRedirectPatch.xml, docs/report/01_개발가이드.md, docs/log/log.md
+
+104. 2026-08-07 xtk:workflow 저장 XML-110013 — xpathTargetDataSource 제거 안내(ref 무관)
+Purpose: AI ref 추가 저장 시 원본 ~2045행 xpathTargetDataSource 가 이 환경 xtk:form 에 없어 검증 실패 Changes:
+
+- RedirectPatch 에 Save 전 속성 2곳 삭제 절차 명시
+- 원인: FDA 관련 속성·빌드 불일치. ref 줄 자체 오류 아님
+
+Changed files: new_ver/workflow/testWooXtkWorkflowRedirectPatch.xml, docs/log/log.md
+
+103. 2026-08-07 섹션7 문구 정리 — 확장(entity-schema+ref), “상속 불가” 논쟁 표현 제거
+Purpose: 독자 혼동을 줄이기 위해 진입점 설명을 entity-schema 별도 폼 + ref 확장으로만 기술 Changes:
+
+- 가이드·폼 주석·RedirectPatch 에서 상속/불가 논쟁 문구 삭제
+- 용어 통일: 확장 폼(`entity-schema="xtk:workflow"`) + 원본에 ref 한 줄
+
+Changed files: docs/report/01_개발가이드.md, new_ver/input_form/testWooExtendWorkflow.xml, new_ver/workflow/testWooXtkWorkflowRedirectPatch.xml, new_ver/workflow/testWooXtkWorkflowButtonPatch.xml, new_ver/schema/testWooAiWorkflowUi.xml, docs/log/log.md
+
+102. 2026-08-07 woo:testWooExtendWorkflow — Workflow 확장 폼 + ref 연결 · AI Studio 탭
+Purpose: 원본 Workflow.xml은 보관하고, AI UI만 woo 확장 폼에 두며 xtk:workflow에는 ref 한 줄로 연결 Changes:
+
+- `input_form/testWooExtendWorkflow.xml` (AI Studio 페이지 + soapCall, entity-schema=xtk:workflow)
+- `workflow/testWooXtkWorkflowRedirectPatch.xml` (</form> 직전 insert 스니펫)
+- 구 Properties 옆 직접 패치 폐기 · 원본 백업 복사
+- 가이드 진입점·적용표 갱신
+
+Changed files: new_ver/input_form/testWooExtendWorkflow.xml, new_ver/workflow/testWooXtkWorkflowRedirectPatch.xml, new_ver/workflow/testWooXtkWorkflowButtonPatch.xml, new_ver/workflow/backup/xtk_workflow_ORIGINAL.xml, docs/report/01_개발가이드.md, docs/log/log.md
+
+101. 2026-08-07 testWooAiWorkflowUi — methods를 srcSchema 직속으로 이동 (XML-110013)
+Purpose: ACC 저장 시 `Element 'methods' is unknown (/element in xtk:srcSchema)` — methods를 element 안에 두면 문법 오류 Changes:
+
+- `<methods>` 를 `<element>` 밖으로 이동 (srcSchema 직속)
+- element는 빈 호스트 노드만 유지
+
+Changed files: new_ver/schema/testWooAiWorkflowUi.xml, docs/log/log.md
+
+100. 2026-08-07 섹션7a·7b — soapCall BuildStudioUrl · listSql/getSql · Studio 우측 SQL 패널
+Purpose: WF 캔버스에서 Studio를 공식 Adobe 경로(soapCall+스키마 SOAP)로 열고, WF별 SQL 이력을 Studio 오른쪽에 표시 Changes:
+
+- Adobe 검토: factory 폼 상속 불가 · soapCall/Implementing SOAP methods 채택 · fat client 공식 openUrl 없음 → URL을 /tmp에 쓰고 외부 브라우저
+- 스키마 `woo:testWooAiWorkflowUi` + JS `woo_testWooAiWorkflowUi_BuildStudioUrl` + xtk:workflow 패치 블록
+- Repository `listAiSqlByWorkflow`/`getAiSqlById` · Validate action listSql|getSql
+- Studio 우측 패널 · Register 후 목록 갱신 · 커스텀 액티비티 계약 `ai_sql-id`로 정정
+- 가이드 v1.7.1 적용 표 · pipeline-contracts · adobe-references
+
+Changed files: new_ver/schema/testWooAiWorkflowUi.xml, new_ver/js/testWooWorkflowUi.js, new_ver/js/testWooRepository.js, new_ver/workflow/testWooXtkWorkflowButtonPatch.xml, new_ver/workflow/backup/README.md, new_ver/workflow/testWooSampleCustomActivityContract.xml, new_ver/jssp/testWooAiValidate.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, docs/report/01_개발가이드.md, docs/report/00_ReportIndex.md, .cursor/skills/campaign-ai-studio/pipeline-contracts.md, adobe-references.md, AGENTS.md, docs/log/log.md
+
+99. 2026-08-06 개발가이드 v1.7.0 — 섹션7 WF캔버스↔Studio↔커스텀 액티비티 (다음 적용)
+Purpose: WF 내 LLM Studio 진입·WF별 SQL 목록·커스텀 액티비티 `ai_sql-id` E2E를 01 가이드에 섹션7로 정리. 진행 위치(섹션4~6 vs 7)와 진입점 A/B/C 우선순위를 문서화 Changes:
+
+- 파이프라인: Register→`ai_sql_id`→액티비티 조회 (WF XML SQL 주입 금지 재확인)
+- 섹션7: Properties 옆 버튼(A) · 하단 AI 탭(B) · 캠페인 WebApp(C) · factory 폼 상속 불가(Adobe)
+- Studio 우측 WF별 SQL 목록 · 7a~7e 체크리스트 · 적용 진행표 갱신
+- ReportIndex `01_개발가이드` 설명 갱신
+
+Changed files: docs/report/01_개발가이드.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+98. 2026-08-06 Fragment 생애주기 설계 — 승인→라벨 · enum+certified · merged_into_id (런타임 변경 없음)
+Purpose: 사전 승인 병목을 라벨+사후 큐레이션으로 전환하는 설계를 확정. 채팅 원문이 박힌 `10_승인시스템전면교체.md`를 전면 재작성·개명. Foundry/Stage A 코드는 건드리지 않음 Changes:
+
+- 검수 트리거: novelty → **frequency**. near는 청소(병합 제안), 사람이 볼 대상 아님
+- 상태: 병렬 `lifecycleState` 금지. 기존 enum 유지 + **`certified` 1값만 추가**
+- `verified` 의미 축소(민감 blocking만). 일반 슬롯은 향후 `active` 직행
+- `supersedes_id` 오버로드 금지(버전 계보 전용) → 병합은 **`merged_into_id`**
+- 킬스위치: 신규 상태 없이 **`revoked`** 재사용 (`deprecated`는 버전 교체 의미 유지)
+- 스키마 정의만: `certified_by` / `certified_at` / `merged_into_id` (읽기·쓰기 로직 없음)
+- 승인 UI(#96 계열·폼/목록/HTML)는 폐기하지 않고 **민감 예외·킬스위치 전용**으로 격하(문서에 명시)
+- 로그 번호: Index 최상단이 #97 이라 본 항목은 **#98** (요청문의 “#95→#96”은 시점 어긋남)
+
+Changed files: docs/report/10_Fragment_생애주기_설계.md (신규·구 10_승인시스템전면교체.md 대체), docs/report/00_ReportIndex.md, new_ver/schema/testWooAiFragment.xml, docs/log/log.md
+
+97. 2026-08-06 Studio 검증 결과 UI — PASS/FAIL·게이트 코드를 한글 라벨로 표시
+Purpose: 마케터가 PASS/PLAN/G1/OUT 같은 내부 코드를 이해하지 못함. 표시만 사용자 명칭으로 바꿈(서버 게이트 코드는 유지) Changes:
+
+- PASS/FAIL → 통과/실패
+- PLAN/G1/OUT/SCOPE 등 → 조건 조합 · SQL 문법 · 결과 형식 …
+- 카드 제목: 검증 게이트 → 자동 검증 결과
+- 통과 시 상세 없으면 “이 검사를 만족했습니다.”
+
+Changed files: new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
 
 95. 2026-08-06 스모크 9c list_schemas namespace 누락 수정 (args={} → allowed ns)
 Purpose: ACC 스모크 14/15 — 9 PASS(attempts=1) · 9c 만 `namespace not allowed:  (allowed: woo)` 로 FAIL. Foundry 회귀가 아니라 스모크 계측 버그 Changes:

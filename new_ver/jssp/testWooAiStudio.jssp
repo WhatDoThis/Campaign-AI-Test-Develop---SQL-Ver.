@@ -4,6 +4,8 @@
  * Cookie __sessiontoken → logonWithToken(tok) 바인딩 (구 logon 은 JST-310036 폐기 경고).
  * 미인증 시 하드 redirect 대신 안내 페이지(target 미동작 사례 대비).
  * 토큰 바인딩은 127.0.0.1로 기록되어 보안 존을 우회함 — API는 AllowedCidr로 보완.
+ * ?workflowName= 있으면 우측 WF별 SQL 이력 패널(섹션 7b).
+ * ?embed=1 이면 콘솔 확장 폼 iframe 용 크롬리스 레이아웃.
  *
  * [ACC encoding]
  * UI 한글은 HTML &#x…; 엔티티.
@@ -55,8 +57,12 @@ function _twCookie(name) {
 }
 
 var _wf = String(request.getParameter("workflowName") || "");
+var _embed = String(request.getParameter("embed") || "") === "1";
 var _studioUrl = "/woo/testWooAiStudio.jssp";
-if (_wf) _studioUrl += "?workflowName=" + encodeURIComponent(_wf);
+var _qs = [];
+if (_wf) _qs.push("workflowName=" + encodeURIComponent(_wf));
+if (_embed) _qs.push("embed=1");
+if (_qs.length) _studioUrl += "?" + _qs.join("&");
 var _logonUrl = "/nl/jsp/logon.jsp?target=" + encodeURIComponent(_studioUrl);
 
 var _login = "";
@@ -115,10 +121,18 @@ if (!_login) {
       --accent:#2563eb;--ok:#047857;--err:#b91c1c;--radius:14px;--font:system-ui,"Segoe UI",sans-serif;--mono:ui-monospace,Consolas,monospace;}
     *{box-sizing:border-box;} html,body{height:100%;margin:0;}
     body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.5;}
-    .app{display:flex;flex-direction:column;height:100vh;max-width:960px;margin:0 auto;background:var(--surface);border-left:1px solid var(--border);border-right:1px solid var(--border);}
+    .app{display:flex;flex-direction:column;height:100vh;max-width:1280px;margin:0 auto;background:var(--surface);border-left:1px solid var(--border);border-right:1px solid var(--border);}
     .header{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);}
     .header h1{font-size:1rem;margin:0;} .header .wf{font-size:.75rem;color:var(--muted);margin-left:auto;}
+    .body{display:flex;flex:1;min-height:0;}
     .main{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:16px;}
+    .side{width:300px;flex-shrink:0;border-left:1px solid var(--border);overflow-y:auto;padding:12px;background:#f8fafc;}
+    .side.hidden{display:none;}
+    .side h2{font-size:.78rem;margin:0 0 10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;}
+    .sql-item{border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px;cursor:pointer;background:#fff;font-size:.82rem;}
+    .sql-item:hover,.sql-item.active{border-color:var(--accent);background:#eff6ff;}
+    .sql-item .sid{font-weight:700;color:var(--accent);} .sql-item .meta{color:var(--muted);font-size:.72rem;margin-top:4px;}
+    .side-empty{font-size:.82rem;color:var(--muted);line-height:1.45;}
     .card{border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;}
     .card h2{font-size:.85rem;margin:0 0 10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;}
     .chips{display:flex;flex-wrap:wrap;gap:8px;}
@@ -148,18 +162,27 @@ if (!_login) {
     .badge-low{border:1px dashed #b45309;}
     .alt-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
     .alt-chip{font-size:.78rem;padding:4px 10px;border-radius:999px;border:1px solid var(--border);cursor:pointer;background:#f8fafc;}
+    body.embed{background:#fff;}
+    body.embed .app{max-width:none;height:100vh;border:none;}
+    body.embed .header{padding:8px 12px;}
+    body.embed .header h1{font-size:.9rem;}
+    body.embed .side{width:240px;}
+    body.embed .main{padding:12px;}
+    body.embed .composer{padding:10px 12px;}
   </style>
   <script>
     window.__TW_LOGIN__ = '<%= _twEscJs(_login) %>';
+    window.__TW_EMBED__ = <%= _embed ? "true" : "false" %>;
   </script>
 </head>
-<body>
+<body class="<%= _embed ? "embed" : "" %>">
   <div class="app">
     <header class="header">
-      <h1>Test Woo AI Studio</h1>
+      <h1>Test Woo AI Studio<%= _embed ? " (embedded)" : "" %></h1>
       <span class="wf" id="wfInfo">user: <%= _twEscJs(_login) %> / register&#x2192;ai_sql_id</span>
     </header>
 
+    <div class="body">
     <main class="main" id="main">
       <div class="banner ok" id="hint">&#xC790;&#xC5F0;&#xC5B4;&#xB85C; &#xB300;&#xC0C1; &#xC870;&#xAC74;&#xC744; &#xC785;&#xB825;&#xD558;&#xC138;&#xC694;. &#xD55C; &#xBB38;&#xC7A5;&#xC73C;&#xB85C; &#xBB49;&#xCCD0;&#xB3C4; &#xB429;&#xB2C8;&#xB2E4;. &#xC608;) &#xCD5C;&#xADFC; &#xD55C;&#xB2EC; Y&#xC694;&#xAE08; &#xAC00;&#xC785;&#xD55C; 1020&#xC138;&#xB300; &#xC911; &#xC218;&#xC2E0;&#xB3D9;&#xC758;&#xD558;&#xACE0; &#xB9C8;&#xCF00;&#xD305; &#xBA54;&#xC2DC;&#xC9C0;&#xB97C; &#xD55C;&#xBC88;&#xB3C4; &#xBC1B;&#xC9C0;&#xC54A;&#xC740; &#xACE0;&#xAC1D;</div>
 
@@ -169,7 +192,7 @@ if (!_login) {
 
       <div class="card hidden" id="cardFunnel"><h2>&#xD37C;&#xB110; &#xCE74;&#xC6B4;&#xD2B8; (&#xBCF4;&#xB958;)</h2><table class="funnel" id="funnel"></table></div>
 
-      <div class="card hidden" id="cardGates"><h2>&#xAC80;&#xC99D; &#xAC8C;&#xC774;&#xD2B8;</h2><div class="gates" id="gates"></div></div>
+      <div class="card hidden" id="cardGates"><h2>&#xC790;&#xB3D9; &#xAC80;&#xC99D; &#xACB0;&#xACFC;</h2><div class="gates" id="gates"></div></div>
 
       <div class="card hidden" id="cardCode">
         <details><summary>&#xCF54;&#xB4DC; &#xBCF4;&#xAE30; (SQL &#xC804;&#xBB38; &#x00B7; &#xC77D;&#xAE30; &#xC804;&#xC6A9;)</summary><pre class="code" id="sql"></pre></details>
@@ -177,6 +200,12 @@ if (!_login) {
 
       <div class="banner err hidden" id="err"></div>
     </main>
+    <aside class="side hidden" id="sideSql">
+      <h2>&#xC774; WF SQL &#xC774;&#xB825;</h2>
+      <div class="side-empty" id="sqlListEmpty">&#xB4F1;&#xB85D;&#xB41C; SQL &#xC774; &#xC5C6;&#xC2B5;&#xB2C8;&#xB2E4;. &#xC0DD;&#xC131; &#xD6C4; &#xB4F1;&#xB85D;&#xD558;&#xBA74; &#xC5EC;&#xAE30; &#xBAA8;&#xC785;&#xB2C8;&#xB2E4;.</div>
+      <div id="sqlList"></div>
+    </aside>
+    </div>
 
     <footer class="composer">
       <textarea id="nl" rows="1" placeholder="&#xC870;&#xAC74;&#xC744; &#xB9D0;&#xB85C; &#xC785;&#xB825;&#xD558;&#xC138;&#xC694;&#x2026;"></textarea>

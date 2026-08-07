@@ -1,23 +1,24 @@
 <!--
   testWooSampleCustomActivityContract.xml (custom activity contract sample · testing)
   ==================================================================================
-  Shows the activity contract that receives injected SQL. This system does NOT create
-  the custom activity; it only requires the contract below.
+  Shows the activity contract that reads registered SQL by id. This system does NOT
+  create the custom activity; it only requires the contract below.
 
-  [Contract]
-  - Input: activity node <script> (memo) — full SQL   ← testWooAiRegister.jssp injects here
-  - Behavior: run SQL → load work table
-  - Output: transition tableName / schema / recCount
+  [Contract — current]
+  - Input: child element ai-sql-id (long) = Register response ai_sql_id
+  - Canvas bind: woo:testWooAiWorkflowUi#BindAiSqlId (extend form Apply) — SQL not written
+  - Runtime: load woo:testWooAiSql.@sql_query by that id → work table → transition
+  - Forbidden: WF XML / <script> SQL inject (WorkflowIo discarded)
+
+  [Contract — discarded]
+  - Old: Register wrote SQL into <script> CDATA — DO NOT restore
 -->
 <activities>
   <customActivity name="customActivity" label="Test Woo AI Target Extract"
                   library="woo:customActivity.js" img="xtk:activities/execsql.png"
                   x="240" y="88">
-    <!-- ▼ testWooAiRegister.jssp injects validated SQL into this <script> -->
-    <script><![CDATA[
-      -- (placeholder before register) replaced by Test Woo AI SQL
-      -- single SELECT, unique key column, no <% %>/DDL/DML (C1~C4)
-    ]]></script>
+    <!-- Runtime reads SQL from woo:testWooAiSql where @id = ai-sql-id -->
+    <ai-sql-id>0</ai-sql-id>
     <transitions>
       <done enabled="true" label="Ok" name="done" target="changeDataSource"/>
     </transitions>

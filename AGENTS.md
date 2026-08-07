@@ -45,13 +45,15 @@ Before implementing:
 | API surface | `new_ver/jssp/testWooAiGenerate.jssp`, `Validate.jssp`, `Register.jssp` |
 | UI | `new_ver/jssp/testWooAiStudio.jssp`, `testWooAiStudioJs.jssp` |
 | Data | `new_ver/schema/testWooAiFragment.xml`, `testWooAiSql.xml` |
+| WF canvas → Studio | `input_form/testWooExtendWorkflow.xml` (iframe embed + Bind); `workflow/testWooXtkWorkflowRedirectPatch.xml`; SOAP Inspect/Bind `testWooAiWorkflowUi` |
 
 ## Deferred features (do not implement without explicit request)
 
 - `testWooAiCodemap`, `testWooAiRequestQueue`
 - Funnel COUNT, EXPLAIN scale gates
 - `testWooWorkflowIo` (deprecated)
-- WF canvas button (`testWooXtkWorkflowButtonPatch.xml`) — section 5+
+- WF canvas fallback B/C (AI tab / campaign WebApp) — only if 7a soapCall path fails on env
+- Custom activity runtime (`ai_sql-id` load) — section 7d
 - LLM free-form SQL fallback (PRD Phase 2)
 
 ## Verification after changes

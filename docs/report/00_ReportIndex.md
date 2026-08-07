@@ -5,7 +5,7 @@
 | 파일 | 용도 |
 |---|---|
 | `00_ReportIndex.md` | 리포트 폴더 인덱스 (본 문서) |
-| `10_승인시스템전면교체.md` | Fragment 승인 모델을 게이트→라벨로 전환하는 설계 논의 (frequency 기반 검수·near-dedup은 자동 병합) |
+| `10_Fragment_생애주기_설계.md` | Fragment 승인 모델 게이트→라벨 전환 설계 — 현행 enum 매핑 · 빈도 기반 검수 · 야간 게이트 재실행 · 킬스위치는 revoked 재사용 |
 | `09_SQL생성추가_디버깅3.md` | F-0~F-5 반영 검증 후 잔여 C-1·E-1·E-2·A-1 — sanitize/compress 순서·phase 예산 누수·tokenBudget·자격 검증·스모크 9c |
 | `08_SQL생성추가_디버깅2.md` | Foundry 생성 단계 근원 진단 F-0~F-5 — 출력 계약 부재·루프 종료 불일치·자가진단 알고리즘·dryRunSlot 계측기 |
 | `07_SQL생성추가_디버깅1.md` | Pass0 `max_tokens` 소진 근원 해결 R-1~R-4 + LLM 계열 검수 L-1~L-3 — `json_object` 반복 루프·length 진단 강화·스모크 LLM 스텝·단계별 토큰 상한 |
@@ -15,7 +15,7 @@
 | `04_SQL생성추가_추가2.md` | 코드 점검 결함 수정 요청 P0~P2 (sqlSelect 규약·sql right·큐 선점·E4X 전환) |
 | `03_SQL생성추가_추가1.md` | Feasibility Triage / 불가 보고 / GapLog (Foundry 보강) |
 | `02_SQL생성추가.md` | Fragment Foundry 통합 스펙 (툴킷·dedup·생애주기·큐) |
-| `01_개발가이드.md` | Test Woo 가이드 — 섹션1~6(Foundry 선행조건), JSSP 5개(Validate 통합), ai_sql_id |
+| `01_개발가이드.md` | Test Woo 가이드 — 섹션1~7(7a soapCall·7b listSql 코드반영, 7d CA 남음), JSSP·ai_sql_id |
 
 > **번호 중복 안내**: `06_…추가4` 와 `06_…추가5` 가 접두 번호를 공유한다(추가5 는 추가4 의 개정판).
 > 명명 규칙(순번 접두)상 후자는 `07_` 이 되어야 하나, 문서 파일 개명은 요청 시에만 수행한다.

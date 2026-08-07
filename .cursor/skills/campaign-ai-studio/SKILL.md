@@ -48,7 +48,9 @@ NL → Pass0 (LLM slots) → Stage A (fragment search, paginated)
 | `new_ver/js/testWooGates.js` | Validation gates |
 | `new_ver/js/testWooRepository.js` | History persist |
 | `new_ver/jssp/testWooAi*.jssp` | `/woo/` JSON API + Studio UI |
-| `new_ver/schema/*.xml` | `woo:testWoo*` data schemas |
+| `new_ver/schema/*.xml` | `woo:testWoo*` data schemas (+ `testWooAiWorkflowUi` SOAP host) |
+| `new_ver/js/testWooWorkflowUi.js` | WF form SOAP `BuildStudioUrl` |
+| `new_ver/workflow/testWooXtkWorkflowButtonPatch.xml` | xtk:workflow soapCall insert (7a) |
 
 ## Implementation checklist
 

@@ -6,10 +6,11 @@
  * [Main Functions]
  * ===========
  * - saveAiSql / enqueueRequest / getQueueStatus / upsertGapLog / listGapLog
+ * - listAiSqlByWorkflow / getAiSqlById — WF별 SQL 목록·불러오기 (섹션 7b)
  *
  * [Dependencies]
  * =========
- * - xtk.session.Write / GetNewIds
+ * - xtk.session.Write / GetNewIds / queryDef
  * - loadLibrary("woo:testWooRepository.js")
  */
 var testWoo = testWoo || {};
@@ -287,6 +288,87 @@ testWoo.repo = (function () {
     xtk.session.Write(doc);
   }
 
+  // 3. WF 인터널네임으로 등록 SQL 목록 (sql_query/plan 제외 — 목록용)
+  function listAiSqlByWorkflow(workflowName, limit) {
+    var wf = _wfName(workflowName);
+    if (!wf) return [];
+    var lim = limit != null ? Number(limit) : 50;
+    if (isNaN(lim) || lim < 1) lim = 50;
+    if (lim > 200) lim = 200;
+    var esc = wf.replace(/'/g, "''");
+    var q = xtk.queryDef.create(
+      <queryDef schema={SQL_SCHEMA} operation="select" lineCount={String(lim)}>
+        <select>
+          <node expr="@id"/><node expr="@title"/><node expr="@status"/>
+          <node expr="@summary_ko"/><node expr="@target_count"/>
+          <node expr="@workflow_name"/><node expr="@creation_date"/>
+          <node expr="@creator"/><node expr="@impact_status"/>
+        </select>
+        <where>
+          <condition expr={"@workflow_name = '" + esc + "'"}/>
+        </where>
+        <orderBy>
+          <node expr="@creation_date" sortDesc="true"/>
+        </orderBy>
+      </queryDef>);
+    var res = q.ExecuteQuery();
+    var rows = [];
+    for each (var r in res.testWooAiSql) {
+      rows.push({
+        id: Number(r.@id),
+        title: String(r.@title || ""),
+        status: String(r.@status || ""),
+        summary_ko: String(r.@summary_ko || ""),
+        target_count: Number(r.@target_count) || 0,
+        workflow_name: String(r.@workflow_name || ""),
+        creation_date: String(r.@creation_date || ""),
+        creator: String(r.@creator || ""),
+        impact_status: String(r.@impact_status || "ok")
+      });
+    }
+    return rows;
+  }
+
+  // 4. ai_sql_id 단건 (Studio 불러오기 / 커스텀 액티비티 로드용)
+  function getAiSqlById(id) {
+    var n = Number(id);
+    if (!n || isNaN(n)) return null;
+    var q = xtk.queryDef.create(
+      <queryDef schema={SQL_SCHEMA} operation="getIfExists">
+        <select>
+          <node expr="@id"/><node expr="@title"/><node expr="@status"/>
+          <node expr="@nl_request"/><node expr="@plan_json"/><node expr="@sql_query"/>
+          <node expr="@summary_ko"/><node expr="@target_count"/>
+          <node expr="@workflow_name"/><node expr="@creation_date"/>
+          <node expr="@creator"/><node expr="@used_fragments"/>
+          <node expr="@compile_hash"/><node expr="@impact_status"/>
+          <node expr="@excluded_slots"/><node expr="@has_exclusion"/>
+        </select>
+        <where><condition expr={"@id = " + n}/></where>
+      </queryDef>);
+    var res = q.ExecuteQuery();
+    if (!res || String(res.@id || "") === "") return null;
+    var r = res;
+    return {
+      id: Number(r.@id),
+      title: String(r.@title || ""),
+      status: String(r.@status || ""),
+      nl_request: String(r.@nl_request || ""),
+      plan_json: String(r.@plan_json || ""),
+      sql_query: String(r.@sql_query || ""),
+      summary_ko: String(r.@summary_ko || ""),
+      target_count: Number(r.@target_count) || 0,
+      workflow_name: String(r.@workflow_name || ""),
+      creation_date: String(r.@creation_date || ""),
+      creator: String(r.@creator || ""),
+      used_fragments: String(r.@used_fragments || "[]"),
+      compile_hash: String(r.@compile_hash || ""),
+      impact_status: String(r.@impact_status || "ok"),
+      excluded_slots: String(r.@excluded_slots || ""),
+      has_exclusion: String(r.@has_exclusion) === "true" || Number(r.@has_exclusion) === 1
+    };
+  }
+
   return {
     saveAiSql: saveAiSql,
     updateAiSqlStatus: updateAiSqlStatus,
@@ -298,6 +380,8 @@ testWoo.repo = (function () {
     updateGapLogStatus: updateGapLogStatus,
     approveFragment: approveFragment,
     rejectFragment: rejectFragment,
-    completeQueue: completeQueue
+    completeQueue: completeQueue,
+    listAiSqlByWorkflow: listAiSqlByWorkflow,
+    getAiSqlById: getAiSqlById
   };
 })();

@@ -54,5 +54,8 @@ Project options: `testWooAiLlmProvider`, `testWooAiLlmEndpoint`, `testWooAiLlmMo
 | Topic | Project file |
 |-------|--------------|
 | Custom activity contract | `new_ver/workflow/testWooSampleCustomActivityContract.xml` |
-| Canvas button patch (future) | `new_ver/workflow/testWooXtkWorkflowButtonPatch.xml` |
+| Canvas button patch (7a) | `new_ver/workflow/testWooXtkWorkflowButtonPatch.xml` + `woo:testWooAiWorkflowUi` SOAP |
+| Factory form edit (no inherit) | https://experienceleague.adobe.com/en/docs/campaign-classic/using/configuring-campaign-classic/input-forms/editing-forms |
+| SOAP methods in JS | https://experienceleague.adobe.com/en/docs/campaign-classic/using/configuring-campaign-classic/api/implementing-soap-methods |
+| Form soapCall | https://experienceleague.adobe.com/en/docs/campaign-classic/using/configuring-campaign-classic/input-forms/form-structure |
 | PRD section 3.1 | `docs/main/PRD.md` — input `<script>`, output transition vars |

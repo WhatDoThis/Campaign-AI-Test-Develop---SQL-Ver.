@@ -9,13 +9,15 @@
  * ===========
  * - generate / validate / register
  * - pollQueue — Foundry 큐 상태 폴링 (QUEUE_POLL_MS 20초 × QUEUE_POLL_MAX 30회 = 10분)
+ * - renderGates — PASS/FAIL·게이트 코드를 사용자용 한글 라벨로 표시
+ * - loadSqlList / loadSqlItem — WF별 SQL 이력(우측 패널, action=listSql|getSql)
  *
  * [Dependencies]
  * =========
  * - /woo/testWooAiGenerate|Validate|Register.jssp
  * - Cookie credentials + X-Requested-With: TestWooStudio
  * - Served as /woo/testWooAiStudioJs.jssp (keep in sync)
- * - 권장: 외부 브라우저 (ACC 콘솔 IE는 fetch 미지원)
+ * - embed=1: 콘솔 확장 폼 iframe (Edge WebView). 외부 브라우저는 폴백.
  */
 (function () {
   "use strict";
@@ -27,6 +29,7 @@
   var QUEUE_POLL_MAX = 30;
   var params = new URLSearchParams(location.search);
   var WORKFLOW_NAME = params.get("workflowName") || "";
+  var EMBED = params.get("embed") === "1" || window.__TW_EMBED__ === true;
   var BASE = "/woo/";
 
   var state = { plan: null, sql: "", summary: "", passed: false, nl: "", aiSqlId: null, queuePoll: null };
@@ -271,10 +274,111 @@
       state.aiSqlId = r.ai_sql_id;
       if (r.sql) state.sql = r.sql;
       $("hint").className = "banner ok";
-      $("hint").textContent = "Registered. ai_sql_id=" + r.ai_sql_id +
-        " (custom activity loads SQL at runtime — workflow XML not modified)";
+      $("hint").textContent = EMBED
+        ? ("Registered. ai_sql_id=" + r.ai_sql_id +
+          " \u2014 paste this id into Apply to canvas below the Studio frame, then Save the workflow. (no SQL in WF XML)")
+        : ("Registered. ai_sql_id=" + r.ai_sql_id +
+          " \u2014 set custom activity ai-sql-id to this value (or open AI Studio from the WF canvas and Apply). (no SQL in WF XML)");
       $("btnReg").disabled = true;
+      loadSqlList();
     }).catch(function (e) { showErr(String(e)); }).finally(function () { setBusy(false); });
+  }
+
+  function loadSqlList() {
+    var side = $("sideSql");
+    if (!side) return;
+    if (!WORKFLOW_NAME) {
+      side.classList.add("hidden");
+      return;
+    }
+    side.classList.remove("hidden");
+    post("testWooAiValidate.jssp", {
+      action: "listSql",
+      workflow_name: WORKFLOW_NAME,
+      limit: 50
+    }).then(function (res) {
+      var box = $("sqlList");
+      var empty = $("sqlListEmpty");
+      if (!box) return;
+      box.innerHTML = "";
+      var items = (res && res.items) || [];
+      if (!res || !res.ok) {
+        if (empty) {
+          empty.classList.remove("hidden");
+          empty.textContent = _errText(res) || "list failed";
+        }
+        return;
+      }
+      if (!items.length) {
+        if (empty) empty.classList.remove("hidden");
+        return;
+      }
+      if (empty) empty.classList.add("hidden");
+      items.forEach(function (it) {
+        var el = document.createElement("div");
+        el.className = "sql-item";
+        if (state.aiSqlId && Number(state.aiSqlId) === Number(it.id)) el.className += " active";
+        el.innerHTML =
+          "<div class='sid'>ai_sql_id=" + esc(it.id) + "</div>" +
+          "<div>" + esc(it.title || "(no title)") + "</div>" +
+          "<div class='meta'>" + esc(it.status) + " · " + esc(it.creation_date || "") + "</div>";
+        el.addEventListener("click", function () { loadSqlItem(it.id); });
+        box.appendChild(el);
+      });
+    }).catch(function (e) {
+      var empty = $("sqlListEmpty");
+      if (empty) {
+        empty.classList.remove("hidden");
+        empty.textContent = String(e);
+      }
+    });
+  }
+
+  function loadSqlItem(id) {
+    clearErr();
+    post("testWooAiValidate.jssp", { action: "getSql", ai_sql_id: id }).then(function (res) {
+      if (!res || !res.ok || !res.item) {
+        showErr(_errText(res) || "load failed");
+        return;
+      }
+      var it = res.item;
+      state.aiSqlId = it.id;
+      state.sql = it.sql_query || "";
+      state.summary = it.summary_ko || "";
+      state.nl = it.nl_request || "";
+      state.passed = false;
+      state.plan = null;
+      if (it.nl_request) $("nl").value = it.nl_request;
+      try {
+        if (it.plan_json) state.plan = JSON.parse(it.plan_json);
+      } catch (eParse) { state.plan = null; }
+      if (state.plan) {
+        return post("testWooAiValidate.jssp", { plan: state.plan }).then(function (v) {
+          if (v && v.ok) {
+            state.sql = v.sql || state.sql;
+            state.summary = v.summary || state.summary;
+            state.passed = !!v.passed;
+            if (v.chips) renderChips(v.chips);
+            renderGates(v.results || []);
+            $("btnReg").disabled = !v.passed;
+          }
+          renderSql(state.sql);
+          renderSummaryHint(
+            "Loaded ai_sql_id=" + it.id +
+            " \u2014 \uCEE4\uC2A4\uD140 \uC561\uD2F0\uBE44\uD2F0 ai_sql-id=" + it.id +
+            (state.summary ? (" · " + state.summary) : "")
+          );
+          loadSqlList();
+        });
+      }
+      renderSql(state.sql);
+      $("btnReg").disabled = true;
+      $("hint").className = "banner ok";
+      $("hint").textContent =
+        "Loaded ai_sql_id=" + it.id +
+        " \u2014 \uCEE4\uC2A4\uD140 \uC561\uD2F0\uBE44\uD2F0 \uC18D\uC131 ai_sql-id \uC5D0 \uC774 \uAC12\uC744 \uB123\uC73C\uC138\uC694.";
+      loadSqlList();
+    }).catch(function (e) { showErr(String(e)); });
   }
 
   function renderChips(chips) {
@@ -321,12 +425,36 @@
     return n;
   }
 
+  // 서버 gate 코드 → 마케터용 짧은. 알 수 없는 코드는 원문 유지.
+  function _gateTitle(code) {
+    var map = {
+      PLAN: "\uC870\uAC74 \uC870\uD569",
+      G1: "SQL \uBB38\uBC95",
+      OUT: "\uACB0\uACFC \uD615\uC2DD",
+      SCOPE: "\uBC94\uC704 \uC815\uD569",
+      FRAG: "\uC870\uAC74 SQL",
+      "G-A": "\uC2E4\uD589 \uAC80\uC99D",
+      "G-B": "\uACE0\uC720 \uD0A4",
+      "G-C": "\uBAA8\uC9D1\uB2E8 \uBE44\uC728",
+      "G-D": "\uB9E4\uAC1C\uBCC0\uC218",
+      "G-F": "\uC870\uAC74 \uC774\uB984"
+    };
+    var k = String(code || "");
+    return map[k] || k;
+  }
+
   function renderGates(results) {
     var box = $("gates"); box.innerHTML = "";
     (results || []).forEach(function (r) {
       var el = document.createElement("div"); el.className = "gate";
-      el.innerHTML = "<span class='" + (r.ok ? "g-ok" : "g-err") + "'>" + (r.ok ? "PASS" : "FAIL") + "</span> " +
-        "<strong>" + esc(r.gate) + "</strong> " + esc(r.reason || "");
+      var ok = !!(r && r.ok);
+      var status = ok ? "\uD1B5\uACFC" : "\uC2E4\uD328";
+      var title = _gateTitle(r && r.gate);
+      var detail = String((r && r.reason) || "");
+      // 통과이고 상세가 없으면 짧은 안내만
+      if (ok && !detail) detail = "\uC774 \uAC80\uC0AC\uB97C \uB9CC\uC871\uD588\uC2B5\uB2C8\uB2E4.";
+      el.innerHTML = "<span class='" + (ok ? "g-ok" : "g-err") + "'>" + status + "</span> " +
+        "<strong>" + esc(title) + "</strong> " + esc(detail);
       box.appendChild(el);
     });
     $("cardGates").classList.remove("hidden");
@@ -354,6 +482,12 @@
     $("nl").addEventListener("keydown", function (e) {
       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); generate(); }
     });
+    if (!WORKFLOW_NAME) {
+      $("hint").className = "banner warn";
+      $("hint").textContent =
+        "workflowName \uC5C6\uC74C \u2014 WF \uCE94\uBC84\uC2A4 AI Studio \uBC84\uD2BC\uC73C\uB85C \uC5F4\uBA74 \uC774 WF SQL \uBAA9\uB85D\uC774 \uD45C\uC2DC\uB429\uB2C8\uB2E4. \uC218\uB3D9 URL\uB3C4 \uAC00\uB2A5\uD569\uB2C8\uB2E4.";
+    }
+    loadSqlList();
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 })();

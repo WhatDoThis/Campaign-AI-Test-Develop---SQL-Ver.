@@ -1,0 +1,70 @@
+<!--
+woo:testWooAiWorkflowUi (Test Woo AI Workflow UI · SOAP method host)
+====================================================================
+WF 캔버스 확장 폼에서 Studio URL/iframe · CA 검사 · ai_sql-id 바인딩.
+DB 테이블 없음(sqltable 없음).
+
+[Main Functions]
+===========
+- BuildStudioUrl(workflowName) → studioUrl, studioFrameHtml
+- InspectAiTarget(activities) → hasActivity, activityCount, namesCsv, message
+- BindAiSqlId(activities, aiSqlId, activityName) → activities (ai-sql-id only)
+
+[Endpoints/Classes/Functions]
+=======================
+- SOAP static methods (library=woo:testWooWorkflowUi.js)
+
+[Dependencies]
+=========
+- XtkOption: testWooAiStudioBaseUrl
+- 계약: customActivity / ai-sql-id (testWooSampleCustomActivityContract.xml)
+-->
+<srcSchema _cs="Test Woo AI Workflow UI (woo)" name="testWooAiWorkflowUi" namespace="woo"
+           label="Test Woo AI Workflow UI" labelSingular="Test Woo AI Workflow UI"
+           xtkschema="xtk:srcSchema">
+  <element label="Test Woo AI Workflow UI" name="testWooAiWorkflowUi"/>
+
+  <methods>
+    <method name="BuildStudioUrl" static="true" library="woo:testWooWorkflowUi.js"
+            label="Build Test Woo AI Studio URL">
+      <help>
+        Builds Studio URL with embed=1 and iframe HTML for the extend form (console WebView).
+        Host from option testWooAiStudioBaseUrl.
+      </help>
+      <parameters>
+        <param desc="Workflow internal name (@internalName)" name="workflowName" type="string" inout="in"/>
+        <param desc="Studio URL" name="studioUrl" type="string" inout="out"/>
+        <param desc="iframe HTML shell" name="studioFrameHtml" type="string" inout="out"/>
+      </parameters>
+    </method>
+
+    <method name="InspectAiTarget" static="true" library="woo:testWooWorkflowUi.js"
+            label="Inspect Test Woo AI Target activity">
+      <help>
+        Scans current form activities DOM for customActivity (not DB snapshot).
+      </help>
+      <parameters>
+        <param desc="Workflow activities element" name="activities" type="DOMElement" inout="in"/>
+        <!-- form soapCall: use string outs — client maps long↔int and mismatches (XML SOAP type error) -->
+        <param desc="true|false if customActivity present" name="hasActivity" type="string" inout="out"/>
+        <param desc="Count of customActivity nodes (decimal string)" name="activityCount" type="string" inout="out"/>
+        <param desc="Comma-separated @name list" name="namesCsv" type="string" inout="out"/>
+        <param desc="Operator-facing status message" name="message" type="string" inout="out"/>
+      </parameters>
+    </method>
+
+    <method name="BindAiSqlId" static="true" library="woo:testWooWorkflowUi.js"
+            label="Bind ai_sql_id to customActivity">
+      <help>
+        Writes ai-sql-id child on customActivity. Does not inject SQL into WF XML.
+        Empty activityName binds the only instance; required when multiple.
+      </help>
+      <parameters>
+        <param desc="Workflow activities element" name="activities" type="DOMElement" inout="in"/>
+        <param desc="Registered ai_sql_id" name="aiSqlId" type="string" inout="in"/>
+        <param desc="customActivity @name (optional if only one)" name="activityName" type="string" inout="in"/>
+        <param desc="Updated activities" name="activitiesOut" type="DOMElement" inout="out"/>
+      </parameters>
+    </method>
+  </methods>
+</srcSchema>

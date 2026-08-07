@@ -1,19 +1,19 @@
 <%
 response.setContentType("application/json;charset=utf-8");
 /*
- * testWooAiValidate.jssp (검증·카운트·카탈로그 통합)
- * ==================================================
+ * testWooAiValidate.jssp (검증·카운트·카탈로그·SQL목록 통합)
+ * ==========================================================
  * setContentType은 KA-14685대로 최상단.
  * 게이트: plan fragment DB active (allowedNames 폐기).
  *
  * [Endpoint]
  * =======================
  * POST /woo/testWooAiValidate.jssp
- *   action=validate|count|catalog
+ *   action=validate|count|catalog|listSql|getSql
  *
  * [Dependencies]
  * =========
- * - woo:testWooCommon.js (+ Config/Fragments/Compiler/Gates by action)
+ * - woo:testWooCommon.js (+ Config/Fragments/Compiler/Gates/Repository by action)
  */
 try {
   TW_RESPONSE = response;
@@ -33,8 +33,12 @@ try {
     _runCount(p);
   } else if (action === "validate") {
     _runValidate(p);
+  } else if (action === "listsql") {
+    _runListSql(p);
+  } else if (action === "getsql") {
+    _runGetSql(p);
   } else {
-    throw new Error("unknown action: " + action + " (validate|count|catalog)");
+    throw new Error("unknown action: " + action + " (validate|count|catalog|listSql|getSql)");
   }
 } catch (e) {
   handleApiError(e);
@@ -85,5 +89,29 @@ function _runValidate(p) {
     chips: testWoo.compiler.chipsFromPlan(p.plan),
     plan: p.plan
   });
+}
+
+function _runListSql(p) {
+  var wf = String(p.workflow_name || p.workflowName || "").replace(/^\s+|\s+$/g, "");
+  if (!wf) throw new Error("workflow_name missing");
+  loadLibrary("woo:testWooRepository.js");
+  var lim = p.limit != null ? Number(p.limit) : 50;
+  jsonOut({
+    ok: true,
+    workflow_name: wf,
+    items: testWoo.repo.listAiSqlByWorkflow(wf, lim)
+  });
+}
+
+function _runGetSql(p) {
+  var id = p.ai_sql_id != null ? p.ai_sql_id : p.id;
+  if (id == null || id === "") throw new Error("ai_sql_id missing");
+  loadLibrary("woo:testWooRepository.js");
+  var item = testWoo.repo.getAiSqlById(id);
+  if (!item) {
+    jsonOut({ ok: false, error: "ai_sql not found", ai_sql_id: id });
+    return;
+  }
+  jsonOut({ ok: true, item: item });
 }
 %>

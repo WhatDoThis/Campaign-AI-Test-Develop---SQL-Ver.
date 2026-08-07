@@ -14,12 +14,13 @@ LLM 은 이 안에서 후보를 고를 뿐 SQL 을 창작하지 않는다.
 [Enumerations]
 =========
 - fragmentStatus (default draft) : 생애주기 상태
-  · draft      생성 직후
-  · verified   게이트 통과, 운영 승인 대기
-  · active     사용 가능 (컴파일러는 이 값만 통과시킨다)
-  · deprecated 상위 버전 발행으로 현행에서 밀림
-  · revoked    폐기. 참조 시 사유와 함께 차단
-  · rejected   승인 반려
+  · draft      게이트 실패 / 생성 직후. Stage A 제외
+  · verified   민감 컬럼 참조 시 blocking 승인 대기 (일반 슬롯은 여기 안 옴 — 설계 #10)
+  · active     게이트 통과 시 기본 상태. 즉시 사용 가능 (컴파일러·Stage A 통과)
+  · certified  랭킹 가산점. 사용 조건 아님 (승격 규칙은 설계 #10)
+  · deprecated 상위 버전 발행으로 현행에서 밀림 (정상 버전 교체. 킬스위치 아님)
+  · revoked    폐기·킬스위치. 참조 시 사유와 함께 차단
+  · rejected   민감 경로 반려
 - fragmentOrigin (default manual) : 생성 출처
   · manual 사람이 등록 · foundry LLM 자동 생성
 - fragmentDedupVerdict (default novel) : 중복 판정 결과
@@ -41,7 +42,8 @@ LLM 은 이 안에서 후보를 고를 뿐 SQL 을 창작하지 않는다.
 - version         (long, 1)        발행 차수. 같은 name 안에서 증가
 - is_current      (boolean, true)  현행 버전 여부. 모든 조회가 is_current=1 로 필터
 - content_hash    (string 64)      normalizeSql(sql_text) + key_column + scope_key 해시
-- supersedes_id   (long)           직전 버전 레코드 id (발행 시 기록)
+- supersedes_id   (long)           같은 name 안 직전 버전 레코드 id (발행 시 기록). 병합 리다이렉트에 쓰지 말 것
+- merged_into_id  (long)           이름 다른 fragment 간 병합 리다이렉트 대상 id (정의만 · 런타임 미연결)
 
 검색 메타 (Stage A 스코어 가중치)
 - sample_questions (memo)          예시 질문 배열. 가중치 8 (최상)
@@ -59,22 +61,24 @@ LLM 은 이 안에서 후보를 고를 뿐 SQL 을 창작하지 않는다.
 - params          (memo)           플레이스홀더 타입 정의 JSON
 - param_domain    (memo)           허용값·필수 여부 JSON. G-D 게이트가 파싱 검증
 
-승인·감사
+승인·감사·인증
 - status          (enum 24)        위 fragmentStatus
-- active          (boolean, false) 승인 플래그. navtree·폼 필터용이며 컴파일 판정은 status 만 본다
+- active          (boolean, false) 플래그. navtree·폼 필터용이며 컴파일 판정은 status 만 본다
 - origin          (enum 16)        위 fragmentOrigin
 - source_request_id (long)         Foundry 생성 시 원본 큐 id
 - gate_report     (memo)           G-A~G-F 게이트 결과 JSON
-- audit_sample    (memo)           샘플 행 JSON. 승인 화면 표시용
-- approved_by     (string 64)      승인 운영자
-- approved_at     (datetime)       승인 시각
-- revoked_reason  (memo)           폐기 사유. 참조 차단 메시지에 노출
+- audit_sample    (memo)           샘플 행 JSON. 승인/검수 화면 표시용
+- approved_by     (string 64)      사람 승인 운영자 (민감 경로 등)
+- approved_at     (datetime)       사람 승인 시각
+- certified_by    (string 64)      certified 승격 주체 (시스템/운영자). 정의만 · 런타임 미연결
+- certified_at    (datetime)       certified 승격 시각. 정의만 · 런타임 미연결
+- revoked_reason  (memo)           폐기 사유. 킬스위치·참조 차단 메시지에 노출
 - revoked_by      (string 64)      폐기 운영자
 - revoked_at      (datetime)       폐기 시각
 
 사용량·임베딩
-- usage_count     (long, 0)        SQL 이력 등록 시 증가
-- last_used_at    (datetime)       최근 사용 시각
+- usage_count     (long, 0)        SQL 이력 등록 시 증가 (certified 승격·다이제스트 빈도 지표)
+- last_used_at    (datetime)       최근 사용 시각 (90일 미사용 표시 기준)
 - emb_vector      (memo)           임베딩 벡터 JSON (dedup L2 rerank)
 - emb_model       (string 64)      임베딩 생성 모델
 - emb_dim         (short)          벡터 차원
@@ -98,6 +102,7 @@ dedup 이력
     <value label="Draft"      name="draft"/>
     <value label="Verified"   name="verified"/>
     <value label="Active"     name="active"/>
+    <value label="Certified"  name="certified"/>
     <value label="Deprecated" name="deprecated"/>
     <value label="Revoked"    name="revoked"/>
     <value label="Rejected"   name="rejected"/>
@@ -139,6 +144,7 @@ dedup 이력
     <attribute label="Is Current"        name="is_current"       type="boolean" default="true"/>
     <attribute label="Content Hash"      length="64"  name="content_hash"     type="string"/>
     <attribute label="Supersedes ID"     name="supersedes_id"    type="long"/>
+    <attribute label="Merged Into ID"    name="merged_into_id"   type="long"/>
     <attribute label="Label"             length="200" name="label"            type="string"/>
     <attribute label="Category"          length="64"  name="category"         type="string"/>
     <attribute label="Tags"              length="255" name="tags"             type="string"/>
@@ -158,6 +164,8 @@ dedup 이력
     <attribute label="Audit Sample JSON" name="audit_sample"     type="memo"/>
     <attribute label="Approved By"       length="64"  name="approved_by"      type="string"/>
     <attribute label="Approved At"       name="approved_at"      type="datetime"/>
+    <attribute label="Certified By"      length="64"  name="certified_by"     type="string"/>
+    <attribute label="Certified At"      name="certified_at"     type="datetime"/>
     <attribute label="Revoked Reason"    name="revoked_reason"   type="memo"/>
     <attribute label="Revoked By"        length="64"  name="revoked_by"       type="string"/>
     <attribute label="Revoked At"        name="revoked_at"       type="datetime"/>

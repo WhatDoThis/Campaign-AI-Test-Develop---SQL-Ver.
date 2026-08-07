@@ -1,0 +1,46 @@
+<!--
+  testWooXtkWorkflowRedirectPatch.xml (캠페인 Targeting 임베드용 · Properties 옆)
+  ==========================================================================
+  캠페인 Targeting and workflows 뷰에는 Diagram 툴바만 보인다
+  (좌측 iconbox Diagram/Audit/SQL 은 이 뷰에서 안 뜸).
+  → Properties(flatSubFormButton) 바로 옆에 AI Studio 버튼을 둔다.
+
+  UI 본체: woo:testWooExtendWorkflow:lib/aiStudio
+  (콘솔 WebView iframe Studio + CA Inspect + ai_sql-id Apply)
+  원본에는 연결 버튼만 추가.
+
+  [Prereq]
+  - woo:testWooExtendWorkflow 재등록 (최신 XML)
+  - SOAP BuildStudioUrl 준비됨
+  - xpathTargetDataSource 저장 오류 시 해당 속성 2곳 삭제 후 Save
+
+  [위치]
+  xtk:workflow XML 검색: label="Properties" type="flatSubFormButton"
+  그 블록이 끝나는 </input> 다음 · workflowedit 를 닫는 </input> 직전.
+
+  원본 구조(요약):
+        <input type="flatSubFormButton" label="Properties">
+          <form label="Workflow properties" ...> ... </form>
+        </input>                    ← Properties 끝
+        <!-- ▼ 여기 삽입 -->
+      </input>                      ← workflowedit 끝
+
+  [Insert — 이전 iconbox 끝 ref 가 있으면 삭제하고 이걸로 교체]
+-->
+
+        <input type="separator"/>
+        <input enabledIf="[/workflow/@id] != 0" img="xtk:properties.png" label="AI Studio"
+               type="flatSubFormButton">
+          <form label="Test Woo AI Studio" ref="woo:testWooExtendWorkflow:lib/aiStudio"/>
+        </input>
+
+<!--
+  [검증]
+  Campaign > Targeting and workflows > WF 열기
+  → 툴바 Properties 오른쪽에 AI Studio
+  → 클릭 → Open AI Studio → URL → Chrome/Edge
+
+  [하지 말 것]
+  - </form> 직전 iconbox 페이지 ref 만 추가하고 끝내지 말 것 (캠페인 뷰에서 안 보임)
+  - xtk:workflow 본문 전체 교체
+-->

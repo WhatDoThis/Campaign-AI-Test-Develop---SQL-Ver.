@@ -1,0 +1,103 @@
+<!--
+woo:testWooExtendWorkflow (Workflow 확장 Input form · Test Woo AI Studio 임베드)
+====================================================================
+원본 xtk:workflow 와 별도 관리. entity-schema="xtk:workflow".
+캠페인 Targeting → Properties 옆 flatSubFormButton 으로 연다.
+→ new_ver/workflow/testWooXtkWorkflowRedirectPatch.xml
+
+콘솔 WebView 안에 Studio(JSSP iframe) + CA 상태 + ai_sql-id Apply.
+호스트: Option testWooAiStudioBaseUrl (폼 하드코딩 없음).
+SQL 을 WF XML 에 넣지 않는다 — ai-sql-id 만 바인딩.
+
+[Dependencies]
+=========
+- SOAP woo:testWooAiWorkflowUi (BuildStudioUrl · InspectAiTarget · BindAiSqlId)
+- JS woo:testWooWorkflowUi.js
+- Option testWooAiStudioBaseUrl
+- 계약 액티비티: customActivity / ai-sql-id
+-->
+<form _cs="Workflow Test Woo AI extend (woo)" entity-schema="xtk:workflow" entitySchema="xtk:form"
+      img="xtk:form.png" label="Workflow Test Woo AI extend" name="testWooExtendWorkflow"
+      namespace="woo" xtkschema="xtk:form">
+
+  <container name="lib" type="visibleGroup" visibleIf="false">
+    <form colcount="2" label="Test Woo AI Studio" name="aiStudio">
+      <enter>
+        <soapCall name="BuildStudioUrl" service="woo:testWooAiWorkflowUi">
+          <param exprIn="@internalName" type="string"/>
+          <param type="string" xpathOut="/tmp/@testWooStudioUrl"/>
+          <param type="string" xpathOut="/tmp/@testWooStudioFrame"/>
+        </soapCall>
+        <soapCall name="InspectAiTarget" service="woo:testWooAiWorkflowUi">
+          <param exprIn="[activities]" type="DOMElement"/>
+          <param type="string" xpathOut="/tmp/@testWooHasAiActivity"/>
+          <param type="string" xpathOut="/tmp/@testWooAiActivityCount"/>
+          <param type="string" xpathOut="/tmp/@testWooAiActivityNames"/>
+          <param type="string" xpathOut="/tmp/@testWooAiStatus"/>
+        </soapCall>
+      </enter>
+
+      <static colspan="2" label="Test Woo AI Studio" type="separator"/>
+
+      <input label="Workflow (internalName)" readOnly="true" xpath="@internalName"/>
+      <input label="CA count" readOnly="true" xpath="/tmp/@testWooAiActivityCount"/>
+      <input colspan="2" label="Activity names" readOnly="true" xpath="/tmp/@testWooAiActivityNames"/>
+      <input colspan="2" label="Status" readOnly="true" xpath="/tmp/@testWooAiStatus"/>
+
+      <input type="button" name="btnTestWooRefreshShell" label="Refresh Studio / status" img="xtk:properties.png">
+        <enter>
+          <soapCall name="BuildStudioUrl" service="woo:testWooAiWorkflowUi">
+            <param exprIn="@internalName" type="string"/>
+            <param type="string" xpathOut="/tmp/@testWooStudioUrl"/>
+            <param type="string" xpathOut="/tmp/@testWooStudioFrame"/>
+          </soapCall>
+          <soapCall name="InspectAiTarget" service="woo:testWooAiWorkflowUi">
+            <param exprIn="[activities]" type="DOMElement"/>
+            <param type="string" xpathOut="/tmp/@testWooHasAiActivity"/>
+            <param type="string" xpathOut="/tmp/@testWooAiActivityCount"/>
+            <param type="string" xpathOut="/tmp/@testWooAiActivityNames"/>
+            <param type="string" xpathOut="/tmp/@testWooAiStatus"/>
+          </soapCall>
+        </enter>
+      </input>
+
+      <static colspan="2" type="help"
+              label="Studio loads below in the console WebView (Edge). If the frame is blank, copy Studio URL into Chrome/Edge. Host = option testWooAiStudioBaseUrl."/>
+
+      <!-- iframe HTML (BuildStudioUrl). type=html 미지원 환경은 URL 폴백 사용 -->
+      <input colspan="2" nolabel="true" type="html" xpath="/tmp/@testWooStudioFrame"/>
+
+      <static colspan="2" label="Fallback URL" type="separator"/>
+      <input colspan="2" label="Studio URL" readOnly="true" xpath="/tmp/@testWooStudioUrl"/>
+
+      <static colspan="2" label="Apply ai_sql_id to canvas" type="separator"/>
+      <static colspan="2" type="help"
+              label="After Register in Studio, paste ai_sql_id here and Apply. Writes ai-sql-id on customActivity only (no SQL in WF XML). Then Save the workflow."/>
+
+      <input label="ai_sql_id" xpath="/tmp/@testWooAiSqlId"/>
+      <input label="Activity @name (if multiple)" xpath="/tmp/@testWooAiActivityName"/>
+
+      <input type="button" name="btnTestWooBindAiSql" label="Apply to canvas" img="xtk:properties.png">
+        <enter>
+          <soapCall name="BindAiSqlId" service="woo:testWooAiWorkflowUi">
+            <param exprIn="[activities]" type="DOMElement"/>
+            <param exprIn="[/tmp/@testWooAiSqlId]" type="string"/>
+            <param exprIn="[/tmp/@testWooAiActivityName]" type="string"/>
+            <param type="DOMElement" xpathOut="activities"/>
+          </soapCall>
+          <setModified/>
+          <soapCall name="InspectAiTarget" service="woo:testWooAiWorkflowUi">
+            <param exprIn="[activities]" type="DOMElement"/>
+            <param type="string" xpathOut="/tmp/@testWooHasAiActivity"/>
+            <param type="string" xpathOut="/tmp/@testWooAiActivityCount"/>
+            <param type="string" xpathOut="/tmp/@testWooAiActivityNames"/>
+            <param type="string" xpathOut="/tmp/@testWooAiStatus"/>
+          </soapCall>
+          <set value="Applied ai_sql_id to customActivity. Save the workflow to persist."
+               xpath="/tmp/@testWooAiStatus"/>
+        </enter>
+      </input>
+    </form>
+  </container>
+
+</form>
