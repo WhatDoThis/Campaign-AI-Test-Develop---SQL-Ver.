@@ -7,7 +7,9 @@
  * ?workflowName= 있으면 우측 WF별 SQL 이력 패널(섹션 7b).
  * SQL 이력 .side: 기본 380px · embed float 36% (#131 table/flex 접힘 회피).
  * ?embed=1 이면 콘솔 확장 폼 urlViewer 용 크롬리스 레이아웃.
- * StudioJs: URLSearchParams/forEach 금지 · ?v= 캐시무력 · window.onerror 부트 표시.
+ * urlViewer=MSHTML(IE): X-UA-Compatible IE=edge · StudioJs XHR/ES5 (#133).
+ * #134~#135: XHR·TW-BOOT·폼 캐시버스트(흰화면).
+ * #136~#138: embed 좌AI/우이력. #138 table-cell 2열 + composer를 main 안으로(float 빈틈 제거).
  *
  * [ACC encoding]
  * UI 한글은 HTML &#x…; 엔티티.
@@ -18,6 +20,10 @@
  * Ref: https://experienceleague.adobe.com/developer/campaign-api/api/f-logon.html
  */
 response.setContentType("text/html;charset=utf-8");
+try {
+  response.addHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  response.addHeader("Pragma", "no-cache");
+} catch (eHdr) {}
 
 function _twEscJs(s) {
   return String(s || "")
@@ -89,6 +95,8 @@ if (!_login) {
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <!-- WebBrowser(urlViewer) 기본 IE7 호환 모드 회피 — 반드시 charset 직후 -->
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Test Woo AI Studio — Sign in</title>
   <style>
@@ -115,115 +123,158 @@ if (!_login) {
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
+  <!-- WebBrowser(urlViewer) 기본 IE7 호환 모드 회피 — 반드시 charset 직후, 다른 meta/script 보다 먼저 -->
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Test Woo AI Studio</title>
-  <style>
-    :root{--bg:#f0f2f5;--surface:#fff;--border:#e2e8f0;--text:#0f172a;--muted:#64748b;
-      --accent:#2563eb;--ok:#047857;--err:#b91c1c;--radius:14px;--font:system-ui,"Segoe UI",sans-serif;--mono:ui-monospace,Consolas,monospace;}
+  <!-- IE8- 미인식 HTML5 태그 스타일링용 (urlViewer 구문서모드 대비) -->
+  <script type="text/javascript">
+  (function () {
+    var t = "header,footer,main,aside,nav,details,summary,section,article".split(",");
+    for (var i = 0; i < t.length; i++) {
+      try { document.createElement(t[i]); } catch (eC) {}
+    }
+  })();
+  </script>
+  <style type="text/css">
+    /* IE11 은 CSS 변수(var) 미지원 — 핵심 색은 hex 고정 (#134) */
+    header,footer,main,aside,nav,details,summary,section,article{display:block;}
     *{box-sizing:border-box;} html,body{height:100%;margin:0;}
-    body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.5;}
-    .app{display:flex;flex-direction:column;height:100vh;max-width:1280px;margin:0 auto;background:var(--surface);border-left:1px solid var(--border);border-right:1px solid var(--border);}
-    .header{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);}
-    .header h1{font-size:1rem;margin:0;} .header .wf{font-size:.75rem;color:var(--muted);margin-left:auto;}
-    .body{display:flex;flex:1;min-height:0;}
-    .main{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:16px;}
-    .side{width:380px;flex-shrink:0;border-left:1px solid var(--border);overflow-y:auto;padding:12px;background:#f8fafc;}
+    body{font-family:"Segoe UI",Tahoma,sans-serif;background:#f0f2f5;color:#0f172a;line-height:1.5;}
+    .app{display:block;height:auto;min-height:100%;max-width:1280px;margin:0 auto;background:#fff;border-left:1px solid #e2e8f0;border-right:1px solid #e2e8f0;}
+    .header{display:block;padding:12px 16px;border-bottom:1px solid #e2e8f0;}
+    .header h1{font-size:1rem;margin:0;display:inline;} .header .wf{font-size:.75rem;color:#64748b;display:block;margin-top:4px;}
+    .body{display:block;width:100%;zoom:1;}
+    .main{display:block;overflow:auto;padding:16px;margin-right:0;}
+    body.has-sql-side .main{margin-right:328px;}
+    .side{display:none;float:right;width:320px;border-left:1px solid #e2e8f0;overflow:auto;padding:12px;background:#f8fafc;box-sizing:border-box;min-height:120px;}
+    body.has-sql-side .side{display:block;}
     .side.hidden{display:none;}
-    .side h2{font-size:.78rem;margin:0 0 10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;}
-    .sql-item{position:relative;border:1px solid var(--border);border-radius:10px;padding:10px 48px 10px 10px;margin-bottom:8px;cursor:pointer;background:#fff;font-size:.82rem;}
-    .sql-item:hover,.sql-item.active{border-color:var(--accent);background:#eff6ff;}
-    .sql-item .sid{font-weight:700;color:var(--accent);} .sql-item .meta{color:var(--muted);font-size:.72rem;margin-top:4px;}
+    .side h2{font-size:.78rem;margin:0 0 10px;color:#64748b;text-transform:uppercase;letter-spacing:.03em;}
+    .sql-item{position:relative;border:1px solid #e2e8f0;border-radius:10px;padding:10px 48px 10px 10px;margin-bottom:8px;cursor:pointer;background:#fff;font-size:.82rem;}
+    .sql-item:hover,.sql-item.active{border-color:#2563eb;background:#eff6ff;}
+    .sql-item .sid{font-weight:700;color:#2563eb;} .sql-item .meta{color:#64748b;font-size:.72rem;margin-top:4px;}
     .sql-item button.sql-del{position:absolute;right:6px;top:8px;font:inherit;font-size:.7rem;font-weight:600;
       padding:3px 8px;cursor:pointer;border:1px solid #fca5a5;background:#fef2f2;color:#b91c1c;border-radius:6px;}
     .sql-item button.sql-del:hover{background:#fee2e2;}
-    .side-empty{font-size:.82rem;color:var(--muted);line-height:1.45;}
-    .card{border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;}
-    .card h2{font-size:.85rem;margin:0 0 10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;}
-    .chips{display:flex;flex-wrap:wrap;gap:8px;}
-    .chip{display:inline-flex;align-items:center;gap:8px;background:#eff6ff;color:var(--accent);border:1px solid #bfdbfe;border-radius:999px;padding:6px 12px;font-size:.85rem;}
-    .chip button{border:none;background:none;color:var(--accent);cursor:pointer;font-size:1rem;line-height:1;}
+    .sql-item button.sql-del.confirm{background:#b91c1c;color:#fff;border-color:#991b1b;}
+    #twBootTable,#twBoot{display:none;}
+    #twBootTable.tw-boot-show,#twBoot.tw-boot-show{display:block;}
+    #twBoot{padding:3px 8px;background:#fffbeb;color:#92400e;font:11px/1.35 Tahoma,sans-serif;border-bottom:1px solid #f59e0b;}
+    #twDiag{margin:0;padding:6px 12px 10px;border-top:1px solid #e2e8f0;font-size:.72rem;color:#64748b;background:#f8fafc;clear:both;}
+    #twDiagSum{cursor:pointer;font-weight:600;}
+    #twDiagLog{max-height:160px;overflow:auto;font-family:Consolas,monospace;white-space:pre-wrap;background:#fff;border:1px solid #e2e8f0;padding:8px;margin-top:6px;}
+    .side-empty{font-size:.82rem;color:#64748b;line-height:1.45;}
+    .card{border:1px solid #e2e8f0;border-radius:14px;padding:14px 16px;margin:0 0 12px 0;}
+    .card h2{font-size:.85rem;margin:0 0 10px;color:#64748b;text-transform:uppercase;letter-spacing:.03em;}
+    .chips{display:block;}
+    .chip{display:inline-block;margin:0 6px 6px 0;background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;border-radius:999px;padding:6px 12px;font-size:.85rem;}
+    .chip button{border:none;background:none;color:#2563eb;cursor:pointer;font-size:1rem;line-height:1;}
     table.funnel{width:100%;border-collapse:collapse;font-size:.88rem;}
-    table.funnel td{padding:6px 4px;border-bottom:1px dashed var(--border);}
-    table.funnel td.num{text-align:right;font-variant-numeric:tabular-nums;font-weight:600;}
-    table.funnel tr.total td{border-top:2px solid var(--text);border-bottom:none;font-weight:700;color:var(--ok);}
-    .gates{display:flex;flex-direction:column;gap:6px;font-size:.85rem;}
-    .gate{display:flex;gap:8px;align-items:center;} .gate .g-ok{color:var(--ok);} .gate .g-err{color:var(--err);}
-    pre.code{font-family:var(--mono);font-size:.78rem;background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:12px;overflow:auto;white-space:pre-wrap;max-height:340px;color:#0f766e;}
-    .banner{padding:10px 14px;border-radius:8px;font-size:.9rem;}
-    .banner.err{background:#fef2f2;color:var(--err);} .banner.warn{background:#fffbeb;color:#b45309;} .banner.ok{background:#ecfdf5;color:var(--ok);}
-    .composer{padding:12px 16px 16px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:flex-end;}
-    textarea#nl{flex:1;font:inherit;border:1px solid var(--border);border-radius:14px;padding:12px 16px;resize:none;min-height:48px;max-height:160px;}
-    .btn{font:inherit;font-weight:600;border:none;border-radius:8px;padding:10px 18px;cursor:pointer;background:var(--accent);color:#fff;}
-    .btn:disabled{opacity:.5;cursor:not-allowed;} .btn-outline{background:var(--surface);color:var(--text);border:1px solid var(--border);}
-    .actions{display:flex;gap:8px;align-items:center;}
-    .hidden{display:none;}
-    details summary{cursor:pointer;font-size:.82rem;color:var(--muted);}
-    .slot-card{border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:.88rem;}
+    table.funnel td{padding:6px 4px;border-bottom:1px dashed #e2e8f0;}
+    table.funnel td.num{text-align:right;font-weight:600;}
+    table.funnel tr.total td{border-top:2px solid #0f172a;border-bottom:none;font-weight:700;color:#047857;}
+    .gates{display:block;font-size:.85rem;}
+    .gate{display:block;margin:0 0 6px 0;} .gate .g-ok{color:#047857;} .gate .g-err{color:#b91c1c;}
+    pre.code{font-family:Consolas,monospace;font-size:.78rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;overflow:auto;white-space:pre-wrap;max-height:340px;color:#0f766e;}
+    .banner{padding:10px 14px;border-radius:8px;font-size:.9rem;margin:0 0 10px 0;}
+    .banner.err{background:#fef2f2;color:#b91c1c;} .banner.warn{background:#fffbeb;color:#b45309;} .banner.ok{background:#ecfdf5;color:#047857;}
+    .composer{padding:12px 16px 16px;border-top:1px solid #e2e8f0;display:block;clear:both;}
+    textarea#nl{display:block;width:100%;font:inherit;border:1px solid #e2e8f0;border-radius:14px;padding:12px 16px;resize:none;min-height:48px;max-height:160px;box-sizing:border-box;}
+    .btn{font:inherit;font-weight:600;border:none;border-radius:8px;padding:10px 18px;cursor:pointer;background:#2563eb;color:#fff;}
+    .btn:disabled{opacity:.5;cursor:not-allowed;} .btn-outline{background:#fff;color:#0f172a;border:1px solid #e2e8f0;}
+    .actions{display:block;margin-top:8px;}
+    .hidden{display:none !important;}
+    details summary{cursor:pointer;font-size:.82rem;color:#64748b;}
+    .slot-card{border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:.88rem;}
     .slot-card .badge{display:inline-block;font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:999px;margin-left:6px;}
     .badge-feasible{background:#ecfdf5;color:#047857;}
     .badge-no_value,.badge-no_column{background:#fef2f2;color:#b91c1c;}
     .badge-ambiguous,.badge-partially_infeasible{background:#fffbeb;color:#b45309;}
     .badge-low{border:1px dashed #b45309;}
-    .alt-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
-    .alt-chip{font-size:.78rem;padding:4px 10px;border-radius:999px;border:1px solid var(--border);cursor:pointer;background:#f8fafc;}
+    .alt-chips{display:block;margin-top:8px;}
+    .alt-chip{display:inline-block;font-size:.78rem;padding:4px 10px;margin:0 6px 6px 0;border-radius:999px;border:1px solid #e2e8f0;cursor:pointer;background:#f8fafc;}
     /*
-     * embed=1: min-height 필수(#118). flex:1·table-cell 금지(#130·#131 흰화면).
-     * 이력 패널: float:right + has-sql-side (JS가 클래스 부여).
+     * embed=1 (#138): float 금지(빈 중칸·이력 둥둥). table-cell 2열.
+     * 왼쪽 main(안내·결과·입력) ~64% / 오른쪽 side(이력) ~36%.
      */
-    body.embed{background:#fff;height:auto;min-height:480px;overflow:auto;}
-    body.embed .app{
-      max-width:none;height:auto;min-height:480px;border:none;display:block;
-    }
-    body.embed .header{display:block;padding:4px 8px;}
-    body.embed .header h1{font-size:.82rem;display:inline;margin:0;}
+    body.embed{background:#fff;height:auto;min-height:0;overflow:auto;margin:0;padding:0;}
+    body.embed .app{display:block;max-width:none;width:auto;height:auto;min-height:0;border:none;background:#fff;}
+    body.embed .header{display:block;padding:4px 8px;border-bottom:1px solid #e2e8f0;}
+    body.embed .header h1{font-size:.82rem;display:inline;margin:0;color:#0f172a;}
     body.embed .header a.open-browser{
       display:inline-block;margin-left:8px;font-size:.72rem;font-weight:600;
-      color:var(--accent);text-decoration:none;border:1px solid #bfdbfe;border-radius:6px;
+      color:#2563eb;text-decoration:none;border:1px solid #bfdbfe;border-radius:6px;
       padding:1px 6px;background:#eff6ff;vertical-align:middle;
     }
-    body.embed .header .wf{font-size:.65rem;display:block;margin-top:1px;color:var(--muted);}
-    body.embed .body{display:block;width:100%;min-height:320px;overflow:auto;}
-    body.embed .main{display:block;padding:6px 8px;overflow:auto;}
-    body.embed.has-sql-side .main{margin-right:38%;}
-    body.embed .side{
-      display:none;float:right;width:36%;box-sizing:border-box;
-      border-left:1px solid var(--border);overflow-y:auto;padding:8px;background:#f8fafc;
-      min-height:200px;
+    body.embed .header .wf{font-size:.65rem;display:block;margin-top:1px;color:#64748b;}
+    body.embed .body{
+      display:table;width:100%;table-layout:fixed;border-collapse:collapse;
+      min-height:0;overflow:visible;
     }
-    body.embed.has-sql-side .side{display:block;}
-    body.embed .side h2{font-size:.72rem;margin:0 0 6px;}
-    body.embed .side-empty{font-size:.78rem;}
+    body.embed .main{
+      display:table-cell;width:100%;vertical-align:top;
+      margin:0;padding:8px 10px;overflow:visible;float:none;min-height:0;
+    }
+    body.embed.has-sql-side .main{width:64%;}
+    body.embed .side{
+      display:none;float:none;width:36%;vertical-align:top;box-sizing:border-box;
+      border-left:1px solid #e2e8f0;border-top:none;overflow:auto;padding:8px;background:#f8fafc;
+      min-height:0;max-height:420px;
+    }
+    body.embed.has-sql-side .side{display:table-cell;}
+    body.embed .side h2{font-size:.72rem;margin:0 0 6px;color:#64748b;}
+    body.embed .side-empty{font-size:.78rem;color:#64748b;}
     body.embed .sql-item{padding:6px 44px 6px 6px;margin-bottom:6px;font-size:.78rem;border-radius:6px;}
     body.embed .sql-item .meta{font-size:.7rem;}
     body.embed .sql-item button.sql-del{font-size:.65rem;padding:2px 6px;top:6px;right:4px;}
-    body.embed .composer{display:block;clear:both;padding:6px 8px;}
+    body.embed .composer{display:block;clear:none;margin-top:10px;padding:8px 0 0 0;border-top:1px solid #e2e8f0;}
     body.embed textarea#nl{
       width:100%;display:block;box-sizing:border-box;
-      min-height:36px;max-height:72px;padding:8px 10px;border-radius:10px;font-size:.85rem;
+      min-height:52px;max-height:100px;padding:8px 12px;border-radius:10px;font-size:.88rem;
     }
     body.embed .actions{display:block;margin-top:6px;}
-    body.embed .btn{padding:6px 12px;font-size:.85rem;border-radius:6px;}
-    body.embed #hint{font-size:.72rem;padding:4px 8px;line-height:1.35;}
-    body.embed .card{padding:6px 8px;border-radius:8px;margin:0;}
-    body.embed .card h2{font-size:.7rem;margin:0 0 4px;}
+    body.embed .btn{padding:7px 14px;font-size:.85rem;border-radius:6px;margin-right:6px;}
+    body.embed #hint{font-size:.78rem;padding:8px 10px;line-height:1.4;color:#047857;}
+    body.embed .card{padding:8px 10px;border-radius:8px;margin:0 0 8px 0;}
+    body.embed .card h2{font-size:.72rem;margin:0 0 4px;color:#64748b;}
     body.embed .chip{font-size:.72rem;padding:3px 8px;}
     body.embed .gates{font-size:.72rem;}
-    body.embed .gate{gap:4px;}
-    body.embed pre.code{font-size:.7rem;padding:8px;max-height:120px;}
+    body.embed pre.code{font-size:.7rem;padding:8px;max-height:140px;}
     body.embed #cardFunnel{display:none !important;}
-    body.embed .chips{display:block;}
-    body.embed .gates{display:block;}
+    body.embed #twDiag{display:block;clear:both;font-size:.68rem;padding:4px 8px 8px;}
+    body.embed #twDiagLog{max-height:100px;}
   </style>
-  <script>
+  <script type="text/javascript">
     window.__TW_LOGIN__ = '<%= _twEscJs(_login) %>';
     window.__TW_EMBED__ = <%= _embed ? "true" : "false" %>;
-    window.onerror = function (msg, url, line) {
+    /* IE onerror: (msg,url,line,col,errObj) — StudioJs 가 덮어쓰며 #twDiagLog 에도 기록 */
+    window.onerror = function (msg, url, line, col, errObj) {
       try {
+        var boot = document.getElementById("twBoot");
+        var tbl = document.getElementById("twBootTable");
+        if (boot) {
+          boot.className = "tw-boot-show";
+          boot.style.background = "#fef2f2";
+          boot.style.color = "#b91c1c";
+          boot.innerHTML = "JS error: " + msg + " @" + line + (url ? (" | " + url) : "");
+        }
+        if (tbl) tbl.className = "tw-boot-show";
         var h = document.getElementById("hint");
         if (h) {
           h.className = "banner err";
           h.textContent = "Studio JS error: " + msg + " @" + line;
+        }
+        var d = document.getElementById("twDiagLog");
+        if (d) {
+          var t = document.createElement("div");
+          t.appendChild(document.createTextNode(
+            "boot onerror: " + msg + " | line=" + line +
+            (col != null ? (" | col=" + col) : "") +
+            (url ? (" | " + url) : "")
+          ));
+          d.appendChild(t);
         }
       } catch (e0) {}
       return false;
@@ -231,8 +282,38 @@ if (!_login) {
   </script>
 </head>
 <body class="<%= _embed ? "embed" : "" %>">
+  <!-- 오류 시에만 표시(#136). 정상 시 숨기고 진단 패널에만 기록 -->
+  <table id="twBootTable" width="100%" bgcolor="#FFFF00" border="0" cellspacing="0" cellpadding="3" class="tw-boot-show">
+    <tr><td>
+      <font id="twBootFont" face="Tahoma" size="2" color="#000000">TW-BOOT v=138 | loading&#x2026;</font>
+    </td></tr>
+  </table>
+  <div id="twBoot" class="tw-boot-show">Studio boot&#x2026;</div>
+  <script type="text/javascript">
+  (function () {
+    var dm = (typeof document.documentMode !== "undefined") ? String(document.documentMode) : "n/a(non-IE)";
+    var emb = window.__TW_EMBED__ ? "1" : "0";
+    var r = "";
+    try {
+      var s = String(location.search || "");
+      var key = "_r=";
+      var i = s.indexOf(key);
+      if (i >= 0) {
+        var rest = s.substring(i + key.length);
+        var amp = rest.indexOf("&");
+        r = amp < 0 ? rest : rest.substring(0, amp);
+      }
+    } catch (eR) {}
+    var msg = "TW-BOOT v=138 | documentMode=" + dm + " | embed=" + emb + " | _r=" + (r || "-");
+    var font = document.getElementById("twBootFont");
+    if (font) font.innerHTML = msg;
+    var el = document.getElementById("twBoot");
+    if (el) el.innerHTML = "boot ok | " + msg;
+    window.__TW_BOOT_MSG__ = msg;
+  })();
+  </script>
   <div class="app">
-    <header class="header">
+    <div class="header">
       <h1>Test Woo AI Studio<%= _embed ? " (embedded)" : "" %></h1>
 <%
   if (_embed) {
@@ -243,10 +324,10 @@ if (!_login) {
   }
 %>
       <span class="wf" id="wfInfo">user: <%= _twEscJs(_login) %> / register&#x2192;ai_sql_id</span>
-    </header>
+    </div>
 
     <div class="body">
-    <main class="main" id="main">
+    <div class="main" id="main">
       <div class="banner ok" id="hint">&#xC790;&#xC5F0;&#xC5B4;&#xB85C; &#xB300;&#xC0C1; &#xC870;&#xAC74;&#xC744; &#xC785;&#xB825;&#xD558;&#xC138;&#xC694;. &#xD55C; &#xBB38;&#xC7A5;&#xC73C;&#xB85C; &#xBB49;&#xCCD0;&#xB3C4; &#xB429;&#xB2C8;&#xB2E4;. &#xC608;) &#xCD5C;&#xADFC; &#xD55C;&#xB2EC; Y&#xC694;&#xAE08; &#xAC00;&#xC785;&#xD55C; 1020&#xC138;&#xB300; &#xC911; &#xC218;&#xC2E0;&#xB3D9;&#xC758;&#xD558;&#xACE0; &#xB9C8;&#xCF00;&#xD305; &#xBA54;&#xC2DC;&#xC9C0;&#xB97C; &#xD55C;&#xBC88;&#xB3C4; &#xBC1B;&#xC9C0;&#xC54A;&#xC740; &#xACE0;&#xAC1D;</div>
 
       <div class="card hidden" id="cardSlotResults"><h2>&#xC2AC;&#xB86F; &#xD310;&#xC815; / &#xBD88;&#xAC00; &#xBCF4;&#xACE0;</h2><div id="slotResults"></div></div>
@@ -258,29 +339,35 @@ if (!_login) {
       <div class="card hidden" id="cardGates"><h2>&#xC790;&#xB3D9; &#xAC80;&#xC99D; &#xACB0;&#xACFC;</h2><div class="gates" id="gates"></div></div>
 
       <div class="card hidden" id="cardCode">
-        <details><summary>&#xCF54;&#xB4DC; &#xBCF4;&#xAE30; (SQL &#xC804;&#xBB38; &#x00B7; &#xC77D;&#xAE30; &#xC804;&#xC6A9;)</summary><pre class="code" id="sql"></pre></details>
+        <div><div style="font-size:.82rem;color:#64748b;cursor:default;">&#xCF54;&#xB4DC; &#xBCF4;&#xAE30; (SQL)</div><pre class="code" id="sql"></pre></div>
       </div>
 
       <div class="banner err hidden" id="err"></div>
-    </main>
-    <aside class="side" id="sideSql" style="display:none">
+
+      <!-- composer 는 왼쪽 AI 열 안 (#138). float clear 로 아래로 밀리지 않음 -->
+      <div class="composer">
+        <textarea id="nl" rows="2" placeholder="&#xC870;&#xAC74;&#xC744; &#xB9D0;&#xB85C; &#xC785;&#xB825;&#xD558;&#xC138;&#xC694;&#x2026;"></textarea>
+        <div class="actions">
+          <button type="button" class="btn" id="btnGen">&#xC0DD;&#xC131;</button>
+          <button type="button" class="btn btn-outline" id="btnReg" disabled>&#xB4F1;&#xB85D;</button>
+        </div>
+      </div>
+    </div>
+    <div class="side" id="sideSql">
       <h2>&#xC774; WF SQL &#xC774;&#xB825;</h2>
       <div class="side-empty" id="sqlListEmpty">&#xB4F1;&#xB85D;&#xB41C; SQL &#xC774; &#xC5C6;&#xC2B5;&#xB2C8;&#xB2E4;. &#xC0DD;&#xC131; &#xD6C4; &#xB4F1;&#xB85D;&#xD558;&#xBA74; &#xC5EC;&#xAE30; &#xBAA8;&#xC785;&#xB2C8;&#xB2E4;.</div>
       <div id="sqlList"></div>
-    </aside>
+    </div>
     </div>
 
-    <footer class="composer">
-      <textarea id="nl" rows="1" placeholder="&#xC870;&#xAC74;&#xC744; &#xB9D0;&#xB85C; &#xC785;&#xB825;&#xD558;&#xC138;&#xC694;&#x2026;"></textarea>
-      <div class="actions">
-        <button type="button" class="btn" id="btnGen">&#xC0DD;&#xC131;</button>
-        <button type="button" class="btn btn-outline" id="btnReg" disabled>&#xB4F1;&#xB85D;</button>
-      </div>
-    </footer>
+    <div id="twDiag">
+      <div id="twDiagSum" style="cursor:pointer;font-weight:600;margin-bottom:4px;">&#xC9C4;&#xB2E8; (IE / urlViewer) &#x2014; &#xD074;&#xB9AD;&#xD558;&#xC5EC; &#xD3BC;&#xCE58;&#xAE30;</div>
+      <div id="twDiagLog" style="display:none;"></div>
+    </div>
   </div>
 
-  <!-- v=132: 승인 API 링크 제거 · 캐시 무력화 -->
-  <script src="/woo/testWooAiStudioJs.jssp?v=132"></script>
+  <!-- v=138: table-cell 2열 · 입력창을 왼쪽 main 안 -->
+  <script type="text/javascript" src="/woo/testWooAiStudioJs.jssp?v=138"></script>
 </body>
 </html>
 <%

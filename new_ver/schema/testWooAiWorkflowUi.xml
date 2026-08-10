@@ -7,8 +7,9 @@ woo:testWooAiWorkflowUi (Test Woo AI Workflow UI · SOAP method host)
 [Main Functions]
 ===========
 - ShellProbe(activities) → hasActivity, message, activityName  (out×3)
-- ShellPick(workflowName) → aiSqlId, pickLabel
+- ShellPick(workflowName) → aiSqlId, pickLabel, tick (캐시버스트 · Date.getTime)
 - ShellBind(activities, aiSqlId, workflowName) → activitiesOut  (첫 AI 액티비티)
+- 폼에 FormatDate/GetDate 금지 (XTK-170016 SQL expressions)
 
 [Deploy — 반드시 동시]
 ===========
@@ -46,7 +47,10 @@ woo:testWooAiWorkflowUi (Test Woo AI Workflow UI · SOAP method host)
 
     <method name="ShellPick" static="true" library="woo:testWooWorkflowUi.js"
             label="Get Studio bind-pick ai_sql_id">
-      <help>Reads Option testWooAiBindPick_&lt;login&gt;.</help>
+      <help>
+        Reads Option testWooAiBindPick_&lt;login&gt;.
+        Third out tick = millis string for urlViewer cache-bust (no FormatDate in form).
+      </help>
       <parameters>
         <param name="workflowName" type="string" inout="in"
                desc="Workflow @internalName"/>
@@ -54,6 +58,8 @@ woo:testWooAiWorkflowUi (Test Woo AI Workflow UI · SOAP method host)
                desc="Selected ai_sql_id or empty"/>
         <param name="pickLabel" type="string" inout="out"
                desc="Human label"/>
+        <param name="tick" type="string" inout="out"
+               desc="Cache-bust nonce (millis)"/>
       </parameters>
     </method>
 

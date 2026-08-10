@@ -1,6 +1,12 @@
 # Log
 
 ## Log Index
+138. 2026-08-10 embed UI 깨짐 수정 — table-cell 2열 · 입력창 왼쪽
+137. 2026-08-10 폼 FormatDate 제거 — ShellPick tick 캐시버스트 (XTK-170016)
+136. 2026-08-10 embed 레이아웃 복원 — 좌 AI / 우 SQL 이력
+135. 2026-08-10 urlViewer 미로드 판별 — 폼 캐시버스트 · TW-BOOT · Reload
+134. 2026-08-10 embed 흰화면 잔존 — flex/CSS변수 제거 · 세로스택 · #twBoot
+133. 2026-08-10 urlViewer 흰화면 근본원인 — IE 미지원 API(fetch/Promise) 제거
 132. 2026-08-10 Studio 배너「승인 API 열기」링크 제거
 131. 2026-08-10 SQL이력 있을 때 흰화면 — WebView JS 호환 · 삭제 버튼
 130. 2026-08-10 Apply/재진입 urlViewer 흰 화면 — flex:1 제거 · form height
@@ -135,6 +141,70 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+138. 2026-08-10 embed UI 깨짐 수정 — table-cell 2열 · 입력창 왼쪽
+Purpose: float+min-height 로 중칸 공백·이력 우측 둥둥·입력창 유실 Changes:
+
+- embed: float 제거 → display:table / table-cell (좌 64% / 우 36%)
+- composer(생성·등록)를 main 안으로 이동 — 왼쪽 AI 열에 고정
+- _showSqlSide: 인라인 display 제거, has-sql-side 클래스만 (CSS가 table-cell)
+- ?v=138 · 폼 URL v=138
+
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
+
+137. 2026-08-10 폼 FormatDate 제거 — ShellPick tick 캐시버스트 (XTK-170016)
+Purpose: #135 폼의 FormatDate/GetDate 가 보안존에서 SQL expression 거부됨 Changes:
+
+- 원인: XTK-170016 FormatDate 는 SQL 식으로 분류 · 운영자 권한 없음
+- 폼: FormatDate 제거 · ShellPick 3번째 out tick 으로 `_r=` 구성
+- ShellPick JS: Date.getTime() 문자열 반환 · 스키마 out tick 추가
+- 재배포 필수 동시: schema + testWooWorkflowUi.js + ExtendWorkflow 폼
+
+Changed files: new_ver/input_form/testWooExtendWorkflow.xml, new_ver/schema/testWooAiWorkflowUi.xml, new_ver/js/testWooWorkflowUi.js, docs/log/log.md
+
+136. 2026-08-10 embed 레이아웃 복원 — 좌 AI / 우 SQL 이력
+Purpose: #134 세로스택이 UX를 해침 — 17~18시 좌우 분할로 복원 (흰화면 수정은 유지) Changes:
+
+- embed: main margin-right 38% + side float 36% (왼쪽 AI·오른쪽 이력)
+- 입력창(composer)은 하단 full-width clear
+- 정상 부팅 시 TW-BOOT 바 숨김(오류 시에만 표시) · 진단 패널에 기록
+- ?v=136 · 폼 URL v=136
+
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
+
+135. 2026-08-10 urlViewer 미로드 판별 — 폼 캐시버스트 · TW-BOOT · Reload
+Purpose: 재진입 시 Viewer만 완전 공백(하단 Apply·SQL은 정상) — JSSP HTML 미도착 가능 Changes:
+
+- 스크린샷 판독: 폼 SOAP OK · Viewer에 #twBoot 없음 → 연결끊김 아님, urlViewer 문서 미표시
+- 폼: enter 시 Studio URL+_r 캐시버스트 · UrlViewer+urlMode · Studio URL 필드 · Reload Studio
+- Studio: CSS 이전 TW-BOOT 노란 테이블 마커(v=135) — 이것도 없으면 폼 Viewer 미로드
+- 재배포: ExtendWorkflow 폼 + Studio.jssp + StudioJs.jssp
+
+Changed files: new_ver/input_form/testWooExtendWorkflow.xml, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
+
+134. 2026-08-10 embed 흰화면 잔존 — flex/CSS변수 제거 · 세로스택 · #twBoot
+Purpose: #133 XHR 후에도 재오픈 흰화면 — IE에 flex/var(--*)/float 이력패널이 접힘 Changes:
+
+- embed: flex·100vh·float 우측패널 제거 → 세로 스택(이력은 main 아래 전체폭)
+- CSS 변수(var) → hex 고정 (IE11 미지원)
+- header/main/aside/footer/details → div · HTML5 shiv 유지
+- #twBoot 최상단: HTML만으로 documentMode 표시, JS 로드 시 js ok 로 갱신
+- StudioJs Content-Type text/javascript · ?v=134
+
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
+
+133. 2026-08-10 urlViewer 흰화면 근본원인 — IE 미지원 API(fetch/Promise) 제거
+Purpose: ACC urlViewer=MSHTML(IE) 에서 Studio 재진입 흰화면·삭제 confirm 미동작 근본 수정 Changes:
+
+- 진짜 원인: 클라이언트 JS 의 fetch/Promise/.finally/classList (CSS 아님)
+- 이력 0건이면 loadSqlList 가 post 이전 return → 정상으로 보임 → #118·#128·#130·#131 CSS 오진 재발 원인
+- post → XMLHttpRequest(+ActiveX 폴백) 콜백 · Promise/finally 제거 · className 헬퍼
+- window.confirm 은 WebBrowser 호스트가 억제 → 삭제 2단계 클릭(3초)
+- X-UA-Compatible IE=edge (charset 직후) · #twDiag 진단 패널(documentMode/UA/XHR)
+- StudioJs Cache-Control no-store · ?v=133 · html↔jssp 동기화
+- #130·#131 float/has-sql-side CSS 는 흰화면 소멸 확인 후 단순화 재검토(이번엔 유지)
+
+Changed files: new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
 
 132. 2026-08-10 Studio 배너「승인 API 열기」링크 제거
 Purpose: 마케터 UI에 JSON API 링크 불필요 — 승인 화면은 추후 별도 Changes:

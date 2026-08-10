@@ -8,7 +8,7 @@
  * [Main Functions]
  * ===========
  * - woo_testWooAiWorkflowUi_ShellProbe — has / message / first @name (out×3)
- * - woo_testWooAiWorkflowUi_ShellPick — Studio bind-pick
+ * - woo_testWooAiWorkflowUi_ShellPick — bind-pick + tick(캐시버스트, 폼 FormatDate 금지)
  * - woo_testWooAiWorkflowUi_ShellBind — 첫 AI 액티비티에 ai-sql-id
  * - _twWfSetAiSqlId — 중복 ai-sql-id 정리
  *
@@ -193,7 +193,7 @@ function woo_testWooAiWorkflowUi_ShellProbe(activitiesXml) {
 
 /**
  * SOAP: ShellPick
- * @returns {[aiSqlId, pickLabel]}
+ * @returns {[aiSqlId, pickLabel, tick]} tick = urlViewer 캐시버스트 (폼 FormatDate 금지 · XTK-170016)
  */
 function woo_testWooAiWorkflowUi_ShellPick(workflowName) {
   var id = _twWfReadBindPick(workflowName);
@@ -203,8 +203,14 @@ function woo_testWooAiWorkflowUi_ShellPick(workflowName) {
   } else {
     label = "(미선택 — Studio SQL 이력 클릭 또는 등록)";
   }
-  logInfo("[testWoo.WorkflowUi.ShellPick] wf=" + _twWfTrim(workflowName) + " id=" + id);
-  return [id, label];
+  var tick = "0";
+  try {
+    tick = String(new Date().getTime());
+  } catch (eTick) {
+    tick = String(Math.floor(Math.random() * 1000000000));
+  }
+  logInfo("[testWoo.WorkflowUi.ShellPick] wf=" + _twWfTrim(workflowName) + " id=" + id + " tick=" + tick);
+  return [id, label, tick];
 }
 
 /**

@@ -1,14 +1,23 @@
 <%/*
  * testWooAiStudioJs.jssp (Studio client JS)
  * Keep in sync with new_ver/html/testWooAiStudio.js
+ * #138: has-sql-side class only (no inline display) for table-cell embed
  */
-response.setContentType("application/javascript;charset=utf-8");
+response.setContentType("text/javascript;charset=utf-8");
+try {
+  response.addHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  response.addHeader("Pragma", "no-cache");
+} catch (eHdr) {}
 %>/*
  * testWooAiStudio.js (Test Woo AI Studio 클라이언트)
  * ==================================================
  * HTML ↔ 서버 JSSP. LLM/SQL은 서버만. CNF plan 기반 UI.
  * 등록 = 이력 저장(ai_sql_id). chips는 서버 응답만.
  * 인증은 Cookie + 서버 logonWithToken() — X-Security-Token 헤더 미사용(ACC 미해석).
+ * ACC urlViewer = MSHTML(IE) — fetch/Promise/finally/classList/confirm 금지 (#133).
+ * #134: 진단 패널은 details 대신 div 토글 (IE details 미지원).
+ * #136: 정상 부팅 시 TW-BOOT 숨김 · 메시지는 진단 패널에 기록.
+ * #138: _showSqlSide 는 인라인 display 대신 has-sql-side 클래스(CSS table-cell).
  *
  * [Main Functions]
  * ===========
@@ -16,15 +25,16 @@ response.setContentType("application/javascript;charset=utf-8");
  * - pollQueue — Foundry 큐 상태 폴링 (QUEUE_POLL_MS 20초 × QUEUE_POLL_MAX 30회 = 10분)
  * - _renderQueueHint — awaiting_approval 안내(유니코드 이스케이프 한글 정확도 유지)
  * - renderGates — PASS/FAIL·게이트 코드를 사용자용 한글 라벨로 표시
- * - loadSqlList / loadSqlItem / deleteSqlItem — WF별 SQL 이력(+삭제 확인)
+ * - loadSqlList / loadSqlItem / deleteSqlItem — WF별 SQL 이력(2단계 클릭 삭제)
  * - setBindPick — SQL 클릭/등록 시 폼 Apply 용 Option pick 저장
+ * - _xhrPost / _diag — IE XHR + 인페이지 진단 패널
  *
  * [Dependencies]
  * =========
  * - /woo/testWooAiGenerate|Validate|Register.jssp
  * - Cookie credentials + X-Requested-With / payload.csrf + pageHost
  * - Served as /woo/testWooAiStudioJs.jssp?v=… (keep in sync with html/)
- * - embed WebView: URLSearchParams·forEach·filter 사용 금지 (#131 흰화면)
+ * - ES5 only: no fetch/Promise/classList/forEach/URLSearchParams/const/let/=>
  */
 (function () {
   "use strict";
@@ -35,6 +45,7 @@ response.setContentType("application/javascript;charset=utf-8");
   var QUEUE_POLL_MS = 20000;
   var QUEUE_POLL_MAX = 30;
   var BASE = "/woo/";
+  var DEL_CONFIRM_MS = 3000;
 
   // ACC urlViewer 구엔진에 URLSearchParams 없을 수 있음 — 수동 파싱
   function _qs(name) {
@@ -52,48 +63,152 @@ response.setContentType("application/javascript;charset=utf-8");
     return "";
   }
 
+  function _trim(s) {
+    return String(s == null ? "" : s).replace(/^\s+|\s+$/g, "");
+  }
+
   var WORKFLOW_NAME = _qs("workflowName") || "";
   var EMBED = _qs("embed") === "1" || window.__TW_EMBED__ === true;
 
   var state = { plan: null, sql: "", summary: "", passed: false, nl: "", aiSqlId: null, queuePoll: null };
+  var _delPending = { id: null, timer: null, btn: null };
   var $ = function (id) { return document.getElementById(id); };
 
-  function post(endpoint, payload) {
-    // csrf/pageHost: urlViewer 가 X-Requested-With·Origin·Referer 를 서버에 안 넘길 때 CSRF 폴백
+  // ---- className helpers (classList 없음 / IE \b 이슈 회피: 공백 패딩) ----
+  function _hasCls(el, c) {
+    if (!el) return false;
+    return (" " + String(el.className || "") + " ").indexOf(" " + c + " ") >= 0;
+  }
+  function _addCls(el, c) {
+    if (!el || !c || _hasCls(el, c)) return;
+    var cur = _trim(el.className || "");
+    el.className = cur ? (cur + " " + c) : c;
+  }
+  function _rmCls(el, c) {
+    if (!el || !c) return;
+    var s = " " + _trim(String(el.className || "").replace(/\s+/g, " ")) + " ";
+    s = s.split(" " + c + " ").join(" ");
+    el.className = _trim(s.replace(/\s+/g, " "));
+  }
+
+  // ---- 인페이지 진단 (urlViewer 에서 console 없음) ----
+  function _diag(msg) {
+    try {
+      var el = $("twDiagLog");
+      if (!el) return;
+      var line = document.createElement("div");
+      var d = new Date();
+      var hh = d.getHours();
+      var mm = d.getMinutes();
+      var ss = d.getSeconds();
+      var ts =
+        (hh < 10 ? "0" : "") + hh + ":" +
+        (mm < 10 ? "0" : "") + mm + ":" +
+        (ss < 10 ? "0" : "") + ss;
+      line.appendChild(document.createTextNode(ts + " " + String(msg)));
+      el.appendChild(line);
+      if (el.childNodes.length > 200) {
+        el.removeChild(el.firstChild);
+      }
+    } catch (eD) {}
+  }
+
+  function _installOnError() {
+    window.onerror = function (msg, url, line, col, errObj) {
+      var parts = [];
+      parts.push(String(msg));
+      if (url) parts.push("url=" + url);
+      if (line != null) parts.push("line=" + line);
+      if (col != null) parts.push("col=" + col);
+      if (errObj && errObj.stack) parts.push("stack=" + String(errObj.stack).substring(0, 400));
+      var text = "onerror: " + parts.join(" | ");
+      _diag(text);
+      try {
+        var h = $("hint");
+        if (h) {
+          h.className = "banner err";
+          h.textContent = "Studio JS error: " + String(msg) + " @" + String(line);
+        }
+      } catch (e0) {}
+      return false;
+    };
+  }
+
+  function _createXhr() {
+    if (typeof window.XMLHttpRequest !== "undefined") {
+      try { return new XMLHttpRequest(); } catch (e0) {}
+    }
+    try { return new ActiveXObject("Microsoft.XMLHTTP"); } catch (e1) {}
+    try { return new ActiveXObject("Msxml2.XMLHTTP"); } catch (e2) {}
+    return null;
+  }
+
+  // IE/MSHTML: fetch/Promise 없음 → XHR + 콜백. withCredentials 설정 금지.
+  function _xhrPost(endpoint, payload, onOk, onErr) {
     var p = payload || {};
     if (!p.csrf) p.csrf = "TestWooStudio";
     if (!p.pageHost) {
       try { p.pageHost = String(location.host || ""); } catch (eH) { p.pageHost = ""; }
     }
     var body = "payload=" + encodeURIComponent(JSON.stringify(p));
-    var headers = {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "X-Requested-With": "TestWooStudio"
-    };
-    return fetch(BASE + endpoint, {
-      method: "POST", credentials: "include",
-      headers: headers, body: body
-    }).then(function (r) {
-      return r.text().then(function (text) {
-        var t = String(text || "").replace(/^\uFEFF/, "").trim();
-        if (!t) throw new Error(endpoint + " empty response (HTTP " + r.status + ")");
+    var xhr = _createXhr();
+    if (!xhr) {
+      _diag("XHR unavailable");
+      if (onErr) onErr(new Error("XMLHttpRequest unavailable"));
+      return;
+    }
+    _diag("XHR request " + endpoint);
+    try {
+      xhr.open("POST", BASE + endpoint, true);
+      xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+      xhr.setRequestHeader("X-Requested-With", "TestWooStudio");
+      xhr.onreadystatechange = function () {
+        if (xhr.readyState !== 4) return;
+        _diag("XHR status " + endpoint + " → " + xhr.status);
+        var t = _trim(String(xhr.responseText || "").replace(/^\uFEFF/, ""));
+        if (!t) {
+          if (onErr) onErr(new Error(endpoint + " empty response (HTTP " + xhr.status + ")"));
+          return;
+        }
         var data;
-        try { data = JSON.parse(t); }
-        catch (e) {
-          var preview = t.length > 800 ? t.slice(0, 800) + "..." : t;
-          throw new Error(endpoint + " non-JSON (HTTP " + r.status + "): " + preview);
+        try {
+          data = JSON.parse(t);
+          _diag("JSON parse ok " + endpoint);
+        } catch (eParse) {
+          _diag("JSON parse fail " + endpoint);
+          var preview = t.length > 800 ? t.substring(0, 800) + "..." : t;
+          if (onErr) onErr(new Error(endpoint + " non-JSON (HTTP " + xhr.status + "): " + preview));
+          return;
         }
         if (data && data.code === "AUTH" && data.logonUrl) {
           location.href = data.logonUrl;
-          throw new Error("NOT_AUTHENTICATED");
+          if (onErr) onErr(new Error("NOT_AUTHENTICATED"));
+          return;
         }
-        return data;
-      });
-    });
+        if (onOk) onOk(data);
+      };
+      xhr.send(body);
+    } catch (eSend) {
+      _diag("XHR send fail " + endpoint + ": " + String(eSend && eSend.message ? eSend.message : eSend));
+      if (onErr) onErr(eSend);
+    }
   }
 
-  function showErr(msg) { var e = $("err"); e.textContent = msg; e.classList.remove("hidden"); }
-  function clearErr() { $("err").classList.add("hidden"); }
+  function post(endpoint, payload, onOk, onErr) {
+    _xhrPost(endpoint, payload, onOk, onErr);
+  }
+
+  function showErr(msg) {
+    var e = $("err");
+    if (!e) return;
+    e.textContent = msg;
+    _rmCls(e, "hidden");
+  }
+  function clearErr() {
+    var e = $("err");
+    if (!e) return;
+    _addCls(e, "hidden");
+  }
   function _errText(res) {
     if (!res) return "error";
     var m = res.error || "failed";
@@ -157,7 +272,7 @@ response.setContentType("application/javascript;charset=utf-8");
     if (state.queuePoll) clearInterval(state.queuePoll);
     state.queuePoll = setInterval(function () {
       attempts++;
-      post("testWooAiQueueStatus.jssp", { queueId: queueId }).then(function (st) {
+      post("testWooAiQueueStatus.jssp", { queueId: queueId }, function (st) {
         if (!st.ok || !st.queue) return;
         var qs = st.queue.status;
         _renderQueueHint(qs, queueId, reviewUrl, st.queue.lastError);
@@ -168,7 +283,7 @@ response.setContentType("application/javascript;charset=utf-8");
           clearInterval(state.queuePoll);
           state.queuePoll = null;
         }
-      }).catch(function () {});
+      }, function () {});
       if (attempts >= maxAttempts && state.queuePoll) {
         clearInterval(state.queuePoll);
         state.queuePoll = null;
@@ -196,8 +311,8 @@ response.setContentType("application/javascript;charset=utf-8");
         "<span class='" + badgeCls + "'>" + esc(s.verdict) + " / " + esc(s.confidence) + "</span>" +
         "<p><em>AI \uC124\uBA85:</em> " + esc(s.narrative || "") + "</p>";
       if (s.evidence) {
-        var det = document.createElement("details");
-        det.innerHTML = "<summary>\uC2E4\uC81C \uC870\uD68C \uACB0\uACFC (\uD655\uC778 \uADFC\uAC70)</summary><pre class='code'>" +
+        var det = document.createElement("div");
+        det.innerHTML = "<div style='font-size:.78rem;color:#64748b;'>\uC2E4\uC81C \uC870\uD68C \uACB0\uACFC</div><pre class='code'>" +
           esc(JSON.stringify(s.evidence, null, 2)) + "</pre>";
         el.appendChild(det);
       }
@@ -227,15 +342,16 @@ response.setContentType("application/javascript;charset=utf-8");
       box.appendChild(warn);
       renderSql(partialPreview.sql);
     }
-    $("cardSlotResults").classList.remove("hidden");
+    _rmCls($("cardSlotResults"), "hidden");
   }
 
   function generate() {
-    var nl = $("nl").value.trim();
+    var nl = _trim($("nl").value);
     if (!nl) return;
     state.nl = nl; clearErr(); setBusy(true);
-    post("testWooAiGenerate.jssp", { nl_request: nl, workflow_name: WORKFLOW_NAME })
-      .then(function (res) {
+    _diag("generate start");
+    post("testWooAiGenerate.jssp", { nl_request: nl, workflow_name: WORKFLOW_NAME }, function (res) {
+      try {
         if (res.status === "queued" && res.queueId) {
           hideResultCards();
           pollQueue(res.queueId, res.reviewUrl);
@@ -266,15 +382,22 @@ response.setContentType("application/javascript;charset=utf-8");
         $("btnReg").disabled = !state.passed;
         if (!state.passed) showErr(res.error || "validation failed");
         hideFunnel();
-      })
-      .catch(function (e) { showErr(String(e)); })
-      .finally(function () { setBusy(false); });
+      } finally {
+        setBusy(false);
+      }
+    }, function (e) {
+      showErr(String(e && e.message ? e.message : e));
+      setBusy(false);
+    });
   }
 
   function validate() {
     if (!state.plan || !fragmentCount(state.plan)) { hideResultCards(); return; }
-    return post("testWooAiValidate.jssp", { plan: state.plan }).then(function (v) {
-      if (!v.ok) throw new Error(_errText(v));
+    post("testWooAiValidate.jssp", { plan: state.plan }, function (v) {
+      if (!v.ok) {
+        showErr(_errText(v));
+        return;
+      }
       state.sql = v.sql || "";
       state.summary = v.summary || state.summary;
       state.passed = !!v.passed;
@@ -283,64 +406,85 @@ response.setContentType("application/javascript;charset=utf-8");
       renderGates(v.results);
       if (v.summary) renderSummaryHint(v.summary);
       $("btnReg").disabled = !v.passed;
+    }, function (e) {
+      showErr(String(e && e.message ? e.message : e));
     });
   }
 
   function register() {
     if (!state.passed) return;
     setBusy(true); clearErr();
-    var title = (state.nl || "").slice(0, TITLE_MAX);
+    var title = String(state.nl || "").substring(0, TITLE_MAX);
+    _diag("register start");
     post("testWooAiRegister.jssp", {
       plan: state.plan,
       workflow_name: WORKFLOW_NAME,
       title: title,
       target_count: 0,
       nl_request: state.nl
-    }).then(function (r) {
-      if (!r.ok || r.passed === false) {
-        showErr(_errText(r));
-        if (r.results) renderGates(r.results);
-        if (r.sql) { state.sql = r.sql; renderSql(r.sql); }
-        return;
+    }, function (r) {
+      try {
+        if (!r.ok || r.passed === false) {
+          showErr(_errText(r));
+          if (r.results) renderGates(r.results);
+          if (r.sql) { state.sql = r.sql; renderSql(r.sql); }
+          return;
+        }
+        state.aiSqlId = r.ai_sql_id;
+        if (r.sql) state.sql = r.sql;
+        $("hint").className = "banner ok";
+        $("hint").textContent = EMBED
+          ? ("Registered. ai_sql_id=" + r.ai_sql_id +
+            " \u2014 \uC544\uB798 Apply to canvas \uB97C \uB204\uB974\uC138\uC694.")
+          : ("Registered. ai_sql_id=" + r.ai_sql_id +
+            " \u2014 Apply on WF AI Studio form (ibankSqlDM ai-sql-id).");
+        $("btnReg").disabled = true;
+        setBindPick(r.ai_sql_id);
+        loadSqlList();
+      } finally {
+        setBusy(false);
       }
-      state.aiSqlId = r.ai_sql_id;
-      if (r.sql) state.sql = r.sql;
-      $("hint").className = "banner ok";
-      $("hint").textContent = EMBED
-        ? ("Registered. ai_sql_id=" + r.ai_sql_id +
-          " \u2014 \uC544\uB798 Apply to canvas \uB97C \uB204\uB974\uC138\uC694.")
-        : ("Registered. ai_sql_id=" + r.ai_sql_id +
-          " \u2014 Apply on WF AI Studio form (ibankSqlDM ai-sql-id).");
-      $("btnReg").disabled = true;
-      setBindPick(r.ai_sql_id);
-      loadSqlList();
-    }).catch(function (e) { showErr(String(e)); }).finally(function () { setBusy(false); });
+    }, function (e) {
+      showErr(String(e && e.message ? e.message : e));
+      setBusy(false);
+    });
   }
 
   function setBindPick(aiSqlId) {
-    if (!WORKFLOW_NAME || aiSqlId == null || aiSqlId === "" || aiSqlId === 0) {
-      return Promise.resolve();
-    }
-    return post("testWooAiValidate.jssp", {
+    if (!WORKFLOW_NAME || aiSqlId == null || aiSqlId === "" || aiSqlId === 0) return;
+    post("testWooAiValidate.jssp", {
       action: "setBindPick",
       workflow_name: WORKFLOW_NAME,
       ai_sql_id: aiSqlId
-    }).catch(function (ePick) {
+    }, function () {}, function () {
       /* Apply 는 폼 ShellPick — pick 실패해도 Studio 사용은 유지 */
     });
   }
 
   function _showSqlSide(on) {
+    /* 인라인 display 금지 — embed 는 CSS table-cell, 비embed 는 block (#138) */
     try {
-      if (on) document.body.className =
-        (document.body.className || "").replace(/\bhas-sql-side\b/g, "") + " has-sql-side";
-      else document.body.className =
-        (document.body.className || "").replace(/\bhas-sql-side\b/g, "");
-      document.body.className = document.body.className.replace(/^\s+|\s+$/g, "").replace(/\s+/g, " ");
+      if (on) _addCls(document.body, "has-sql-side");
+      else _rmCls(document.body, "has-sql-side");
     } catch (eCls) {}
     var side = $("sideSql");
     if (!side) return;
-    side.style.display = on ? "block" : "none";
+    try { side.style.display = ""; } catch (eDisp) {}
+  }
+
+  function _clearDelPending() {
+    if (_delPending.timer) {
+      clearTimeout(_delPending.timer);
+      _delPending.timer = null;
+    }
+    if (_delPending.btn) {
+      try {
+        _delPending.btn.textContent = "\uC0AD\uC81C";
+        _rmCls(_delPending.btn, "confirm");
+      } catch (e1) {}
+    }
+    _delPending.id = null;
+    _delPending.btn = null;
   }
 
   function loadSqlList() {
@@ -350,12 +494,14 @@ response.setContentType("application/javascript;charset=utf-8");
       _showSqlSide(false);
       return;
     }
+    _diag("loadSqlList start");
     _showSqlSide(true);
     post("testWooAiValidate.jssp", {
       action: "listSql",
       workflow_name: WORKFLOW_NAME,
       limit: 50
-    }).then(function (res) {
+    }, function (res) {
+      _clearDelPending();
       var box = $("sqlList");
       var empty = $("sqlListEmpty");
       if (!box) return;
@@ -374,9 +520,11 @@ response.setContentType("application/javascript;charset=utf-8");
           empty.textContent =
             "\uB4F1\uB85D\uB41C SQL \uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uC0DD\uC131 \uD6C4 \uB4F1\uB85D\uD558\uBA74 \uC5EC\uAE30 \uBAA8\uC785\uB2C8\uB2E4.";
         }
+        _diag("loadSqlList items=0");
         return;
       }
       if (empty) empty.style.display = "none";
+      _diag("loadSqlList items=" + items.length);
       for (var i = 0; i < items.length; i++) {
         (function (it) {
           var el = document.createElement("div");
@@ -394,64 +542,89 @@ response.setContentType("application/javascript;charset=utf-8");
           del.type = "button";
           del.className = "sql-del";
           del.textContent = "\uC0AD\uC81C";
-          del.title = "delete";
+          del.title = "delete (click twice)";
           del.onclick = function (ev) {
             if (ev && ev.stopPropagation) ev.stopPropagation();
-            deleteSqlItem(it.id, it.title);
+            deleteSqlItem(it.id, it.title, del);
             return false;
           };
           el.appendChild(row);
           el.appendChild(title);
           el.appendChild(meta);
           el.appendChild(del);
-          el.onclick = function () { loadSqlItem(it.id); };
+          el.onclick = function () {
+            _clearDelPending();
+            loadSqlItem(it.id);
+          };
           box.appendChild(el);
         })(items[i]);
       }
-    }).catch(function (e) {
+    }, function (e) {
       var empty = $("sqlListEmpty");
       if (empty) {
         empty.style.display = "";
-        empty.textContent = String(e);
+        empty.textContent = String(e && e.message ? e.message : e);
       }
       try {
         var h = $("hint");
         if (h) {
           h.className = "banner err";
-          h.textContent = "SQL list error: " + String(e);
+          h.textContent = "SQL list error: " + String(e && e.message ? e.message : e);
         }
       } catch (e2) {}
+      _diag("loadSqlList err: " + String(e && e.message ? e.message : e));
     });
   }
 
-  function deleteSqlItem(id, title) {
-    var msg =
-      "ai_sql_id=" + id +
-      (title ? (" (" + title + ")") : "") +
-      "\n\uC815\uB9D0 \uC774 \uC774\uB825\uC744 \uC0AD\uC81C\uD560\uAE4C\uC694?";
-    if (!window.confirm(msg)) return;
-    clearErr();
-    post("testWooAiValidate.jssp", {
-      action: "deleteSql",
-      ai_sql_id: id
-    }).then(function (res) {
-      if (!res || !res.ok) {
-        showErr(_errText(res) || "delete failed");
-        return;
-      }
-      if (state.aiSqlId && Number(state.aiSqlId) === Number(id)) {
-        state.aiSqlId = null;
-        state.sql = "";
-        state.plan = null;
-        $("btnReg").disabled = true;
-      }
-      loadSqlList();
-    }).catch(function (e) { showErr(String(e)); });
+  // urlViewer 는 window.confirm 억제 → 2단계 클릭 (3초 내 재클릭)
+  function deleteSqlItem(id, title, btn) {
+    if (_delPending.id != null && Number(_delPending.id) === Number(id) && _delPending.btn === btn) {
+      _clearDelPending();
+      clearErr();
+      _diag("deleteSql execute id=" + id);
+      post("testWooAiValidate.jssp", {
+        action: "deleteSql",
+        ai_sql_id: id
+      }, function (res) {
+        if (!res || !res.ok) {
+          showErr(_errText(res) || "delete failed");
+          return;
+        }
+        if (state.aiSqlId && Number(state.aiSqlId) === Number(id)) {
+          state.aiSqlId = null;
+          state.sql = "";
+          state.plan = null;
+          $("btnReg").disabled = true;
+        }
+        var h = $("hint");
+        if (h) {
+          h.className = "banner ok";
+          h.textContent =
+            "Deleted ai_sql_id=" + id +
+            (title ? (" (" + title + ")") : "");
+        }
+        loadSqlList();
+      }, function (e) {
+        showErr(String(e && e.message ? e.message : e));
+      });
+      return;
+    }
+    _clearDelPending();
+    _delPending.id = id;
+    _delPending.btn = btn;
+    if (btn) {
+      btn.textContent = "\uC0AD\uC81C?";
+      _addCls(btn, "confirm");
+    }
+    _delPending.timer = setTimeout(function () {
+      _clearDelPending();
+    }, DEL_CONFIRM_MS);
   }
 
   function loadSqlItem(id) {
     clearErr();
-    post("testWooAiValidate.jssp", { action: "getSql", ai_sql_id: id }).then(function (res) {
+    _diag("loadSqlItem id=" + id);
+    post("testWooAiValidate.jssp", { action: "getSql", ai_sql_id: id }, function (res) {
       if (!res || !res.ok || !res.item) {
         showErr(_errText(res) || "load failed");
         return;
@@ -469,7 +642,7 @@ response.setContentType("application/javascript;charset=utf-8");
         if (it.plan_json) state.plan = JSON.parse(it.plan_json);
       } catch (eParse) { state.plan = null; }
       if (state.plan) {
-        return post("testWooAiValidate.jssp", { plan: state.plan }).then(function (v) {
+        post("testWooAiValidate.jssp", { plan: state.plan }, function (v) {
           if (v && v.ok) {
             state.sql = v.sql || state.sql;
             state.summary = v.summary || state.summary;
@@ -485,7 +658,12 @@ response.setContentType("application/javascript;charset=utf-8");
             (state.summary ? (" · " + state.summary) : "")
           );
           loadSqlList();
+        }, function (e) {
+          showErr(String(e && e.message ? e.message : e));
+          renderSql(state.sql);
+          loadSqlList();
         });
+        return;
       }
       renderSql(state.sql);
       $("btnReg").disabled = true;
@@ -494,7 +672,9 @@ response.setContentType("application/javascript;charset=utf-8");
         "Loaded ai_sql_id=" + it.id +
         " \u2014 ibankSqlDM \uC758 ai-sql-id \uC5D0 \uC774 \uAC12\uC744 \uB123\uC73C\uC138\uC694 (script SQL \uAE08\uC9C0).";
       loadSqlList();
-    }).catch(function (e) { showErr(String(e)); });
+    }, function (e) {
+      showErr(String(e && e.message ? e.message : e));
+    });
   }
 
   function renderChips(chips) {
@@ -511,7 +691,7 @@ response.setContentType("application/javascript;charset=utf-8");
         box.appendChild(el);
       })(list[i]);
     }
-    $("cardChips").classList.remove("hidden");
+    _rmCls($("cardChips"), "hidden");
   }
 
   function removeChip(chip) {
@@ -545,7 +725,7 @@ response.setContentType("application/javascript;charset=utf-8");
       }
     }
     if (!fragmentCount(state.plan)) { hideResultCards(); return; }
-    validate().catch(function (e) { showErr(String(e)); });
+    validate();
   }
 
   function fragmentCount(plan) {
@@ -558,7 +738,7 @@ response.setContentType("application/javascript;charset=utf-8");
     return n;
   }
 
-  // 서버 gate 코드 → 마케터용 짧은. 알 수 없는 코드는 원문 유지.
+  // 서버 gate 코드 → 마케터용 이름. 알 수 없는 코드는 원문 유지.
   function _gateTitle(code) {
     var map = {
       PLAN: "\uC870\uAC74 \uC870\uD569",
@@ -591,23 +771,66 @@ response.setContentType("application/javascript;charset=utf-8");
         "<strong>" + esc(title) + "</strong> " + esc(detail);
       box.appendChild(el);
     }
-    $("cardGates").classList.remove("hidden");
+    _rmCls($("cardGates"), "hidden");
   }
 
-  function renderSql(sql) { $("sql").textContent = sql || ""; $("cardCode").classList.remove("hidden"); }
-  function renderSummaryHint(summary) { $("hint").className = "banner ok"; $("hint").textContent = summary || "Review conditions."; }
-  function hideFunnel() { $("cardFunnel").classList.add("hidden"); }
+  function renderSql(sql) {
+    $("sql").textContent = sql || "";
+    _rmCls($("cardCode"), "hidden");
+  }
+  function renderSummaryHint(summary) {
+    $("hint").className = "banner ok";
+    $("hint").textContent = summary || "Review conditions.";
+  }
+  function hideFunnel() { _addCls($("cardFunnel"), "hidden"); }
   function hideResultCards() {
     var ids = ["cardSlotResults", "cardChips", "cardFunnel", "cardGates", "cardCode"];
-    for (var i = 0; i < ids.length; i++) $(ids[i]).classList.add("hidden");
+    for (var i = 0; i < ids.length; i++) _addCls($(ids[i]), "hidden");
     $("btnReg").disabled = true;
     state.passed = false;
   }
-  function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
   function setBusy(b) { $("btnGen").disabled = b; $("nl").disabled = b; }
 
+  // IE 는 <details> 미지원 — #twDiagSum 클릭으로 #twDiagLog 토글 (#134)
+  function _wireDiagToggle() {
+    var sum = $("twDiagSum");
+    var log = $("twDiagLog");
+    if (!sum || !log) return;
+    if (!log.style.display) log.style.display = "none";
+    sum.onclick = function () {
+      log.style.display = (log.style.display === "none") ? "block" : "none";
+      return false;
+    };
+  }
+
   function init() {
+    _installOnError();
     try {
+      _wireDiagToggle();
+      try {
+        var dm0 = (typeof document.documentMode !== "undefined") ? String(document.documentMode) : "n/a(non-IE)";
+          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | v=138";
+        if (window.__TW_BOOT_MSG__) _diag(String(window.__TW_BOOT_MSG__));
+        _diag(okMsg);
+        /* 정상 시 부트 바 숨김 — 레이아웃을 가리지 않음 (#136) */
+        var boot = $("twBoot");
+        var tbl = $("twBootTable");
+        if (boot) {
+          boot.className = "";
+          boot.style.display = "none";
+        }
+        if (tbl) {
+          tbl.className = "";
+          tbl.style.display = "none";
+        }
+      } catch (eBoot) {}
+      _diag("UA=" + String(navigator.userAgent || ""));
+      _diag("documentMode=" + (typeof document.documentMode !== "undefined" ? String(document.documentMode) : "n/a(non-IE)"));
+      _diag("compatMode=" + String(document.compatMode || ""));
+      _diag("init enter");
       var login = window.__TW_LOGIN__ || "";
       var wfEl = $("wfInfo");
       if (wfEl) {
@@ -647,6 +870,7 @@ response.setContentType("application/javascript;charset=utf-8");
             h2.className = "banner err";
             h2.textContent = "loadSqlList: " + String(eL && eL.message ? eL.message : eL);
           }
+          _diag("loadSqlList throw: " + String(eL && eL.message ? eL.message : eL));
         }
       }, 0);
     } catch (eInit) {
@@ -657,6 +881,7 @@ response.setContentType("application/javascript;charset=utf-8");
           h.textContent = "Studio init: " + String(eInit && eInit.message ? eInit.message : eInit);
         }
       } catch (e2) {}
+      _diag("init throw: " + String(eInit && eInit.message ? eInit.message : eInit));
     }
   }
   if (document.readyState === "loading") {
@@ -670,4 +895,3 @@ response.setContentType("application/javascript;charset=utf-8");
     init();
   }
 })();
-

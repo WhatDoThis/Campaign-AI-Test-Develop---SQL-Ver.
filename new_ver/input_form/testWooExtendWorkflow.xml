@@ -1,7 +1,9 @@
 <!--
 woo:testWooExtendWorkflow (Workflow 확장 Input form · Test Woo AI Studio)
 ====================================================================
-Studio(urlViewer) + 하단 Apply. urlViewer 는 container height 로 공간 예약(#130 흰 화면).
+Studio(urlViewer) + 하단 Apply. urlViewer 는 container height 로 공간 예약(#130).
+#135~#137: Studio URL 캐시버스트 — FormatDate/GetDate 금지(XTK-170016).
+           _r 는 ShellPick out tick (서버 Date.getTime).
 SOAP: ShellProbe / ShellPick / ShellBind 만 (구 Inspect*/Bind* 호출 금지).
 
 액티비티 없을 때: Status 에 [안내] 문구, Activity 빈칸, Apply 시 check 오류.
@@ -10,6 +12,7 @@ SOAP: ShellProbe / ShellPick / ShellBind 만 (구 Inspect*/Bind* 호출 금지).
 =========
 schema testWooAiWorkflowUi → JS testWooWorkflowUi.js → 이 폼 (동시)
 콘솔 methods 에 ShellProbe 존재 확인 후 폼 저장.
+#137: 스키마+JS+폼 동시 (ShellPick out×3).
 -->
 <form _cs="Workflow Test Woo AI extend (woo)" entity-schema="xtk:workflow" entitySchema="xtk:form"
       img="xtk:form.png" label="Workflow Test Woo AI extend" name="testWooExtendWorkflow"
@@ -30,17 +33,35 @@ schema testWooAiWorkflowUi → JS testWooWorkflowUi.js → 이 폼 (동시)
           <param exprIn="@internalName" type="string"/>
           <param type="string" xpathOut="/tmp/@testWooAiSqlId"/>
           <param type="string" xpathOut="/tmp/@testWooAiSqlPickLabel"/>
+          <param type="string" xpathOut="/tmp/@twStudioNonce"/>
         </soapCall>
+        <!-- FormatDate/GetDate 사용 금지 — 보안존 XTK-170016. tick 은 ShellPick -->
+        <set expr="$(serverUrl) + '/woo/testWooAiStudio.jssp?workflowName=' + @internalName + '&amp;embed=1&amp;v=138&amp;_r=' + [/tmp/@twStudioNonce]"
+             xpath="/tmp/@twStudioUrl"/>
       </enter>
 
+      <!-- Viewer 밖: URL이 보이면 폼·SOAP·serverUrl 은 정상 -->
+      <input colspan="3" label="Studio URL" readOnly="true" xpath="/tmp/@twStudioUrl"/>
+      <input type="button" name="btnTwReloadStudio" label="Reload Studio" img="xtk:refresh.png">
+        <enter>
+          <soapCall name="ShellPick" service="woo:testWooAiWorkflowUi">
+            <param exprIn="@internalName" type="string"/>
+            <param type="string" xpathOut="/tmp/@testWooAiSqlId"/>
+            <param type="string" xpathOut="/tmp/@testWooAiSqlPickLabel"/>
+            <param type="string" xpathOut="/tmp/@twStudioNonce"/>
+          </soapCall>
+          <set expr="$(serverUrl) + '/woo/testWooAiStudio.jssp?workflowName=' + @internalName + '&amp;embed=1&amp;v=138&amp;_r=' + [/tmp/@twStudioNonce]"
+               xpath="/tmp/@twStudioUrl"/>
+        </enter>
+      </input>
+
       <!-- height: Apply/재오픈 후 urlViewer 가 0높이로 접히는 것 방지 (#130) -->
-      <container colspan="3" height="520" name="twStudioViewer" nolabel="true">
-        <input colspan="3" nolabel="true" sessionToken="true" type="urlViewer"
-               urlExpr="$(serverUrl) + '/woo/testWooAiStudio.jssp?workflowName=' + @internalName + '&amp;embed=1'"/>
+      <container colspan="3" height="560" name="twStudioViewer" nolabel="true">
+        <input colspan="3" nolabel="true" sessionToken="true" type="UrlViewer" urlMode="true"
+               urlExpr="[/tmp/@twStudioUrl]"/>
       </container>
 
       <static colspan="3" label="Apply to canvas" type="separator"/>
-      <!-- 액티비티 없음 / SQL 미선택 안내 (ShellProbe·ShellPick message) -->
       <input colspan="3" label="Status" readOnly="true" xpath="/tmp/@testWooAiStatus"/>
       <input colspan="3" label="Workflow" readOnly="true" xpath="@internalName"/>
       <input label="Activity" readOnly="true" xpath="/tmp/@testWooAiActivityName"/>
@@ -51,6 +72,7 @@ schema testWooAiWorkflowUi → JS testWooWorkflowUi.js → 이 폼 (동시)
             <param exprIn="@internalName" type="string"/>
             <param type="string" xpathOut="/tmp/@testWooAiSqlId"/>
             <param type="string" xpathOut="/tmp/@testWooAiSqlPickLabel"/>
+            <param type="string" xpathOut="/tmp/@twStudioNonce"/>
           </soapCall>
           <check expr="[/tmp/@testWooAiSqlId] != ''">
             <error>Studio SQL 이력에서 항목을 클릭하거나 등록한 뒤 Apply 하세요.</error>
@@ -75,6 +97,7 @@ schema testWooAiWorkflowUi → JS testWooWorkflowUi.js → 이 폼 (동시)
             <param exprIn="@internalName" type="string"/>
             <param type="string" xpathOut="/tmp/@testWooAiSqlId"/>
             <param type="string" xpathOut="/tmp/@testWooAiSqlPickLabel"/>
+            <param type="string" xpathOut="/tmp/@twStudioNonce"/>
           </soapCall>
           <set value="Applied. Save the workflow." xpath="/tmp/@testWooAiStatus"/>
         </enter>
