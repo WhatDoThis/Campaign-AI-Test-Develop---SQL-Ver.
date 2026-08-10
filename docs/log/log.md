@@ -1,6 +1,7 @@
 # Log
 
 ## Log Index
+141. 2026-08-10 폼 그리드 좌측공백 — Reload 버튼 colspan=3
 140. 2026-08-10 폼 enter 방어 — twStudioUrl 선행 set · _r 는 Reload/Apply만
 139. 2026-08-10 baseline — #134/#136/#138 레이아웃 철회 (#133/#135/#137 유지)
 138. 2026-08-10 embed UI 깨짐 수정 — table-cell 2열 · 입력창 왼쪽
@@ -143,6 +144,17 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+141. 2026-08-10 폼 그리드 좌측공백 — Reload 버튼 colspan=3
+Purpose: urlViewer 좌측 ~425px 공백 원인 확정(폼 그리드) · CSS 무수정 Changes:
+
+- (a) 화면 Studio URL 이 v=138+_r → ACC 폼은 #138, #139/#140 폼 미배포(리트머스)
+- (b) 좌측 공백 경계 x≈425 = Apply 행 컬럼2 시작선 → Studio CSS 아님, colcount=3 그리드
+- Reload 버튼에 colspan="3" 누락 → 다음 colspan=3(urlViewer)가 컬럼2부터 배치
+- (c) 흰화면 캐시헤더(no-store/Pragma) 가설은 별도 커밋(#142 예정)으로 분리 검증
+- 이번 커밋: 폼 XML + 주석만. JSSP/CSS 변경 없음
+
+Changed files: new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
 
 140. 2026-08-10 폼 enter 방어 — twStudioUrl 선행 set · _r 는 Reload/Apply만
 Purpose: SOAP 실패 시 urlViewer URL 미설정으로 Viewer 통째 소실 방지 Changes:

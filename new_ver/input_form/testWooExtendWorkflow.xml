@@ -18,6 +18,11 @@ Studio(urlViewer) + 하단 Apply. urlViewer 는 container height 로 공간 예�
 
 SOAP: ShellProbe / ShellPick / ShellBind 만 (구 Inspect*/Bind* 호출 금지).
 
+[그리드 #141]
+=========
+colcount=3 폼의 직계 컨트롤은 colspan 명시 필수. 미지정 시 다음 colspan=3
+요소가 컬럼2부터 배치되어 좌측 공백 발생 (#141).
+
 [Deploy]
 =========
 schema testWooAiWorkflowUi → JS testWooWorkflowUi.js → 이 폼 (동시, ShellPick out×3)
@@ -51,7 +56,7 @@ schema testWooAiWorkflowUi → JS testWooWorkflowUi.js → 이 폼 (동시, Shel
 
       <!-- 항상 렌더: 비면 enter 실패, 값 있는데 Viewer 희면 Studio 내부 -->
       <input colspan="3" label="Studio URL" readOnly="true" xpath="/tmp/@twStudioUrl"/>
-      <input type="button" name="btnTwReloadStudio" label="Reload Studio" img="xtk:refresh.png">
+      <input colspan="3" type="button" name="btnTwReloadStudio" label="Reload Studio" img="xtk:refresh.png">
         <enter>
           <soapCall name="ShellPick" service="woo:testWooAiWorkflowUi">
             <param exprIn="@internalName" type="string"/>
