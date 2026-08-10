@@ -1,6 +1,7 @@
 # Log
 
 ## Log Index
+140. 2026-08-10 폼 enter 방어 — twStudioUrl 선행 set · _r 는 Reload/Apply만
 139. 2026-08-10 baseline — #134/#136/#138 레이아웃 철회 (#133/#135/#137 유지)
 138. 2026-08-10 embed UI 깨짐 수정 — table-cell 2열 · 입력창 왼쪽
 137. 2026-08-10 폼 FormatDate 제거 — ShellPick tick 캐시버스트 (XTK-170016)
@@ -143,6 +144,16 @@
 
 ## Log Body
 
+140. 2026-08-10 폼 enter 방어 — twStudioUrl 선행 set · _r 는 Reload/Apply만
+Purpose: SOAP 실패 시 urlViewer URL 미설정으로 Viewer 통째 소실 방지 Changes:
+
+- 흰화면 원인 (b): enter 에서 twStudioUrl 미설정 → urlViewer 빈 페이지
+- SOAP 호출 전에 twStudioUrl 기본값(v=139, _r 없음) 선행 set
+- 캐시버스트: 매 진입 _r 금지 · Reload/Apply 직후에만 _r=tick
+- Studio URL 칸 판별 기준을 폼 주석에 명시 (비면 enter 실패 / 값+흰면 Studio)
+
+Changed files: new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
+
 139. 2026-08-10 baseline — #134/#136/#138 레이아웃 철회 (#133/#135/#137 유지)
 Purpose: 추측 레이아웃 누적 악화 중단 · 검증 가능 baseline 확보 Changes:
 
@@ -150,9 +161,9 @@ Purpose: 추측 레이아웃 누적 악화 중단 · 검증 가능 baseline 확�
 - 유지: #133 XHR/ES5 · #135 TW-BOOT · #137 FormatDate 금지·ShellPick tick
 - 철회: #134 세로스택 · #136 좌우 재도입 실험 · #138 table-cell+composer-in-main
 - embed CSS 를 #131 float+has-sql-side 로 복구 · composer 를 .body 밖으로
-- 진단 패널 embed 기본 펼침 + location.href / TW-BOOT reached 기록 (step4)
-- 흰화면 원인 2갈래 명시: (a) IE API=#133 해결 (b) enter 시 twStudioUrl 미설정=폼(다음 단계)
-- 폼 XML 은 이 커밋에서 미변경 (원인 분리)
+- 진단 패널 embed 기본 펼침 + location.href / TW-BOOT reached 기록
+- #134·#136·#138 철회 사유: 추측 기반 반복 수정으로 상호 충돌·누적 악화
+- 폼 XML 미포함 (원인 분리 — #140)
 
 Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
 
