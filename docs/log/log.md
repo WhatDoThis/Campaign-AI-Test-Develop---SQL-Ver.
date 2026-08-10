@@ -1,6 +1,7 @@
 # Log
 
 ## Log Index
+139. 2026-08-10 baseline — #134/#136/#138 레이아웃 철회 (#133/#135/#137 유지)
 138. 2026-08-10 embed UI 깨짐 수정 — table-cell 2열 · 입력창 왼쪽
 137. 2026-08-10 폼 FormatDate 제거 — ShellPick tick 캐시버스트 (XTK-170016)
 136. 2026-08-10 embed 레이아웃 복원 — 좌 AI / 우 SQL 이력
@@ -141,6 +142,19 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+139. 2026-08-10 baseline — #134/#136/#138 레이아웃 철회 (#133/#135/#137 유지)
+Purpose: 추측 레이아웃 누적 악화 중단 · 검증 가능 baseline 확보 Changes:
+
+- git: #133~#138 이 d7715db 단일 squash → #134/#136/#138 단독 revert 불가
+- 유지: #133 XHR/ES5 · #135 TW-BOOT · #137 FormatDate 금지·ShellPick tick
+- 철회: #134 세로스택 · #136 좌우 재도입 실험 · #138 table-cell+composer-in-main
+- embed CSS 를 #131 float+has-sql-side 로 복구 · composer 를 .body 밖으로
+- 진단 패널 embed 기본 펼침 + location.href / TW-BOOT reached 기록 (step4)
+- 흰화면 원인 2갈래 명시: (a) IE API=#133 해결 (b) enter 시 twStudioUrl 미설정=폼(다음 단계)
+- 폼 XML 은 이 커밋에서 미변경 (원인 분리)
+
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
 
 138. 2026-08-10 embed UI 깨짐 수정 — table-cell 2열 · 입력창 왼쪽
 Purpose: float+min-height 로 중칸 공백·이력 우측 둥둥·입력창 유실 Changes:

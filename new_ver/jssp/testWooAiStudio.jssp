@@ -8,8 +8,9 @@
  * SQL 이력 .side: 기본 380px · embed float 36% (#131 table/flex 접힘 회피).
  * ?embed=1 이면 콘솔 확장 폼 urlViewer 용 크롬리스 레이아웃.
  * urlViewer=MSHTML(IE): X-UA-Compatible IE=edge · StudioJs XHR/ES5 (#133).
- * #134~#135: XHR·TW-BOOT·폼 캐시버스트(흰화면).
- * #136~#138: embed 좌AI/우이력. #138 table-cell 2열 + composer를 main 안으로(float 빈틈 제거).
+ * #133: XHR/ES5 (유지). #135: TW-BOOT (유지). #137: FormatDate 금지·ShellPick tick (유지).
+ * baseline(#139): #134·#136·#138 레이아웃 실험 철회 — embed 는 #131 float+has-sql-side.
+ * (d7715db 에 #133~#138 이 squash 되어 git revert 분리 불가 → 레이아웃만 수기 복구)
  *
  * [ACC encoding]
  * UI 한글은 HTML &#x…; 엔티티.
@@ -196,11 +197,12 @@ if (!_login) {
     .alt-chips{display:block;margin-top:8px;}
     .alt-chip{display:inline-block;font-size:.78rem;padding:4px 10px;margin:0 6px 6px 0;border-radius:999px;border:1px solid #e2e8f0;cursor:pointer;background:#f8fafc;}
     /*
-     * embed=1 (#138): float 금지(빈 중칸·이력 둥둥). table-cell 2열.
-     * 왼쪽 main(안내·결과·입력) ~64% / 오른쪽 side(이력) ~36%.
+     * baseline embed (#139 = #131 float 복구). #134 세로스택·#138 table-cell 철회.
+     * 이력: float:right 36% + has-sql-side. composer 는 .body 밖 clear:both.
+     * (레이아웃 재작성은 사용자 확인 후 3단계에서 한 번만)
      */
-    body.embed{background:#fff;height:auto;min-height:0;overflow:auto;margin:0;padding:0;}
-    body.embed .app{display:block;max-width:none;width:auto;height:auto;min-height:0;border:none;background:#fff;}
+    body.embed{background:#fff;height:auto;min-height:480px;overflow:auto;margin:0;padding:0;}
+    body.embed .app{display:block;max-width:none;width:auto;height:auto;min-height:480px;border:none;background:#fff;}
     body.embed .header{display:block;padding:4px 8px;border-bottom:1px solid #e2e8f0;}
     body.embed .header h1{font-size:.82rem;display:inline;margin:0;color:#0f172a;}
     body.embed .header a.open-browser{
@@ -209,42 +211,35 @@ if (!_login) {
       padding:1px 6px;background:#eff6ff;vertical-align:middle;
     }
     body.embed .header .wf{font-size:.65rem;display:block;margin-top:1px;color:#64748b;}
-    body.embed .body{
-      display:table;width:100%;table-layout:fixed;border-collapse:collapse;
-      min-height:0;overflow:visible;
-    }
-    body.embed .main{
-      display:table-cell;width:100%;vertical-align:top;
-      margin:0;padding:8px 10px;overflow:visible;float:none;min-height:0;
-    }
-    body.embed.has-sql-side .main{width:64%;}
+    body.embed .body{display:block;width:100%;min-height:320px;overflow:auto;zoom:1;}
+    body.embed .main{display:block;margin-right:0;padding:6px 8px;overflow:auto;}
+    body.embed.has-sql-side .main{margin-right:38%;}
     body.embed .side{
-      display:none;float:none;width:36%;vertical-align:top;box-sizing:border-box;
-      border-left:1px solid #e2e8f0;border-top:none;overflow:auto;padding:8px;background:#f8fafc;
-      min-height:0;max-height:420px;
+      display:none;float:right;width:36%;box-sizing:border-box;
+      border-left:1px solid #e2e8f0;overflow-y:auto;padding:8px;background:#f8fafc;min-height:200px;
     }
-    body.embed.has-sql-side .side{display:table-cell;}
+    body.embed.has-sql-side .side{display:block;}
     body.embed .side h2{font-size:.72rem;margin:0 0 6px;color:#64748b;}
     body.embed .side-empty{font-size:.78rem;color:#64748b;}
     body.embed .sql-item{padding:6px 44px 6px 6px;margin-bottom:6px;font-size:.78rem;border-radius:6px;}
     body.embed .sql-item .meta{font-size:.7rem;}
     body.embed .sql-item button.sql-del{font-size:.65rem;padding:2px 6px;top:6px;right:4px;}
-    body.embed .composer{display:block;clear:none;margin-top:10px;padding:8px 0 0 0;border-top:1px solid #e2e8f0;}
+    body.embed .composer{display:block;clear:both;padding:6px 8px;border-top:1px solid #e2e8f0;}
     body.embed textarea#nl{
       width:100%;display:block;box-sizing:border-box;
-      min-height:52px;max-height:100px;padding:8px 12px;border-radius:10px;font-size:.88rem;
+      min-height:36px;max-height:72px;padding:8px 10px;border-radius:10px;font-size:.85rem;
     }
     body.embed .actions{display:block;margin-top:6px;}
-    body.embed .btn{padding:7px 14px;font-size:.85rem;border-radius:6px;margin-right:6px;}
-    body.embed #hint{font-size:.78rem;padding:8px 10px;line-height:1.4;color:#047857;}
-    body.embed .card{padding:8px 10px;border-radius:8px;margin:0 0 8px 0;}
-    body.embed .card h2{font-size:.72rem;margin:0 0 4px;color:#64748b;}
+    body.embed .btn{padding:6px 12px;font-size:.85rem;border-radius:6px;}
+    body.embed #hint{font-size:.72rem;padding:4px 8px;line-height:1.35;color:#047857;}
+    body.embed .card{padding:6px 8px;border-radius:8px;margin:0 0 8px 0;}
+    body.embed .card h2{font-size:.7rem;margin:0 0 4px;color:#64748b;}
     body.embed .chip{font-size:.72rem;padding:3px 8px;}
     body.embed .gates{font-size:.72rem;}
-    body.embed pre.code{font-size:.7rem;padding:8px;max-height:140px;}
+    body.embed pre.code{font-size:.7rem;padding:8px;max-height:120px;}
     body.embed #cardFunnel{display:none !important;}
     body.embed #twDiag{display:block;clear:both;font-size:.68rem;padding:4px 8px 8px;}
-    body.embed #twDiagLog{max-height:100px;}
+    body.embed #twDiagLog{display:block;max-height:140px;}
   </style>
   <script type="text/javascript">
     window.__TW_LOGIN__ = '<%= _twEscJs(_login) %>';
@@ -285,7 +280,7 @@ if (!_login) {
   <!-- 오류 시에만 표시(#136). 정상 시 숨기고 진단 패널에만 기록 -->
   <table id="twBootTable" width="100%" bgcolor="#FFFF00" border="0" cellspacing="0" cellpadding="3" class="tw-boot-show">
     <tr><td>
-      <font id="twBootFont" face="Tahoma" size="2" color="#000000">TW-BOOT v=138 | loading&#x2026;</font>
+      <font id="twBootFont" face="Tahoma" size="2" color="#000000">TW-BOOT v=139 | loading&#x2026;</font>
     </td></tr>
   </table>
   <div id="twBoot" class="tw-boot-show">Studio boot&#x2026;</div>
@@ -304,7 +299,7 @@ if (!_login) {
         r = amp < 0 ? rest : rest.substring(0, amp);
       }
     } catch (eR) {}
-    var msg = "TW-BOOT v=138 | documentMode=" + dm + " | embed=" + emb + " | _r=" + (r || "-");
+    var msg = "TW-BOOT v=139 | documentMode=" + dm + " | embed=" + emb + " | _r=" + (r || "-");
     var font = document.getElementById("twBootFont");
     if (font) font.innerHTML = msg;
     var el = document.getElementById("twBoot");
@@ -343,31 +338,30 @@ if (!_login) {
       </div>
 
       <div class="banner err hidden" id="err"></div>
-
-      <!-- composer 는 왼쪽 AI 열 안 (#138). float clear 로 아래로 밀리지 않음 -->
-      <div class="composer">
-        <textarea id="nl" rows="2" placeholder="&#xC870;&#xAC74;&#xC744; &#xB9D0;&#xB85C; &#xC785;&#xB825;&#xD558;&#xC138;&#xC694;&#x2026;"></textarea>
-        <div class="actions">
-          <button type="button" class="btn" id="btnGen">&#xC0DD;&#xC131;</button>
-          <button type="button" class="btn btn-outline" id="btnReg" disabled>&#xB4F1;&#xB85D;</button>
-        </div>
-      </div>
     </div>
-    <div class="side" id="sideSql">
+    <div class="side" id="sideSql" style="display:none">
       <h2>&#xC774; WF SQL &#xC774;&#xB825;</h2>
       <div class="side-empty" id="sqlListEmpty">&#xB4F1;&#xB85D;&#xB41C; SQL &#xC774; &#xC5C6;&#xC2B5;&#xB2C8;&#xB2E4;. &#xC0DD;&#xC131; &#xD6C4; &#xB4F1;&#xB85D;&#xD558;&#xBA74; &#xC5EC;&#xAE30; &#xBAA8;&#xC785;&#xB2C8;&#xB2E4;.</div>
       <div id="sqlList"></div>
     </div>
     </div>
 
+    <div class="composer">
+      <textarea id="nl" rows="1" placeholder="&#xC870;&#xAC74;&#xC744; &#xB9D0;&#xB85C; &#xC785;&#xB825;&#xD558;&#xC138;&#xC694;&#x2026;"></textarea>
+      <div class="actions">
+        <button type="button" class="btn" id="btnGen">&#xC0DD;&#xC131;</button>
+        <button type="button" class="btn btn-outline" id="btnReg" disabled>&#xB4F1;&#xB85D;</button>
+      </div>
+    </div>
+    <!-- 한시적: embed 진단 기본 펼침 (#139 step4) — 해결 후 접힘으로 복귀 -->
     <div id="twDiag">
-      <div id="twDiagSum" style="cursor:pointer;font-weight:600;margin-bottom:4px;">&#xC9C4;&#xB2E8; (IE / urlViewer) &#x2014; &#xD074;&#xB9AD;&#xD558;&#xC5EC; &#xD3BC;&#xCE58;&#xAE30;</div>
-      <div id="twDiagLog" style="display:none;"></div>
+      <div id="twDiagSum" style="cursor:pointer;font-weight:600;margin-bottom:4px;">&#xC9C4;&#xB2E8; (IE / urlViewer) &#x2014; &#xD074;&#xB9AD;&#xD558;&#xC5EC; &#xC811;&#xAE30;</div>
+      <div id="twDiagLog" style="display:block;"></div>
     </div>
   </div>
 
-  <!-- v=138: table-cell 2열 · 입력창을 왼쪽 main 안 -->
-  <script type="text/javascript" src="/woo/testWooAiStudioJs.jssp?v=138"></script>
+  <!-- v=139 baseline: #134/#136/#138 레이아웃 철회 · #133 XHR 유지 -->
+  <script type="text/javascript" src="/woo/testWooAiStudioJs.jssp?v=139"></script>
 </body>
 </html>
 <%

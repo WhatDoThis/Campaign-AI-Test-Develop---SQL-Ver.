@@ -6,8 +6,7 @@
  * 인증은 Cookie + 서버 logonWithToken() — X-Security-Token 헤더 미사용(ACC 미해석).
  * ACC urlViewer = MSHTML(IE) — fetch/Promise/finally/classList/confirm 금지 (#133).
  * #134: 진단 패널은 details 대신 div 토글 (IE details 미지원).
- * #136: 정상 부팅 시 TW-BOOT 숨김 · 메시지는 진단 패널에 기록.
- * #138: _showSqlSide 는 인라인 display 대신 has-sql-side 클래스(CSS table-cell).
+ * #135: TW-BOOT. #139 baseline: #134/#136/#138 레이아웃 철회 · 진단 기본 펼침·href 기록.
  *
  * [Main Functions]
  * ===========
@@ -452,14 +451,13 @@
   }
 
   function _showSqlSide(on) {
-    /* 인라인 display 금지 — embed 는 CSS table-cell, 비embed 는 block (#138) */
     try {
       if (on) _addCls(document.body, "has-sql-side");
       else _rmCls(document.body, "has-sql-side");
     } catch (eCls) {}
     var side = $("sideSql");
     if (!side) return;
-    try { side.style.display = ""; } catch (eDisp) {}
+    side.style.display = on ? "block" : "none";
   }
 
   function _clearDelPending() {
@@ -784,12 +782,13 @@
   }
   function setBusy(b) { $("btnGen").disabled = b; $("nl").disabled = b; }
 
-  // IE 는 <details> 미지원 — #twDiagSum 클릭으로 #twDiagLog 토글 (#134)
+  // IE 는 <details> 미지원 — #twDiagSum 클릭 토글. embed 한시적 기본 펼침 (#139)
   function _wireDiagToggle() {
     var sum = $("twDiagSum");
     var log = $("twDiagLog");
     if (!sum || !log) return;
-    if (!log.style.display) log.style.display = "none";
+    if (EMBED) log.style.display = "block";
+    else if (!log.style.display) log.style.display = "none";
     sum.onclick = function () {
       log.style.display = (log.style.display === "none") ? "block" : "none";
       return false;
@@ -802,10 +801,13 @@
       _wireDiagToggle();
       try {
         var dm0 = (typeof document.documentMode !== "undefined") ? String(document.documentMode) : "n/a(non-IE)";
-          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | v=138";
-        if (window.__TW_BOOT_MSG__) _diag(String(window.__TW_BOOT_MSG__));
+          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | v=139";
+        var bootReached = !!(window.__TW_BOOT_MSG__);
+        if (bootReached) _diag(String(window.__TW_BOOT_MSG__));
         _diag(okMsg);
-        /* 정상 시 부트 바 숨김 — 레이아웃을 가리지 않음 (#136) */
+        _diag("TW-BOOT reached=" + (bootReached ? "yes" : "no"));
+        _diag("location.href=" + String(location.href || ""));
+        /* 정상 시 부트 바 숨김 */
         var boot = $("twBoot");
         var tbl = $("twBootTable");
         if (boot) {
