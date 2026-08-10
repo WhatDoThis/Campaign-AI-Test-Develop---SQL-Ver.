@@ -9,11 +9,13 @@ response.setContentType("application/json;charset=utf-8");
  * [Endpoint]
  * =======================
  * POST /woo/testWooAiValidate.jssp
- *   action=validate|count|catalog|listSql|getSql
+ *   action=validate|count|catalog|listSql|getSql|deleteSql|setBindPick|getBindPick
  *
  * [Dependencies]
  * =========
  * - woo:testWooCommon.js (+ Config/Fragments/Compiler/Gates/Repository by action)
+ * - setBindPick: Studio SQL 클릭/등록 → Option 에 선택 id 저장 (폼 Apply 가 읽음)
+ * - deleteSql: CSRF + repo.deleteAiSql (이력 행 삭제)
  */
 try {
   TW_RESPONSE = response;
@@ -37,11 +39,73 @@ try {
     _runListSql(p);
   } else if (action === "getsql") {
     _runGetSql(p);
+  } else if (action === "setbindpick") {
+    _runSetBindPick(p);
+  } else if (action === "getbindpick") {
+    _runGetBindPick(p);
+  } else if (action === "deletesql") {
+    _runDeleteSql(p);
   } else {
-    throw new Error("unknown action: " + action + " (validate|count|catalog|listSql|getSql)");
+    throw new Error(
+      "unknown action: " + action +
+      " (validate|count|catalog|listSql|getSql|deleteSql|setBindPick|getBindPick)"
+    );
   }
 } catch (e) {
   handleApiError(e);
+}
+
+function _twBindPickOptionName() {
+  var login = "anon";
+  try {
+    if (application.operator && application.operator.login) {
+      login = String(application.operator.login);
+    }
+  } catch (eLogin) {}
+  return "testWooAiBindPick_" + login;
+}
+
+function _runSetBindPick(p) {
+  var wf = String(p.workflow_name || p.workflowName || "").replace(/^\s+|\s+$/g, "");
+  var id = String(p.ai_sql_id != null ? p.ai_sql_id : (p.id != null ? p.id : "")).replace(/^\s+|\s+$/g, "");
+  if (!wf) throw new Error("workflow_name missing");
+  if (!id || id === "0" || !/^[0-9]+$/.test(id)) throw new Error("ai_sql_id missing");
+  var key = _twBindPickOptionName();
+  try {
+    setOption(key, wf + "\t" + id);
+  } catch (eSet) {
+    throw new Error("setBindPick failed: " + eSet);
+  }
+  jsonOut({ ok: true, workflow_name: wf, ai_sql_id: id, option: key });
+}
+
+function _runGetBindPick(p) {
+  var wf = String(p.workflow_name || p.workflowName || "").replace(/^\s+|\s+$/g, "");
+  var key = _twBindPickOptionName();
+  var raw = "";
+  try {
+    raw = String(getOption(key) || "");
+  } catch (eGet) {
+    raw = "";
+  }
+  var id = "";
+  var storedWf = "";
+  if (raw) {
+    var tab = raw.indexOf("\t");
+    if (tab >= 0) {
+      storedWf = raw.substring(0, tab);
+      id = raw.substring(tab + 1);
+    }
+  }
+  if (wf && storedWf && storedWf !== wf) {
+    id = "";
+  }
+  jsonOut({
+    ok: true,
+    workflow_name: wf || storedWf,
+    ai_sql_id: id,
+    hasPick: id !== ""
+  });
 }
 
 function _runCatalog() {
@@ -95,6 +159,12 @@ function _runListSql(p) {
   var wf = String(p.workflow_name || p.workflowName || "").replace(/^\s+|\s+$/g, "");
   if (!wf) throw new Error("workflow_name missing");
   loadLibrary("woo:testWooRepository.js");
+  if (!testWoo.repo || typeof testWoo.repo.listAiSqlByWorkflow !== "function") {
+    throw new Error(
+      "testWoo.repo.listAiSqlByWorkflow missing — redeploy JS Code woo:testWooRepository.js " +
+      "(uses xtk.queryDef; local new_ver already has the function)"
+    );
+  }
   var lim = p.limit != null ? Number(p.limit) : 50;
   jsonOut({
     ok: true,
@@ -107,11 +177,30 @@ function _runGetSql(p) {
   var id = p.ai_sql_id != null ? p.ai_sql_id : p.id;
   if (id == null || id === "") throw new Error("ai_sql_id missing");
   loadLibrary("woo:testWooRepository.js");
+  if (!testWoo.repo || typeof testWoo.repo.getAiSqlById !== "function") {
+    throw new Error(
+      "testWoo.repo.getAiSqlById missing — redeploy JS Code woo:testWooRepository.js"
+    );
+  }
   var item = testWoo.repo.getAiSqlById(id);
   if (!item) {
     jsonOut({ ok: false, error: "ai_sql not found", ai_sql_id: id });
     return;
   }
   jsonOut({ ok: true, item: item });
+}
+
+function _runDeleteSql(p) {
+  requireStudioCsrf(p);
+  var id = p.ai_sql_id != null ? p.ai_sql_id : p.id;
+  if (id == null || id === "") throw new Error("ai_sql_id missing");
+  loadLibrary("woo:testWooRepository.js");
+  if (!testWoo.repo || typeof testWoo.repo.deleteAiSql !== "function") {
+    throw new Error(
+      "testWoo.repo.deleteAiSql missing — redeploy JS Code woo:testWooRepository.js"
+    );
+  }
+  testWoo.repo.deleteAiSql(id);
+  jsonOut({ ok: true, deleted: Number(id) });
 }
 %>

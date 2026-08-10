@@ -53,8 +53,11 @@ Required for LLM: `testWooAiLlmApiKey`, `testWooAiLlmModel`, `testWooAiLlmEndpoi
 
 Other tuning: `testWooEnv.js`. Data/seed: [acc-data-access.md](acc-data-access.md).
 
-## Custom activity runtime
+## Custom activity runtime (B)
 
-Property `ai_sql-id` → load `woo:testWooAiSql.@sql_query` → execute → transition `tableName/schema/recCount`.
+WF element `ibankSqlDM` (legacy palette xpath may still be `customActivity`)  
+→ child `ai-sql-id` → load `woo:testWooAiSql.@sql_query` → execute → transition `tableName/schema/recCount`.
+
+Do **not** write SQL into `<script>`. OOTB SQL Data Management is not a bind target.
 
 See `new_ver/workflow/testWooSampleCustomActivityContract.xml`.

@@ -9,9 +9,9 @@ try {
   TW_DOCUMENT = document;
   loadLibrary("woo:testWooCommon.js");
   requireRight("testWooAiSqlRegister");
-  requireStudioCsrf();
 
   var p = readPayload();
+  requireStudioCsrf(p);
   if (!p.plan) throw new Error("plan missing");
 
   loadLibrary("woo:testWooConfig.js");

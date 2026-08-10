@@ -1,23 +1,24 @@
 <!--
 woo:testWooAiWorkflowUi (Test Woo AI Workflow UI · SOAP method host)
 ====================================================================
-WF 캔버스 확장 폼에서 Studio URL/iframe · CA 검사 · ai_sql-id 바인딩.
-DB 테이블 없음(sqltable 없음).
+확장 폼 ↔ Studio. 구 메서드명(InspectAiTarget/BindAiSqlId/…) 은 시그니처 오염이
+반복되어 폐기하고 Shell* 만 사용한다 (SOP-330003 / Too many arguments 회피).
 
 [Main Functions]
 ===========
-- BuildStudioUrl(workflowName) → studioUrl, studioFrameHtml
-- InspectAiTarget(activities) → hasActivity, activityCount, namesCsv, message
-- BindAiSqlId(activities, aiSqlId, activityName) → activities (ai-sql-id only)
+- ShellProbe(activities) → hasActivity, message, activityName  (out×3)
+- ShellPick(workflowName) → aiSqlId, pickLabel
+- ShellBind(activities, aiSqlId, workflowName) → activitiesOut  (첫 AI 액티비티)
 
-[Endpoints/Classes/Functions]
-=======================
-- SOAP static methods (library=woo:testWooWorkflowUi.js)
+[Deploy — 반드시 동시]
+===========
+1) 이 스키마  2) testWooWorkflowUi.js  3) testWooExtendWorkflow 폼
+콘솔에서 methods 에 ShellProbe/ShellPick/ShellBind 만 보이는지 확인.
 
 [Dependencies]
 =========
-- XtkOption: testWooAiStudioBaseUrl
-- 계약: customActivity / ai-sql-id (testWooSampleCustomActivityContract.xml)
+- XtkOption: testWooAiBindPick_<login>
+- 계약: ibankSqlDM / ai-sql-id
 -->
 <srcSchema _cs="Test Woo AI Workflow UI (woo)" name="testWooAiWorkflowUi" namespace="woo"
            label="Test Woo AI Workflow UI" labelSingular="Test Woo AI Workflow UI"
@@ -25,45 +26,49 @@ DB 테이블 없음(sqltable 없음).
   <element label="Test Woo AI Workflow UI" name="testWooAiWorkflowUi"/>
 
   <methods>
-    <method name="BuildStudioUrl" static="true" library="woo:testWooWorkflowUi.js"
-            label="Build Test Woo AI Studio URL">
+    <method name="ShellProbe" static="true" library="woo:testWooWorkflowUi.js"
+            label="Probe first AI extract activity">
       <help>
-        Builds Studio URL with embed=1 and iframe HTML for the extend form (console WebView).
-        Host from option testWooAiStudioBaseUrl.
+        Scans activities for ibankSqlDM (+ legacy customActivity).
+        Returns first @name. Empty canvas → hasActivity=false + guidance message.
       </help>
       <parameters>
-        <param desc="Workflow internal name (@internalName)" name="workflowName" type="string" inout="in"/>
-        <param desc="Studio URL" name="studioUrl" type="string" inout="out"/>
-        <param desc="iframe HTML shell" name="studioFrameHtml" type="string" inout="out"/>
+        <param name="activities" type="DOMElement" inout="in"
+               desc="Workflow activities element"/>
+        <param name="hasActivity" type="string" inout="out"
+               desc="true|false"/>
+        <param name="message" type="string" inout="out"
+               desc="Status / empty-canvas guidance"/>
+        <param name="activityName" type="string" inout="out"
+               desc="First AI activity @name or empty"/>
       </parameters>
     </method>
 
-    <method name="InspectAiTarget" static="true" library="woo:testWooWorkflowUi.js"
-            label="Inspect Test Woo AI Target activity">
-      <help>
-        Scans current form activities DOM for customActivity (not DB snapshot).
-      </help>
+    <method name="ShellPick" static="true" library="woo:testWooWorkflowUi.js"
+            label="Get Studio bind-pick ai_sql_id">
+      <help>Reads Option testWooAiBindPick_&lt;login&gt;.</help>
       <parameters>
-        <param desc="Workflow activities element" name="activities" type="DOMElement" inout="in"/>
-        <!-- form soapCall: use string outs — client maps long↔int and mismatches (XML SOAP type error) -->
-        <param desc="true|false if customActivity present" name="hasActivity" type="string" inout="out"/>
-        <param desc="Count of customActivity nodes (decimal string)" name="activityCount" type="string" inout="out"/>
-        <param desc="Comma-separated @name list" name="namesCsv" type="string" inout="out"/>
-        <param desc="Operator-facing status message" name="message" type="string" inout="out"/>
+        <param name="workflowName" type="string" inout="in"
+               desc="Workflow @internalName"/>
+        <param name="aiSqlId" type="string" inout="out"
+               desc="Selected ai_sql_id or empty"/>
+        <param name="pickLabel" type="string" inout="out"
+               desc="Human label"/>
       </parameters>
     </method>
 
-    <method name="BindAiSqlId" static="true" library="woo:testWooWorkflowUi.js"
-            label="Bind ai_sql_id to customActivity">
-      <help>
-        Writes ai-sql-id child on customActivity. Does not inject SQL into WF XML.
-        Empty activityName binds the only instance; required when multiple.
-      </help>
+    <method name="ShellBind" static="true" library="woo:testWooWorkflowUi.js"
+            label="Bind ai_sql_id to first AI activity">
+      <help>Writes ai-sql-id on first ibankSqlDM. No activityName argument.</help>
       <parameters>
-        <param desc="Workflow activities element" name="activities" type="DOMElement" inout="in"/>
-        <param desc="Registered ai_sql_id" name="aiSqlId" type="string" inout="in"/>
-        <param desc="customActivity @name (optional if only one)" name="activityName" type="string" inout="in"/>
-        <param desc="Updated activities" name="activitiesOut" type="DOMElement" inout="out"/>
+        <param name="activities" type="DOMElement" inout="in"
+               desc="Workflow activities element"/>
+        <param name="aiSqlId" type="string" inout="in"
+               desc="ai_sql_id (or empty to use pick)"/>
+        <param name="workflowName" type="string" inout="in"
+               desc="Workflow @internalName for pick"/>
+        <param name="activitiesOut" type="DOMElement" inout="out"
+               desc="Updated activities"/>
       </parameters>
     </method>
   </methods>

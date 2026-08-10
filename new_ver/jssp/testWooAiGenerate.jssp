@@ -2,6 +2,7 @@
 response.setContentType("application/json;charset=utf-8");
 /*
  * testWooAiGenerate.jssp (Pass0→StageA→Pass1 → SQL / Foundry 큐 분기)
+ * queued 안내 message 유니코드: 질문=\uC9C8\uBB38, 재시도=\uC7AC\uC2DC\uB3C4 (#127)
  */
 try {
   TW_RESPONSE = response;
@@ -43,7 +44,7 @@ try {
         passed: false,
         status: "queued",
         queueId: queueId,
-        message: "\uBC31\uADF8\uB77C\uC6B4\uB4DC\uC5D0\uC11C \uC870\uAC74 fragment \uC0DD\uC131\uC744 \uC2DC\uC791\uD588\uC2B5\uB2C8\uB2E4. \uC774 \uD654\uBA74 \uC0C1\uD0DC\uAC00 \uC790\uB3D9 \uAC31\uC2E0\uB429\uB2C8\uB2E4. \uC644\uB8CC \uD6C4 \uC6B4\uC601 \uB2F4\uB2F9\uC790 \uC2B9\uC778\uC774 \uD544\uC694\uD558\uBA70, \uC2B9\uC778 \uD6C4 \uAC19\uC740 \uC9C8\uEBAC\uC744 \uB2E4\uC2DC [\uC0DD\uC131]\uD574 \uC8FC\uC138\uC694. (\uC790\uB3D9 \uC7AC\uC2DC\uD050 \uC5C6\uC74C)",
+        message: "\uBC31\uADF8\uB77C\uC6B4\uB4DC\uC5D0\uC11C \uC870\uAC74 fragment \uC0DD\uC131\uC744 \uC2DC\uC791\uD588\uC2B5\uB2C8\uB2E4. \uC774 \uD654\uBA74 \uC0C1\uD0DC\uAC00 \uC790\uB3D9 \uAC31\uC2E0\uB429\uB2C8\uB2E4. \uC644\uB8CC \uD6C4 \uC6B4\uC601 \uB2F4\uB2F9\uC790 \uC2B9\uC778\uC774 \uD544\uC694\uD558\uBA70, \uC2B9\uC778 \uD6C4 \uAC19\uC740 \uC9C8\uBB38\uC744 \uB2E4\uC2DC [\uC0DD\uC131]\uD574 \uC8FC\uC138\uC694. (\uC790\uB3D9 \uC7AC\uC2DC\uB3C4 \uC5C6\uC74C)",
         missingSlots: unmatched,
         unmatched: unmatched,
         reviewUrl: "/woo/testWooAiFragmentReview.jssp"

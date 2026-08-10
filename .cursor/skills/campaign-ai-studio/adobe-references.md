@@ -58,4 +58,5 @@ Project options: `testWooAiLlmProvider`, `testWooAiLlmEndpoint`, `testWooAiLlmMo
 | Factory form edit (no inherit) | https://experienceleague.adobe.com/en/docs/campaign-classic/using/configuring-campaign-classic/input-forms/editing-forms |
 | SOAP methods in JS | https://experienceleague.adobe.com/en/docs/campaign-classic/using/configuring-campaign-classic/api/implementing-soap-methods |
 | Form soapCall | https://experienceleague.adobe.com/en/docs/campaign-classic/using/configuring-campaign-classic/input-forms/form-structure |
+| SOAP (WF shell) | Only `ShellProbe` / `ShellPick` / `ShellBind` — never old Inspect/Bind names |
 | PRD section 3.1 | `docs/main/PRD.md` — input `<script>`, output transition vars |

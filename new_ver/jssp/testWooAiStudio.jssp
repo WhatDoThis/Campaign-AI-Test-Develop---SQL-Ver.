@@ -5,7 +5,9 @@
  * 미인증 시 하드 redirect 대신 안내 페이지(target 미동작 사례 대비).
  * 토큰 바인딩은 127.0.0.1로 기록되어 보안 존을 우회함 — API는 AllowedCidr로 보완.
  * ?workflowName= 있으면 우측 WF별 SQL 이력 패널(섹션 7b).
- * ?embed=1 이면 콘솔 확장 폼 iframe 용 크롬리스 레이아웃.
+ * SQL 이력 .side: 기본 380px · embed float 36% (#131 table/flex 접힘 회피).
+ * ?embed=1 이면 콘솔 확장 폼 urlViewer 용 크롬리스 레이아웃.
+ * StudioJs: URLSearchParams/forEach 금지 · ?v= 캐시무력 · window.onerror 부트 표시.
  *
  * [ACC encoding]
  * UI 한글은 HTML &#x…; 엔티티.
@@ -126,12 +128,15 @@ if (!_login) {
     .header h1{font-size:1rem;margin:0;} .header .wf{font-size:.75rem;color:var(--muted);margin-left:auto;}
     .body{display:flex;flex:1;min-height:0;}
     .main{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:16px;}
-    .side{width:300px;flex-shrink:0;border-left:1px solid var(--border);overflow-y:auto;padding:12px;background:#f8fafc;}
+    .side{width:380px;flex-shrink:0;border-left:1px solid var(--border);overflow-y:auto;padding:12px;background:#f8fafc;}
     .side.hidden{display:none;}
     .side h2{font-size:.78rem;margin:0 0 10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;}
-    .sql-item{border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px;cursor:pointer;background:#fff;font-size:.82rem;}
+    .sql-item{position:relative;border:1px solid var(--border);border-radius:10px;padding:10px 48px 10px 10px;margin-bottom:8px;cursor:pointer;background:#fff;font-size:.82rem;}
     .sql-item:hover,.sql-item.active{border-color:var(--accent);background:#eff6ff;}
     .sql-item .sid{font-weight:700;color:var(--accent);} .sql-item .meta{color:var(--muted);font-size:.72rem;margin-top:4px;}
+    .sql-item button.sql-del{position:absolute;right:6px;top:8px;font:inherit;font-size:.7rem;font-weight:600;
+      padding:3px 8px;cursor:pointer;border:1px solid #fca5a5;background:#fef2f2;color:#b91c1c;border-radius:6px;}
+    .sql-item button.sql-del:hover{background:#fee2e2;}
     .side-empty{font-size:.82rem;color:var(--muted);line-height:1.45;}
     .card{border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;}
     .card h2{font-size:.85rem;margin:0 0 10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;}
@@ -162,23 +167,81 @@ if (!_login) {
     .badge-low{border:1px dashed #b45309;}
     .alt-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
     .alt-chip{font-size:.78rem;padding:4px 10px;border-radius:999px;border:1px solid var(--border);cursor:pointer;background:#f8fafc;}
-    body.embed{background:#fff;}
-    body.embed .app{max-width:none;height:100vh;border:none;}
-    body.embed .header{padding:8px 12px;}
-    body.embed .header h1{font-size:.9rem;}
-    body.embed .side{width:240px;}
-    body.embed .main{padding:12px;}
-    body.embed .composer{padding:10px 12px;}
+    /*
+     * embed=1: min-height 필수(#118). flex:1·table-cell 금지(#130·#131 흰화면).
+     * 이력 패널: float:right + has-sql-side (JS가 클래스 부여).
+     */
+    body.embed{background:#fff;height:auto;min-height:480px;overflow:auto;}
+    body.embed .app{
+      max-width:none;height:auto;min-height:480px;border:none;display:block;
+    }
+    body.embed .header{display:block;padding:4px 8px;}
+    body.embed .header h1{font-size:.82rem;display:inline;margin:0;}
+    body.embed .header a.open-browser{
+      display:inline-block;margin-left:8px;font-size:.72rem;font-weight:600;
+      color:var(--accent);text-decoration:none;border:1px solid #bfdbfe;border-radius:6px;
+      padding:1px 6px;background:#eff6ff;vertical-align:middle;
+    }
+    body.embed .header .wf{font-size:.65rem;display:block;margin-top:1px;color:var(--muted);}
+    body.embed .body{display:block;width:100%;min-height:320px;overflow:auto;}
+    body.embed .main{display:block;padding:6px 8px;overflow:auto;}
+    body.embed.has-sql-side .main{margin-right:38%;}
+    body.embed .side{
+      display:none;float:right;width:36%;box-sizing:border-box;
+      border-left:1px solid var(--border);overflow-y:auto;padding:8px;background:#f8fafc;
+      min-height:200px;
+    }
+    body.embed.has-sql-side .side{display:block;}
+    body.embed .side h2{font-size:.72rem;margin:0 0 6px;}
+    body.embed .side-empty{font-size:.78rem;}
+    body.embed .sql-item{padding:6px 44px 6px 6px;margin-bottom:6px;font-size:.78rem;border-radius:6px;}
+    body.embed .sql-item .meta{font-size:.7rem;}
+    body.embed .sql-item button.sql-del{font-size:.65rem;padding:2px 6px;top:6px;right:4px;}
+    body.embed .composer{display:block;clear:both;padding:6px 8px;}
+    body.embed textarea#nl{
+      width:100%;display:block;box-sizing:border-box;
+      min-height:36px;max-height:72px;padding:8px 10px;border-radius:10px;font-size:.85rem;
+    }
+    body.embed .actions{display:block;margin-top:6px;}
+    body.embed .btn{padding:6px 12px;font-size:.85rem;border-radius:6px;}
+    body.embed #hint{font-size:.72rem;padding:4px 8px;line-height:1.35;}
+    body.embed .card{padding:6px 8px;border-radius:8px;margin:0;}
+    body.embed .card h2{font-size:.7rem;margin:0 0 4px;}
+    body.embed .chip{font-size:.72rem;padding:3px 8px;}
+    body.embed .gates{font-size:.72rem;}
+    body.embed .gate{gap:4px;}
+    body.embed pre.code{font-size:.7rem;padding:8px;max-height:120px;}
+    body.embed #cardFunnel{display:none !important;}
+    body.embed .chips{display:block;}
+    body.embed .gates{display:block;}
   </style>
   <script>
     window.__TW_LOGIN__ = '<%= _twEscJs(_login) %>';
     window.__TW_EMBED__ = <%= _embed ? "true" : "false" %>;
+    window.onerror = function (msg, url, line) {
+      try {
+        var h = document.getElementById("hint");
+        if (h) {
+          h.className = "banner err";
+          h.textContent = "Studio JS error: " + msg + " @" + line;
+        }
+      } catch (e0) {}
+      return false;
+    };
   </script>
 </head>
 <body class="<%= _embed ? "embed" : "" %>">
   <div class="app">
     <header class="header">
       <h1>Test Woo AI Studio<%= _embed ? " (embedded)" : "" %></h1>
+<%
+  if (_embed) {
+    var _browserUrl = "/woo/testWooAiStudio.jssp?workflowName=" + encodeURIComponent(_wf || "");
+%>
+      <a class="open-browser" id="twOpenBrowser" href="<%= _twHtmlEsc(_browserUrl) %>" target="_blank" rel="noopener">&#xBE0C;&#xB77C;&#xC6B0;&#xC800;&#xB85C; &#xBCF4;&#xAE30;</a>
+<%
+  }
+%>
       <span class="wf" id="wfInfo">user: <%= _twEscJs(_login) %> / register&#x2192;ai_sql_id</span>
     </header>
 
@@ -200,7 +263,7 @@ if (!_login) {
 
       <div class="banner err hidden" id="err"></div>
     </main>
-    <aside class="side hidden" id="sideSql">
+    <aside class="side" id="sideSql" style="display:none">
       <h2>&#xC774; WF SQL &#xC774;&#xB825;</h2>
       <div class="side-empty" id="sqlListEmpty">&#xB4F1;&#xB85D;&#xB41C; SQL &#xC774; &#xC5C6;&#xC2B5;&#xB2C8;&#xB2E4;. &#xC0DD;&#xC131; &#xD6C4; &#xB4F1;&#xB85D;&#xD558;&#xBA74; &#xC5EC;&#xAE30; &#xBAA8;&#xC785;&#xB2C8;&#xB2E4;.</div>
       <div id="sqlList"></div>
@@ -216,7 +279,8 @@ if (!_login) {
     </footer>
   </div>
 
-  <script src="/woo/testWooAiStudioJs.jssp"></script>
+  <!-- v=132: 승인 API 링크 제거 · 캐시 무력화 -->
+  <script src="/woo/testWooAiStudioJs.jssp?v=132"></script>
 </body>
 </html>
 <%

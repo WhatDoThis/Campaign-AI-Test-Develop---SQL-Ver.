@@ -97,18 +97,18 @@ try {
     }
     jsonOut({ ok: true, fragments: rows });
   } else if (action === "approve") {
-    requireStudioCsrf();
+    requireStudioCsrf(p);
     testWoo.repo.approveFragment(Number(p.fragmentId), currentLogin());
     if (p.queueId) testWoo.repo.completeQueue(Number(p.queueId), "done");
     jsonOut({ ok: true, status: "active" });
   } else if (action === "reject") {
-    requireStudioCsrf();
+    requireStudioCsrf(p);
     if (!p.reason) throw new Error("reject reason required");
     testWoo.repo.rejectFragment(Number(p.fragmentId), String(p.reason));
     if (p.queueId) testWoo.repo.completeQueue(Number(p.queueId), "failed");
     jsonOut({ ok: true, status: "rejected" });
   } else if (action === "revoke") {
-    requireStudioCsrf();
+    requireStudioCsrf(p);
     if (!p.reason) throw new Error("revoke reason required");
     var impact = testWoo.lifecycle.revoke(Number(p.fragmentId), String(p.reason), currentLogin());
     jsonOut({ ok: true, impact: impact });

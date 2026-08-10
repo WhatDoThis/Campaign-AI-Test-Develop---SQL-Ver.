@@ -1,26 +1,41 @@
 <!--
-  testWooSampleCustomActivityContract.xml (custom activity contract sample · testing)
+  testWooSampleCustomActivityContract.xml (AI 대상자 추출 액티비티 계약 샘플 · B안)
   ==================================================================================
-  Shows the activity contract that reads registered SQL by id. This system does NOT
-  create the custom activity; it only requires the contract below.
+  Register 가 준 ai_sql_id 만 액티비티에 넣고, 런타임이 woo:testWooAiSql 에서 SQL 을 조회·실행한다.
+  이 시스템은 액티비티를 자동 생성하지 않는다. script 에 SQL 을 쓰지 않는다.
 
-  [Contract — current]
-  - Input: child element ai-sql-id (long) = Register response ai_sql_id
-  - Canvas bind: woo:testWooAiWorkflowUi#BindAiSqlId (extend form Apply) — SQL not written
-  - Runtime: load woo:testWooAiSql.@sql_query by that id → work table → transition
-  - Forbidden: WF XML / <script> SQL inject (WorkflowIo discarded)
+  [Contract — current · B]
+  - WF XML 요소: ibankSqlDM (주) · 레거시 팔레트 xpath 환경은 customActivity
+  - Input: 자식 요소 ai-sql-id (long) = Register response ai_sql_id
+  - Canvas bind: woo:testWooAiWorkflowUi#ShellBind — SQL/script 미기록
+  - Runtime (7d · 저장소 외 uplus 라이브러리): load woo:testWooAiSql.@sql_query by id
+    → work table → transition
+  - Forbidden: <script> SQL inject (WorkflowIo 폐기 유지)
 
   [Contract — discarded]
   - Old: Register wrote SQL into <script> CDATA — DO NOT restore
+  - OOTB SQL Data Management (sql) 노드는 Inspect/Bind 대상이 아님
 -->
 <activities>
-  <customActivity name="customActivity" label="Test Woo AI Target Extract"
-                  library="woo:customActivity.js" img="xtk:activities/execsql.png"
-                  x="240" y="88">
+  <!-- LGU 운영 요소명 -->
+  <ibankSqlDM name="aiExtract" label="AI 대상자 추출"
+              img="xtk:activities/execsql.png"
+              x="240" y="88">
     <!-- Runtime reads SQL from woo:testWooAiSql where @id = ai-sql-id -->
     <ai-sql-id>0</ai-sql-id>
     <transitions>
       <done enabled="true" label="Ok" name="done" target="changeDataSource"/>
     </transitions>
+  </ibankSqlDM>
+
+  <!--
+    레거시 팔레트 xpath=customActivity 환경용 참고 노드 (둘 중 하나만 캔버스에 두면 됨).
+    Inspect/Bind 는 ibankSqlDM 과 customActivity 모두 인식한다.
+  -->
+  <!--
+  <customActivity name="customActivity" label="AI 대상자 추출 (legacy xpath)"
+                  img="xtk:activities/execsql.png">
+    <ai-sql-id>0</ai-sql-id>
   </customActivity>
+  -->
 </activities>

@@ -22,7 +22,9 @@
  * - 출력 상한은 단계별로 분리한다 (env llm.pass0MaxTokens / pass1MaxTokens).
  *   Pass0 기본은 2048 — 슬롯 JSON 에 충분하고 반복 루프 과금을 막는다.
  * - 반복 루프 억제는 temperature 가 아니라 frequency_penalty 로만 한다.
- * - Pass0 가 length/반복으로 잘리면 강한 penalty 로 1회 재시도한다(간헐 Gemini 루프).
+ * - Pass0: 첫 호출 frequency_penalty=0.5 · length 시 salvage · 실패 시 0.8 재시도.
+ * - OpenRouter+Claude(Azure): tool_choice:"none" 일 때 parallel_tool_calls 금지
+ *   (400 tool_choice.none.disable_parallel_tool_use).
  * - 프롬프트 본문은 로그에 남기지 않는다 (응답 content 앞뒤 200자만).
  *
  * [Dependencies]
@@ -75,8 +77,9 @@ testWoo.llm = (function () {
       "You extract targeting condition slots from marketer Korean NL.",
       "NL may be messy one sentence without '+' separators.",
       "Split into atomic marketing conditions. Do NOT invent SQL or fragment ids.",
-      "For each slot, fill searchKeywords: alternate phrasings useful for library keyword search.",
-      "searchKeywords must include: colloquial/abbreviated forms, normalized forms,",
+      "HARD LIMITS: at most 6 slots; each searchKeywords at most 5 short phrases;",
+      "total JSON under 1200 characters. No commentary, no padding, no token repetition.",
+      "For each slot, fill searchKeywords: colloquial/abbreviated/normalized forms",
       "and alternate notations for any numeric range mentioned.",
       "If one phrase mixes two conditions, you MAY keep one slot; Pass1 may split later.",
       'OUTPUT JSON ONLY: {"slots":[{"id":"s1","text":"...","hintedCategory":"plan|demo|consent|fatigue|signup|other","searchKeywords":["..."]}]}'
@@ -89,17 +92,16 @@ testWoo.llm = (function () {
     var raw;
     var parsed;
     try {
-      raw = _chat(cfg, system, nl, "pass0");
+      // Pass0 첫 호출부터 penalty — Gemini 간헐 반복이 상한(2048)을 채우는 실측 대응
+      raw = _chat(cfg, system, nl, "pass0", { frequencyPenalty: 0.5 });
       parsed = _parseJson(raw, "pass0");
     } catch (e0) {
-      // json_object 없이도 Gemini 가 간헐적으로 토큰을 반복한다(#84 후에도 실측).
-      // Pass0 는 짧은 JSON 이라 강한 penalty 1회 재시도로 대부분 회복된다.
       if (!_isLengthOrRepeatError(e0)) throw e0;
       logWarning("[testWoo.llm.decomposeSlots] pass0 length/repeat — retry once " +
-        "(frequency_penalty=0.6)");
+        "(frequency_penalty=0.8)");
       var retrySys = system +
-        "\nCRITICAL: Output ONE short JSON object only. Do not repeat tokens or pad.";
-      raw = _chat(cfg, retrySys, nl, "pass0", { frequencyPenalty: 0.6 });
+        "\nCRITICAL: Output ONE short JSON object only. Max 4 slots. Do not repeat tokens.";
+      raw = _chat(cfg, retrySys, nl, "pass0", { frequencyPenalty: 0.8 });
       parsed = _parseJson(raw, "pass0");
     }
     if (!parsed.slots || !_isArray(parsed.slots) || !parsed.slots.length)
@@ -286,10 +288,18 @@ testWoo.llm = (function () {
         // 아래 pass-through 는 tools 와의 상호배제만 유지하기 위한 것이며 호출부는 없다.
         if (opts.responseFormat != null && !opts.tools)
           body.response_format = opts.responseFormat;
-        if (opts.tools) {
+        // tools: 빈 배열도 falsy 취급. parallel_tool_calls 는 tool_choice:"none" 과 같이 내면
+        // OpenRouter→Azure Anthropic 이 tool_choice.none.disable_parallel_tool_use 로 변환해
+        // 400 "Extra inputs are not permitted" (Claude Sonnet 4.x via Azure).
+        // Ref: https://github.com/zed-industries/zed/issues/35341
+        // Ref: https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use
+        if (opts.tools && opts.tools.length) {
           body.tools = opts.tools;
-          body.tool_choice = opts.tool_choice || "auto";
-          body.parallel_tool_calls = opts.parallel_tool_calls === true ? true : false;
+          var tc = opts.tool_choice != null ? opts.tool_choice : "auto";
+          body.tool_choice = tc;
+          if (tc !== "none") {
+            body.parallel_tool_calls = opts.parallel_tool_calls === true;
+          }
         }
         return body;
       }
@@ -319,9 +329,31 @@ testWoo.llm = (function () {
     return msg.indexOf("max_tokens") >= 0 || msg.indexOf("반복 루프") >= 0;
   }
 
+  /**
+   * OpenRouter 가 Claude(Azure 등)로 중계할 때 parallel_tool_calls:false +
+   * tool_choice:"none" 조합을 Anthropic tool_choice.none.disable_parallel_tool_use 로
+   * 바꾸면 upstream 400. none 턴에서는 parallel_tool_calls 키를 제거한다.
+   */
+  function _sanitizeChatBody(bodyObj) {
+    if (!bodyObj || typeof bodyObj !== "object") return bodyObj;
+    var tools = bodyObj.tools;
+    var hasTools = tools && tools.length;
+    if (!hasTools) {
+      try { delete bodyObj.tools; } catch (e0) {}
+      try { delete bodyObj.tool_choice; } catch (e1) {}
+      try { delete bodyObj.parallel_tool_calls; } catch (e2) {}
+      return bodyObj;
+    }
+    if (bodyObj.tool_choice === "none") {
+      try { delete bodyObj.parallel_tool_calls; } catch (e3) {}
+    }
+    return bodyObj;
+  }
+
   function postChat(cfg, bodyObj) {
     var adapter = _provider(cfg);
-    var raw = _postJson(cfg.llm, bodyObj, adapter.headers(cfg.llm.apiKey));
+    var body = _sanitizeChatBody(bodyObj);
+    var raw = _postJson(cfg.llm, body, adapter.headers(cfg.llm.apiKey));
     var wrap;
     try {
       wrap = JSON.parse(String(raw));
@@ -567,6 +599,30 @@ testWoo.llm = (function () {
     return false;
   }
 
+  /**
+   * Pass0 length 절단 시 content 앞부분에서 {"slots":[...]} 회수.
+   * 반복 루프로 꼬리만 깨진 경우 선두 JSON 이 유효한 경우가 많다.
+   */
+  function _salvagePass0Slots(content) {
+    var text = String(content == null ? "" : content);
+    var start = text.indexOf("{");
+    if (start < 0) return null;
+    var slice = text.substring(start);
+    if (slice.length > 2500) slice = slice.substring(0, 2500);
+    var end = slice.lastIndexOf("}");
+    while (end > 0) {
+      try {
+        var obj = JSON.parse(slice.substring(0, end + 1));
+        if (obj && _isArray(obj.slots) && obj.slots.length > 0) {
+          if (obj.slots.length > 8) obj.slots = obj.slots.slice(0, 8);
+          return obj;
+        }
+      } catch (eSal) {}
+      end = slice.lastIndexOf("}", end - 1);
+    }
+    return null;
+  }
+
   // finish_reason="length" 원인 분기 안내. reasoning 토큰이 대부분이면 상한을 올리는 게
   // 아니라 reasoning 을 꺼야 하고, reasoning=0 인데 상한을 채웠다면 반복 루프다.
   // 프롬프트에는 고객 실데이터가 섞일 수 있으므로 응답 content 만 로그에 남긴다.
@@ -621,11 +677,22 @@ testWoo.llm = (function () {
       if (wrap.choices && wrap.choices.length) {
         var ch = wrap.choices[0];
         if (ch.finish_reason === "length") {
-          // 사고 토큰 소진 / 반복 루프 / 진짜 절단을 메시지에서 바로 구분할 수 있게 한다.
-          // 응답 본문은 _lengthDiag 가 앞뒤 200자만 logWarning 으로 남긴다.
+          var cutContent = ch.message ? ch.message.content : "";
+          // Pass0: 잘린 본문 앞쪽에서 slots JSON 회수 시도 (반복 루프여도 선두는 유효한 경우 많음)
+          if (String(stage || "") === "pass0") {
+            var salvaged = _salvagePass0Slots(cutContent);
+            if (salvaged) {
+              logWarning(
+                "[testWoo.llm] pass0 length — salvaged slots count=" +
+                salvaged.slots.length + " " +
+                _lengthDiag(wrap.usage, cutContent, stage)
+              );
+              return salvaged;
+            }
+          }
           throw new Error(
             "[testWoo.llm] 응답이 max_tokens에서 잘렸습니다. " +
-            _lengthDiag(wrap.usage, ch.message ? ch.message.content : "", stage)
+            _lengthDiag(wrap.usage, cutContent, stage)
           );
         }
         if (ch.finish_reason === "error") {

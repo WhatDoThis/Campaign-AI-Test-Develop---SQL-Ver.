@@ -22,7 +22,8 @@
  * - processBatch : 프리플라이트 → 스테일 복구 → 단일 실행 가드 → queued 순차 처리
  * - processQueueItem : 슬롯별 triage → 생성(게이트·형태 자가수정) → dedup → publish
  * - generateFragmentForSlot : tool 루프 + JSON/게이트 실패 되먹임 재생성
- * - runToolLoop : LLM tool calling 루프 (requireJson · 마지막 턴 강제 · 반환 전 sanitize)
+ * - runToolLoop : LLM tool calling 루프 (requireJson · 마지막 턴 강제 · 반환 전 sanitize;
+ *   none 턴에 parallel_tool_calls 미포함 — Azure Claude 400 방지)
  * - dryRunSlot : 큐 부작용 없이 triage+생성 1회 (계측기)
  * - peekQueue : 읽기 전용 큐 조회 (스모크의 getIfExists 파싱 검증 전용)
  *
@@ -269,18 +270,20 @@ testWoo.foundry = (function () {
       var lastTurn = (t === turns - 1);
       var reqMsgs = lastTurn ?
         msgs.concat([{ role: "user", content: FINAL_TURN_NUDGE }]) : msgs;
+      // lastTurn tool_choice:"none" 에는 parallel_tool_calls 금지
+      // (OpenRouter→Azure Claude 400: tool_choice.none.disable_parallel_tool_use).
       var body = {
         model: cfg.llm.model,
         messages: reqMsgs,
         tools: specs,
         tool_choice: lastTurn ? "none" : "auto",
-        parallel_tool_calls: false,
         max_tokens: maxTok,
         // Foundry 는 사고가 필요하지만 effort:"high" 는 상한의 대부분을 사고에 배정해
         // 본문 몫을 남기지 않을 수 있다(사고 토큰은 max_tokens 에 합산됨).
         reasoning: { max_tokens: _reasoningBudget(maxTok) },
         temperature: 0
       };
+      if (!lastTurn) body.parallel_tool_calls = false;
       var wrap = testWoo.llm.postChat(cfg, body);
       if (!wrap || !wrap.choices || !wrap.choices.length)
         throw new Error("[testWoo.foundry.runToolLoop] empty choices");

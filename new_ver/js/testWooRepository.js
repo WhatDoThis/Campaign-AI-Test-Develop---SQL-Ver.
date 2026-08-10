@@ -6,7 +6,7 @@
  * [Main Functions]
  * ===========
  * - saveAiSql / enqueueRequest / getQueueStatus / upsertGapLog / listGapLog
- * - listAiSqlByWorkflow / getAiSqlById — WF별 SQL 목록·불러오기 (섹션 7b)
+ * - listAiSqlByWorkflow / getAiSqlById / deleteAiSql — WF별 SQL 목록·불러오기·삭제 (섹션 7b)
  *
  * [Dependencies]
  * =========
@@ -329,7 +329,23 @@ testWoo.repo = (function () {
     return rows;
   }
 
-  // 4. ai_sql_id 단건 (Studio 불러오기 / 커스텀 액티비티 로드용)
+  // 4. ai_sql_id 이력 삭제 (Studio 목록 · WF 바인딩은 호출측에서 정리)
+  function deleteAiSql(id) {
+    var n = Number(id);
+    if (!n || isNaN(n))
+      throw new Error("[testWoo.repo.deleteAiSql] invalid id");
+    var doc = <testWooAiSql xtkschema={SQL_SCHEMA} _operation="delete"/>;
+    doc.@id = n;
+    try {
+      xtk.session.Write(doc);
+    } catch (eD) {
+      throw new Error("[testWoo.repo.deleteAiSql] Write failed: id=" + n + " cause=" +
+        (eD && eD.message != null ? eD.message : String(eD)));
+    }
+    return true;
+  }
+
+  // 5. ai_sql_id 단건 (Studio 불러오기 / 커스텀 액티비티 로드용)
   function getAiSqlById(id) {
     var n = Number(id);
     if (!n || isNaN(n)) return null;
@@ -382,6 +398,7 @@ testWoo.repo = (function () {
     rejectFragment: rejectFragment,
     completeQueue: completeQueue,
     listAiSqlByWorkflow: listAiSqlByWorkflow,
+    deleteAiSql: deleteAiSql,
     getAiSqlById: getAiSqlById
   };
 })();

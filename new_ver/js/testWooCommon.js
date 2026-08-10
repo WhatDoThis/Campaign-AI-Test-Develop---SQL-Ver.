@@ -15,7 +15,9 @@
  *                                     : Cookie 헤더 → logonWithToken() (logon 폴백)
  * - twCheckRemoteAddr                 : Env security.allowedCidr (비우면 통과)
  * - currentLogin / requireRight       : named right (fail-closed)
- * - requireStudioCsrf                 : X-Requested-With + Origin/Referer host 정확 일치
+ * - requireStudioCsrf(optPayload)    : X-Requested-With 또는 payload.csrf=TestWooStudio
+ *                                     + Origin/Referer host 일치
+ *                                     (둘 다 없으면 payload.pageHost===Host — urlViewer 폴백)
  *
  * [Dependencies]
  * =========
@@ -254,34 +256,68 @@ function requireRight(namedRight) {
 
 function _twHostOfUrl(u) {
   var m = String(u || "").match(/^https?:\/\/([^\/?#]+)/i);
-  return m ? m[1].toLowerCase() : "";
+  return m ? _twNormHost(m[1]) : "";
+}
+
+function _twNormHost(h) {
+  var s = String(h || "").toLowerCase();
+  if (s.length > 3 && s.substring(s.length - 3) === ":80")
+    s = s.substring(0, s.length - 3);
+  else if (s.length > 4 && s.substring(s.length - 4) === ":443")
+    s = s.substring(0, s.length - 4);
+  return s;
 }
 
 // 8. Register CSRF — fail-closed, host 정확 일치 (substring 우회 차단)
-function requireStudioCsrf() {
+// optPayload: Studio post() → { csrf:"TestWooStudio", pageHost:location.host }.
+// ACC urlViewer 는 X-Requested-With·Origin·Referer 를 getHeader 로 안 넘기는 경우가 많음.
+function requireStudioCsrf(optPayload) {
   var req = _twReq();
   var xrw = "";
   try { xrw = String(req.getHeader("X-Requested-With") || ""); } catch (e1) {}
-  if (xrw !== "TestWooStudio") {
-    var err = new Error("CSRF: X-Requested-With TestWooStudio required");
+  if (!xrw) {
+    try { xrw = String(req.getHeader("x-requested-with") || ""); } catch (e1b) {}
+  }
+  var csrfBody = "";
+  var pageHost = "";
+  if (optPayload) {
+    if (optPayload.csrf != null) csrfBody = String(optPayload.csrf);
+    if (optPayload.pageHost != null)
+      pageHost = _twNormHost(optPayload.pageHost);
+  }
+  if (xrw !== "TestWooStudio" && csrfBody !== "TestWooStudio") {
+    var err = new Error(
+      "CSRF: X-Requested-With or payload.csrf TestWooStudio required"
+    );
     err.code = "FORBIDDEN";
     throw err;
   }
   var host = "";
-  try { host = String(req.getHeader("Host") || "").toLowerCase(); } catch (e2) {}
+  try { host = _twNormHost(req.getHeader("Host") || ""); } catch (e2) {}
   var origin = "";
   var referer = "";
   try { origin = String(req.getHeader("Origin") || ""); } catch (e3) {}
   try { referer = String(req.getHeader("Referer") || ""); } catch (e4) {}
   var src = origin || referer;
-  if (!src) {
-    var err5 = new Error("CSRF: Origin/Referer required");
-    err5.code = "FORBIDDEN";
-    throw err5;
+  if (src) {
+    if (!host || _twHostOfUrl(src) !== host) {
+      var err6 = new Error("CSRF: origin host mismatch");
+      err6.code = "FORBIDDEN";
+      throw err6;
+    }
+    return;
   }
-  if (!host || _twHostOfUrl(src) !== host) {
-    var err6 = new Error("CSRF: origin host mismatch");
-    err6.code = "FORBIDDEN";
-    throw err6;
+  // Origin/Referer 없음 (urlViewer) — pageHost↔Host + Studio csrf 로 동일 출처 확인
+  if (csrfBody === "TestWooStudio" && host && pageHost && pageHost === host) {
+    try {
+      logInfo("[testWoo.csrf] Origin/Referer absent — accepted via pageHost=" + pageHost);
+    } catch (eLog) {}
+    return;
   }
+  var err5 = new Error(
+    "CSRF: Origin/Referer required (or payload.pageHost matching Host; got pageHost=" +
+      pageHost + " host=" + host + ")"
+  );
+  err5.code = "FORBIDDEN";
+  throw err5;
 }

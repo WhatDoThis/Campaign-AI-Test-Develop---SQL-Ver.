@@ -34,6 +34,7 @@ Before implementing:
 3. **No workflow XML write** — Register stores history; activity reads `ai_sql_id`
 4. **Global object `testWoo.*`** — not `woo.*` (schema namespace collision)
 5. **Rhino-safe server JS** — no ES6 array methods, no `wait`, no Promise
+6. **SOAP** — only `ShellProbe`/`ShellPick`/`ShellBind` (never old Inspect/Bind names). Redeploy schema+JS+form together
 
 ## Key files by concern
 
@@ -53,7 +54,7 @@ Before implementing:
 - Funnel COUNT, EXPLAIN scale gates
 - `testWooWorkflowIo` (deprecated)
 - WF canvas fallback B/C (AI tab / campaign WebApp) — only if 7a soapCall path fails on env
-- Custom activity runtime (`ai_sql-id` load) — section 7d
+- `ibankSqlDM` runtime (`ai-sql-id` → `testWooAiSql` load) — section 7d (uplus library outside repo)
 - LLM free-form SQL fallback (PRD Phase 2)
 
 ## Verification after changes

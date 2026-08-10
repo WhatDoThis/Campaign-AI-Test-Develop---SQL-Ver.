@@ -7,7 +7,8 @@
  *
  * 툴 루프는 triage.maxTurns 턴이며 마지막 턴은 tool_choice:"none" + 최종 지시로
  * 판정 JSON 을 강제한다. 강제 턴이 없으면 모델이 턴 전부를 툴 호출로 소진해
- * "tool loop exceeded" 로 끝난다. 허용 namespace 는 toolkit.env() 로 프롬프트에
+ * "tool loop exceeded" 로 끝난다. none 턴에는 parallel_tool_calls 를 넣지 않는다
+ * (OpenRouter→Azure Claude 400). 허용 namespace 는 toolkit.env() 로 프롬프트에
  * 명시한다 — 알려주지 않으면 미허용 ns 를 찍어보며 턴을 낭비한다.
  *
  * no_column 오탐 방지: describe_schema 없이 no_column 을 내면 루프에서 재지시하고,
@@ -135,16 +136,18 @@ testWoo.feasibility = (function () {
       // response_format 금지: tools 와 동시 전송하면 Gemini 계열이 거부한다
       // ("Function calling with a response mime type: 'application/json' is unsupported").
       // JSON 강제는 시스템 프롬프트 + 아래 content 의 {…} 추출로 대체한다.
+      // lastTurn tool_choice:"none" 에는 parallel_tool_calls 를 넣지 않음
+      // (OpenRouter→Azure Claude 400: tool_choice.none.disable_parallel_tool_use).
       var body = {
         model: cfg.llm.model,
         messages: messages,
         tools: specs,
         tool_choice: lastTurn ? "none" : "auto",
-        parallel_tool_calls: false,
         max_tokens: maxTok,
         reasoning: testWoo.llm.reasoningOff(),
         temperature: 0
       };
+      if (!lastTurn) body.parallel_tool_calls = false;
       var wrap = testWoo.llm.postChat(cfg, body);
       if (!wrap || !wrap.choices || !wrap.choices.length)
         throw new Error("[testWoo.feasibility] empty LLM response");

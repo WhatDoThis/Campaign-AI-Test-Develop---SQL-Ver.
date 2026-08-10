@@ -1,72 +1,36 @@
 /*
  * testWooWorkflowUi.js (WF 캔버스 ↔ Studio SOAP · server-side)
  * ============================================================
- * woo:testWooAiWorkflowUi 스키마의 SOAP 구현.
- * 함수명 규약: <ns>_<schema>_<method> (Adobe Implementing SOAP methods).
+ * woo:testWooAiWorkflowUi — ShellProbe / ShellPick / ShellBind 만 사용.
+ * 구 InspectAiTarget·BindAiSqlId·GetBindPick·ListAiActivities 는 제거
+ * (콘솔에 남은 구 시그니처와 충돌 → SOP-330003 / Too many arguments).
  *
  * [Main Functions]
  * ===========
- * - woo_testWooAiWorkflowUi_BuildStudioUrl — Studio URL + iframe HTML
- * - woo_testWooAiWorkflowUi_InspectAiTarget — 캔버스 activities 에 customActivity 유무
- * - woo_testWooAiWorkflowUi_BindAiSqlId — ai-sql-id 만 기록 (SQL 주입 금지)
+ * - woo_testWooAiWorkflowUi_ShellProbe — has / message / first @name (out×3)
+ * - woo_testWooAiWorkflowUi_ShellPick — Studio bind-pick
+ * - woo_testWooAiWorkflowUi_ShellBind — 첫 AI 액티비티에 ai-sql-id
+ * - _twWfSetAiSqlId — 중복 ai-sql-id 정리
  *
  * [Dependencies]
  * =========
- * - getOption("testWooAiStudioBaseUrl") — 필수 호스트 (끝 / 없음)
- * - 계약 액티비티 요소명: customActivity · 자식 ai-sql-id
- *   (new_ver/workflow/testWooSampleCustomActivityContract.xml)
+ * - 계약: ibankSqlDM (+ legacy customActivity) / ai-sql-id
  * Ref: https://experienceleague.adobe.com/en/docs/campaign-classic/using/configuring-campaign-classic/api/implementing-soap-methods
  */
 
-/** 계약: Test Woo AI Target 커스텀 액티비티 요소명 */
-var TESTWOO_AI_ACTIVITY_EL = "customActivity";
-/** 계약: Register id 를 담는 자식 요소명 */
+var TESTWOO_AI_ACTIVITY_EL = "ibankSqlDM";
+var TESTWOO_AI_ACTIVITY_EL_LEGACY = "customActivity";
 var TESTWOO_AI_SQL_ID_EL = "ai-sql-id";
 
 function _twWfTrim(s) {
   return String(s == null ? "" : s).replace(/^\s+|\s+$/g, "");
 }
 
-function _twWfEncodeComp(s) {
-  return encodeURIComponent(String(s || ""));
+function _twWfIsAiActivityEl(elName) {
+  var n = String(elName || "");
+  return n === TESTWOO_AI_ACTIVITY_EL || n === TESTWOO_AI_ACTIVITY_EL_LEGACY;
 }
 
-function _twWfStripSlash(base) {
-  var b = _twWfTrim(base);
-  while (b.length > 0 && b.charAt(b.length - 1) === "/") {
-    b = b.substring(0, b.length - 1);
-  }
-  return b;
-}
-
-function _twWfEscAttr(s) {
-  return String(s || "")
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-function _twWfStudioBase() {
-  var base = "";
-  try {
-    base = _twWfStripSlash(getOption("testWooAiStudioBaseUrl"));
-  } catch (eOpt) {
-    base = "";
-  }
-  if (!base) {
-    logError("[testWoo.WorkflowUi] option testWooAiStudioBaseUrl empty");
-    throw new Error(
-      "Option testWooAiStudioBaseUrl is empty. Set it to the Campaign host " +
-      "(e.g. https://__CAMPAIGN_SERVER_URL__) with no trailing slash."
-    );
-  }
-  return base;
-}
-
-/**
- * activities DOM/E4X → XML
- */
 function _twWfAsXml(node) {
   if (node == null || node === "") {
     return <activities/>;
@@ -102,10 +66,8 @@ function _twWfActivitiesRoot(activitiesXml) {
   return <activities/>;
 }
 
-/**
- * @returns {Array} { name, label, node }
- */
-function _twWfListCustomActivities(activitiesXml) {
+/** @returns {Array} { name, label, elName, node } */
+function _twWfListAiActivities(activitiesXml) {
   var acts = _twWfActivitiesRoot(activitiesXml);
   var out = [];
   try {
@@ -113,140 +75,175 @@ function _twWfListCustomActivities(activitiesXml) {
     var n = children.length();
     for (var i = 0; i < n; i++) {
       var ch = children[i];
-      if (String(ch.name()) !== TESTWOO_AI_ACTIVITY_EL) {
+      var elName = String(ch.name());
+      if (!_twWfIsAiActivityEl(elName)) {
         continue;
       }
       out.push({
         name: _twWfTrim(String(ch.@name || "")),
         label: _twWfTrim(String(ch.@label || "")),
+        elName: elName,
         node: ch
       });
     }
   } catch (eList) {
-    logWarning("[testWoo.WorkflowUi._twWfListCustomActivities] " + eList);
+    logWarning("[testWoo.WorkflowUi._twWfListAiActivities] " + eList);
   }
   return out;
 }
 
 function _twWfSetAiSqlId(node, aiSqlId) {
   var idStr = String(aiSqlId);
+  var before = 0;
   try {
-    if (node["ai-sql-id"] && node["ai-sql-id"].length() > 0) {
-      node["ai-sql-id"] = idStr;
-      return;
+    if (node[TESTWOO_AI_SQL_ID_EL]) {
+      before = node[TESTWOO_AI_SQL_ID_EL].length();
     }
-  } catch (eChild) {}
-  node.appendChild(<ai-sql-id>{idStr}</ai-sql-id>);
+  } catch (eLen) {
+    before = 0;
+  }
+
+  if (before > 1) {
+    logWarning(
+      "[testWoo.WorkflowUi._twWfSetAiSqlId] duplicate ai-sql-id count=" +
+      before + " — remove all then re-insert one"
+    );
+    try {
+      delete node[TESTWOO_AI_SQL_ID_EL];
+    } catch (eDel) {
+      try {
+        var kids = node.children();
+        for (var i = kids.length() - 1; i >= 0; i--) {
+          if (String(kids[i].name()) === TESTWOO_AI_SQL_ID_EL) {
+            delete kids[i];
+          }
+        }
+      } catch (eDel2) {
+        logWarning("[testWoo.WorkflowUi._twWfSetAiSqlId] sweep failed: " + eDel2);
+      }
+    }
+    node.appendChild(<ai-sql-id>{idStr}</ai-sql-id>);
+  } else if (before === 1) {
+    node[TESTWOO_AI_SQL_ID_EL] = idStr;
+  } else {
+    node.appendChild(<ai-sql-id>{idStr}</ai-sql-id>);
+  }
+}
+
+function _twWfOperatorLogin() {
+  try {
+    if (application.operator && application.operator.login) {
+      return String(application.operator.login);
+    }
+  } catch (eOp) {}
+  return "anon";
+}
+
+function _twWfBindPickKey() {
+  return "testWooAiBindPick_" + _twWfOperatorLogin();
+}
+
+function _twWfReadBindPick(workflowName) {
+  var wf = _twWfTrim(workflowName);
+  var raw = "";
+  try {
+    raw = String(getOption(_twWfBindPickKey()) || "");
+  } catch (eGet) {
+    raw = "";
+  }
+  if (!raw) return "";
+  var tab = raw.indexOf("\t");
+  if (tab < 0) return "";
+  var storedWf = raw.substring(0, tab);
+  var id = raw.substring(tab + 1);
+  if (wf && storedWf && storedWf !== wf) return "";
+  if (!/^[0-9]+$/.test(id) || id === "0") return "";
+  return id;
 }
 
 /**
- * SOAP: BuildStudioUrl
- * @returns {[studioUrl, studioFrameHtml]}
+ * SOAP: ShellProbe
+ * @returns {[hasActivity, message, activityName]}
  */
-function woo_testWooAiWorkflowUi_BuildStudioUrl(workflowName) {
-  var name = _twWfTrim(workflowName);
-  if (!name) {
-    logError("[testWoo.WorkflowUi.BuildStudioUrl] workflowName empty");
-    throw new Error("Workflow internal name is empty. Save the workflow, then retry AI Studio.");
-  }
-  if (name.length > 64) {
-    logWarning("[testWoo.WorkflowUi.BuildStudioUrl] workflowName truncated to 64");
-    name = name.substring(0, 64);
-  }
-
-  var base = _twWfStudioBase();
-  var url = base + "/woo/testWooAiStudio.jssp?workflowName=" + _twWfEncodeComp(name) + "&embed=1";
-  var html =
-    '<div style="border:1px solid #cbd5e1;border-radius:8px;overflow:hidden;background:#fff;">' +
-    '<iframe src="' + _twWfEscAttr(url) + '" title="Test Woo AI Studio" ' +
-    'style="width:100%;height:520px;border:0;display:block;" ' +
-    'referrerpolicy="same-origin"></iframe></div>';
-
-  logInfo("[testWoo.WorkflowUi.BuildStudioUrl] wf=" + name + " url=" + url);
-  return [url, html];
-}
-
-/**
- * SOAP: InspectAiTarget
- * @returns {[hasActivity, activityCount, namesCsv, message]} all strings (form soapCall safe)
- */
-function woo_testWooAiWorkflowUi_InspectAiTarget(activitiesXml) {
-  var list = _twWfListCustomActivities(activitiesXml);
+function woo_testWooAiWorkflowUi_ShellProbe(activitiesXml) {
+  var list = _twWfListAiActivities(activitiesXml);
   var count = list.length;
-  var names = [];
-  for (var i = 0; i < count; i++) {
-    names.push(list[i].name || ("#" + i));
-  }
-  var namesCsv = names.join(", ");
+  var firstName = count > 0 ? (list[0].name || "#0") : "";
   var hasStr = count > 0 ? "true" : "false";
-  var countStr = String(count);
   var message;
   if (count === 0) {
     message =
-      "No Test Woo AI Target (customActivity) on this canvas. " +
-      "Add the activity from the palette, then Refresh status. Auto-create is disabled.";
+      "[안내] 캔버스에 AI 대상자 추출(ibankSqlDM)이 없습니다. " +
+      "팔레트에서 추가한 뒤 이 창을 다시 여세요. " +
+      "(OOTB SQL Data Management 는 대상이 아닙니다)";
   } else if (count === 1) {
     message =
-      "Found 1 customActivity (" + namesCsv + "). " +
-      "Register SQL in Studio, enter ai_sql_id below, then Apply to canvas.";
+      "Apply 대상: " + firstName +
+      ". Studio에서 SQL을 선택한 뒤 Apply 하세요.";
   } else {
     message =
-      "Found " + count + " customActivity nodes (" + namesCsv + "). " +
-      "Enter the activity @name to bind, then Apply.";
+      "Apply 대상(첫 액티비티): " + firstName +
+      " — 캔버스에 AI 액티비티 " + count + "개. 첫 것만 사용합니다.";
   }
-  logInfo("[testWoo.WorkflowUi.InspectAiTarget] count=" + countStr + " names=" + namesCsv);
-  return [hasStr, countStr, namesCsv, message];
+  logInfo(
+    "[testWoo.WorkflowUi.ShellProbe] count=" + count + " first=" + firstName
+  );
+  return [hasStr, message, firstName];
 }
 
 /**
- * SOAP: BindAiSqlId — activities 에 ai-sql-id 만 기록
+ * SOAP: ShellPick
+ * @returns {[aiSqlId, pickLabel]}
+ */
+function woo_testWooAiWorkflowUi_ShellPick(workflowName) {
+  var id = _twWfReadBindPick(workflowName);
+  var label;
+  if (id) {
+    label = "ai_sql_id=" + id;
+  } else {
+    label = "(미선택 — Studio SQL 이력 클릭 또는 등록)";
+  }
+  logInfo("[testWoo.WorkflowUi.ShellPick] wf=" + _twWfTrim(workflowName) + " id=" + id);
+  return [id, label];
+}
+
+/**
+ * SOAP: ShellBind — 첫 AI 액티비티에 ai-sql-id
  * @returns {XML} activities
  */
-function woo_testWooAiWorkflowUi_BindAiSqlId(activitiesXml, aiSqlId, activityNameOpt) {
+function woo_testWooAiWorkflowUi_ShellBind(activitiesXml, aiSqlId, workflowName) {
   var idStr = _twWfTrim(aiSqlId);
   if (!idStr || idStr === "0") {
-    throw new Error("ai_sql_id is empty. Register in Studio first, then paste the id.");
+    idStr = _twWfReadBindPick(workflowName);
+  }
+  if (!idStr || idStr === "0") {
+    throw new Error(
+      "SQL not selected. Click a SQL row in Studio history (or Register), then Apply."
+    );
   }
   if (!/^[0-9]+$/.test(idStr)) {
     throw new Error("ai_sql_id must be a positive integer.");
   }
 
   var acts = _twWfActivitiesRoot(activitiesXml);
-  var list = _twWfListCustomActivities(acts);
+  var list = _twWfListAiActivities(acts);
   if (list.length === 0) {
     throw new Error(
-      "No customActivity on this canvas. Add Test Woo AI Target activity before Apply."
+      "No ibankSqlDM on canvas. Add 'AI 대상자 추출' from the palette, then reopen AI Studio."
+    );
+  }
+  if (list.length > 1) {
+    logWarning(
+      "[testWoo.WorkflowUi.ShellBind] multiple=" + list.length +
+      " — first only: " + (list[0].name || "#0")
     );
   }
 
-  var want = _twWfTrim(activityNameOpt);
-  var target = null;
-  if (want) {
-    for (var i = 0; i < list.length; i++) {
-      if (list[i].name === want) {
-        target = list[i];
-        break;
-      }
-    }
-    if (!target) {
-      throw new Error("customActivity @name not found: " + want);
-    }
-  } else if (list.length === 1) {
-    target = list[0];
-  } else {
-    throw new Error(
-      "Multiple customActivity nodes. Set Activity name to one of: " +
-      (function () {
-        var s = [];
-        for (var j = 0; j < list.length; j++) s.push(list[j].name);
-        return s.join(", ");
-      })()
-    );
-  }
-
+  var target = list[0];
   _twWfSetAiSqlId(target.node, idStr);
   logInfo(
-    "[testWoo.WorkflowUi.BindAiSqlId] name=" + target.name + " ai_sql_id=" + idStr
+    "[testWoo.WorkflowUi.ShellBind] el=" + target.elName +
+    " name=" + target.name + " ai_sql_id=" + idStr
   );
   return acts;
 }

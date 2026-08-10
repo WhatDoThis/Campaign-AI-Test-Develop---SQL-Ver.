@@ -68,7 +68,7 @@ try {
     }
     jsonOut({ ok: true, affected: aff });
   } else if (action === "hardDelete") {
-    requireStudioCsrf();
+    requireStudioCsrf(p);
     testWoo.lifecycle.hardDelete(Number(p.fragmentId));
     jsonOut({ ok: true });
   } else {

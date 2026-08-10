@@ -1,6 +1,28 @@
 # Log
 
 ## Log Index
+132. 2026-08-10 Studio 배너「승인 API 열기」링크 제거
+131. 2026-08-10 SQL이력 있을 때 흰화면 — WebView JS 호환 · 삭제 버튼
+130. 2026-08-10 Apply/재진입 urlViewer 흰 화면 — flex:1 제거 · form height
+129. 2026-08-10 Register CSRF — Origin 없을 때 pageHost↔Host 폴백
+128. 2026-08-10 embed WF SQL 이력 — table→flex · 340px
+127. 2026-08-10 Studio/Generate `\u` 한글 오타 전수 스캔·수정
+126. 2026-08-10 Register CSRF — payload.csrf 폴백 (urlViewer 헤더 미전달)
+125. 2026-08-10 Studio 승인 배너 한글 오타 수정 · SQL 이력 패널 확장
+124. 2026-08-10 OpenRouter Claude Azure 400 — tool_choice.none + parallel_tool_calls 제거
+123. 2026-08-10 Shell* SOAP 교체 · 빈 액티비티 Status · Pass0 salvage/penalty
+122. 2026-08-10 확장 폼 레이아웃 — 상단 제거 · Studio 최대 · Apply에 WF/act/sql
+121. 2026-08-10 Apply 단순화 — 첫 액티비티만 · Inspect out×3 · 선택 UI 제거
+120. 2026-08-10 SOAP Element≠string — Inspect 스칼라 복귀 + ListAiActivities 분리
+119. 2026-08-10 SOAP Too many arguments — InspectAiTarget out DOM 1개로 축소
+118. 2026-08-10 embed Studio 흰 빈칸 — min-height:0 접힘 복구
+117. 2026-08-10 Apply 액티비티 — 텍스트입력 → 캔버스 목록 type=list 선택
+116. 2026-08-10 listAiSql 진단·Repository 재배포 안내 · embed 높이 압축
+115. 2026-08-10 Studio UX — listSql·bindPick·폼 축소·브라우저 열기·embed 밀집
+114. 2026-08-10 Studio 임베드 — type=html iframe → ACC urlViewer+sessionToken
+113. 2026-08-10 가이드 §7 재배포 — #112 콘솔 경로·파일 대응표(A~E) 보강
+112. 2026-08-10 계약 B — Inspect/Bind 대상 ibankSqlDM(+레거시 customActivity) · script SQL 금지
+111. 2026-08-10 #96~#110 검수 P0·P1 수정 — ai-sql-id 중복·enter throw·embed CSS·로그96 결번
 110. 2026-08-07 InspectAiTarget — activityCount long↔int SOAP 타입 오류 → string outs
 109. 2026-08-07 WebApp형 Studio 임베드 — Inspect/Bind ai_sql-id · 확장 폼 iframe
 108. 2026-08-07 AI Studio 다이얼로그 — nothingToEdit/Save 로 OK(닫기) 활성
@@ -15,6 +37,7 @@
 99. 2026-08-06 개발가이드 v1.7.0 — 섹션7 WF캔버스↔Studio↔커스텀 액티비티 (다음 적용)
 98. 2026-08-06 Fragment 생애주기 설계 — 승인→라벨 · enum+certified · merged_into_id (런타임 변경 없음)
 97. 2026-08-06 Studio 검증 결과 UI — PASS/FAIL·게이트 코드를 한글 라벨로 표시
+96. 2026-08-06 결번(기록 누락) — 승인 UI 추정 작업, git으로 단일 커밋 특정 불가
 95. 2026-08-06 스모크 9c list_schemas namespace 누락 수정 (args={} → allowed ns)
 94. 2026-08-06 리포트09 부분 핫픽스 — E-1 예산132 · C-1 sanitize순서 · E-2 tokenBudget · A-1 자가검증 · 스모크9c
 93. 2026-08-06 Pass0 Gemini 간헐 반복 루프 완화 — pass0MaxTokens 2048 · frequencyPenalty 0.3 · length 시 1회 재시도
@@ -113,6 +136,222 @@
 
 ## Log Body
 
+132. 2026-08-10 Studio 배너「승인 API 열기」링크 제거
+Purpose: 마케터 UI에 JSON API 링크 불필요 — 승인 화면은 추후 별도 Changes:
+
+- awaiting_approval 배너에서 링크 제거 (안내 문구만 유지)
+- script ?v=132
+- 재배포: testWooAiStudio.jssp + testWooAiStudioJs.jssp
+
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
+
+131. 2026-08-10 SQL이력 있을 때 흰화면 — WebView JS 호환 · 삭제 버튼
+Purpose: 이력 0건은 되고 2건 후 재오픈 시 또 흰 화면 — 목록 렌더 경로만 터지는 패턴 Changes:
+
+- 원인: 이력>0 일 때만 타던 forEach/구엔진 + 캐시된 StudioJs · table/flex 접힘 잔존
+- StudioJs: URLSearchParams→수동 qs, forEach/filter 제거, setTimeout 로드, onerror 힌트
+- embed: float+has-sql-side · script ?v=131 캐시 무력
+- deleteSql API + 이력 행 우측「삭제」confirm
+- 재배포: Studio.jssp + StudioJs + Validate + Repository
+
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiValidate.jssp, new_ver/js/testWooRepository.js, docs/log/log.md
+
+130. 2026-08-10 Apply/재진입 urlViewer 흰 화면 — flex:1 제거 · form height
+Purpose: 등록·Apply 후 Studio 재오픈 시 상단이 흰 빈칸, Apply 줄만 남음 Changes:
+
+- #128 embed flex + `@supports` body{flex:1} 이 부모 height:auto 에서 0으로 접힘
+- embed를 table 62%/38% 로 복귀 · 충돌 @supports 블록 삭제
+- 폼 urlViewer 를 container height=520 으로 공간 예약
+- StudioJs: forEach→for (이력 로드 안전)
+- 재배포: testWooAiStudio.jssp + StudioJs + testWooExtendWorkflow 폼
+
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
+
+129. 2026-08-10 Register CSRF — Origin 없을 때 pageHost↔Host 폴백
+Purpose: 등록 시 `CSRF: Origin/Referer required` — urlViewer 가 Origin/Referer 미전달 Changes:
+
+- Studio post()에 pageHost=location.host
+- requireStudioCsrf: Origin/Referer 없으면 csrf+pageHost===Host 로 통과
+- 재배포: testWooCommon.js + StudioJs.jssp (Register는 기존 requireStudioCsrf(p))
+
+Changed files: new_ver/js/testWooCommon.js, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
+
+128. 2026-08-10 embed WF SQL 이력 — table→flex · 340px
+Purpose: urlViewer 임베드에서 이력 패널이 여전히 좁게 보임(240px table-cell 축소) Changes:
+
+- embed `.body` flex · `.side` flex-basis 340px / min 300px
+- 재배포: testWooAiStudio.jssp 후 Studio 다이얼로그 재오픈
+
+Changed files: new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
+
+127. 2026-08-10 Studio/Generate `\u` 한글 오타 전수 스캔·수정
+Purpose: #125 수정 후 “아직 안 뜬 문구”에도 같은 이스케이프 오타 잔존 여부 검증 Changes:
+
+- 잔존: 시간초과·Generate queued 문구 `질뮬`/`재시큐` → 질문/재시도
+- 추가: triage 상세 summary `확인 규거` → `확인 근거`
+- known-bad 패턴(`\uC9C8\uEBAC` 등) new_ver 전역 재스캔 → 0건
+- 재배포: StudioJs + Generate.jssp
+
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiGenerate.jssp, docs/log/log.md
+
+126. 2026-08-10 Register CSRF — payload.csrf 폴백 (urlViewer 헤더 미전달)
+Purpose: 등록 시 `CSRF: X-Requested-With TestWooStudio required` — Generate는 CSRF 미검사라 통과, Register만 실패 Changes:
+
+- requireStudioCsrf(optPayload): 헤더 또는 payload.csrf=TestWooStudio
+- Studio post() 가 모든 API에 csrf 필드 첨부 · Origin/Referer host 검사는 유지
+- 재배포: testWooCommon.js + Register.jssp + StudioJs.jssp
+
+Changed files: new_ver/js/testWooCommon.js, new_ver/jssp/testWooAiRegister.jssp, new_ver/jssp/testWooAiFragmentReview.jssp, new_ver/jssp/testWooAiFragmentAdmin.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
+
+125. 2026-08-10 Studio 승인 배너 한글 오타 수정 · SQL 이력 패널 확장
+Purpose: awaiting_approval 안내가 잘못된 `\uXXXX` 로 깨져 보임 + WF SQL 이력 좁음 Changes:
+
+- 이미/아닙니다/질문/재시도 이스케이프 수정 · 링크 문구 “승인 API 열기”
+- `.side` 300→380px, embed 168→240px
+- 재배포: testWooAiStudio.jssp + testWooAiStudioJs.jssp
+
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
+
+124. 2026-08-10 OpenRouter Claude Azure 400 — tool_choice.none + parallel_tool_calls 제거
+Purpose: Sonnet 4.6(Azure) 전환 시 `tool_choice.none.disable_parallel_tool_use: Extra inputs are not permitted` Changes:
+
+- postChat/_sanitizeChatBody: tool_choice none 이면 parallel_tool_calls 삭제
+- openrouter adapter·Feasibility·Foundry 동일 규칙
+- 재배포: testWooLlm.js (+ Feasibility/Foundry 툴 루프 쓰면 해당 JS도)
+
+Changed files: new_ver/js/testWooLlm.js, new_ver/js/testWooFeasibility.js, new_ver/js/testWooFoundry.js, docs/log/log.md
+
+123. 2026-08-10 Shell* SOAP 교체 · 빈 액티비티 Status · Pass0 salvage/penalty
+Purpose: SOP-330003(구 Bind 시그니처)·빈 CA 안내 유실·Pass0 Gemini 반복 length 동시 조치 Changes:
+
+- SOAP 메서드명 ShellProbe/ShellPick/ShellBind 로 교체(구 Inspect/Bind/GetBindPick 제거)
+- 폼 Apply 에 Status 복구 — 액티비티 없을 때 [안내] 문구 표시
+- Pass0: 하드 리밋 프롬프트 · 첫 호출 fp=0.5 · length 시 slots salvage · 재시도 fp=0.8
+- 재배포: schema + WorkflowUi.js + form + (Pass0) testWooLlm.js
+
+Changed files: new_ver/schema/testWooAiWorkflowUi.xml, new_ver/js/testWooWorkflowUi.js, new_ver/input_form/testWooExtendWorkflow.xml, new_ver/js/testWooLlm.js, docs/report/01_개발가이드.md, docs/log/log.md
+
+122. 2026-08-10 확장 폼 레이아웃 — 상단 제거 · Studio 최대 · Apply에 WF/act/sql
+Purpose: 상단 요약/Status 제거, urlViewer를 Apply 직전까지 확대, 하단에 WF·Activity·ai_sql_id 배치 Changes:
+
+- 폼: Studio first · Apply separator · Workflow 1줄 · Activity+SQL+Apply 같은 줄
+- BuildStudioUrl/Refresh/Status/Selected SQL 라벨 제거 (enter는 Inspect+GetBindPick만)
+
+Changed files: new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
+
+121. 2026-08-10 Apply 단순화 — 첫 액티비티만 · Inspect out×3 · 선택 UI 제거
+Purpose: SOAP Too many arguments 지속 → 복수 선택 폐기, 타게팅 1개 전제로 최소 시그니처 Changes:
+
+- InspectAiTarget: out ×3 (has / message / firstActivityName)
+- ListAiActivities·activityName 인자 제거
+- BindAiSqlId: 항상 첫 ibankSqlDM 에 바인딩
+- 폼: Target activity readOnly + Apply 만
+
+Changed files: new_ver/js/testWooWorkflowUi.js, new_ver/schema/testWooAiWorkflowUi.xml, new_ver/input_form/testWooExtendWorkflow.xml, docs/report/01_개발가이드.md, AGENTS.md, docs/log/log.md
+
+120. 2026-08-10 SOAP Element≠string — Inspect 스칼라 복귀 + ListAiActivities 분리
+Purpose: 폼은 Element(inspectResult)인데 서버 메서드는 string → 타입 불일치. Inspect/List 분리로 안정화 Changes:
+
+- InspectAiTarget: 검증된 string out ×5 로 복귀
+- ListAiActivities 신설: actList DOM ×1 (폼 type=list)
+- 전체 JSSP 셸은 Apply→activities 쓰기 때문에 비권장(아래 채팅 설명)
+- 재배포: schema → JS → form (셋 동시)
+
+Changed files: new_ver/js/testWooWorkflowUi.js, new_ver/schema/testWooAiWorkflowUi.xml, new_ver/input_form/testWooExtendWorkflow.xml, docs/report/01_개발가이드.md, docs/log/log.md
+
+119. 2026-08-10 SOAP Too many arguments — InspectAiTarget out DOM 1개로 축소
+Purpose: Inspect out 을 6개로 늘린 뒤 `Too many arguments in XML SOAP message` 발생 — ACC SOAP 인자 한도 Changes:
+
+- InspectAiTarget: in 1 + out 1 (`testWooInspect` DOM: @has/@count/@message/@default + act[])
+- 폼: xpathOut=/tmp/testWooInspect 후 set 로 /tmp/@* 매핑 · list xpath=/tmp/testWooInspect/act
+- 가드레일 문서화: 스칼라 out 추가 금지, 풍부 데이터는 DOM 봉투
+- 재배포 순서: schema → JS WorkflowUi → form ExtendWorkflow (셋 모두 필수)
+
+Changed files: new_ver/js/testWooWorkflowUi.js, new_ver/schema/testWooAiWorkflowUi.xml, new_ver/input_form/testWooExtendWorkflow.xml, docs/report/01_개발가이드.md, docs/log/log.md
+
+118. 2026-08-10 embed Studio 흰 빈칸 — min-height:0 접힘 복구
+Purpose: #116 embed 압축에서 min-height 제거 후 urlViewer 안 Studio 가 흰 빈 영역으로 접힘 Changes:
+
+- body.embed / .app: height:auto + min-height:480px (100%+min-height:0 제거)
+- overflow:hidden → auto
+- 재배포: JSSP testWooAiStudio.jssp 만
+
+Changed files: new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
+
+117. 2026-08-10 Apply 액티비티 — 텍스트입력 → 캔버스 목록 type=list 선택
+Purpose: Apply 대상 커스텀 액티비티를 자유입력 대신 캔버스 ibankSqlDM 목록에서 고르게 함 (복수 대응) Changes:
+
+- InspectAiTarget 6번째 out: actList DOM (`testWooAiActList/act`)
+- 폼: type=list + xpathValue + expr → `/tmp/@testWooAiActivityName` (xtk:workflow WSDL 선택과 동일)
+- HTML select/sysEnum 동적 채움은 ACC 비지원 → memory list 가 공식 대안
+- 재배포: schema testWooAiWorkflowUi + JS WorkflowUi + form ExtendWorkflow
+
+Changed files: new_ver/js/testWooWorkflowUi.js, new_ver/schema/testWooAiWorkflowUi.xml, new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
+
+116. 2026-08-10 listAiSql 진단·Repository 재배포 안내 · embed 높이 압축
+Purpose: `listAiSqlByWorkflow is not a function` 은 Adobe API 오용이 아니라 서버 Repository.js 구버전. embed CSS 를 urlViewer 낮은 높이에 맞게 압축 Changes:
+
+- Validate: repo 메서드 없으면 재배포 안내 메시지
+- listAiSqlByWorkflow 자체는 xtk.queryDef(공식) — 로컬 new_ver 에 이미 존재
+- Studio embed: min-height 제거·폰트/패딩 축소·퍼널 숨김·side 168px
+- 인풋폼 다이얼로그 고정 height 는 ACC 공식상 불가(비율 레이아웃) — SubFormButton API 에 height 없음
+
+Changed files: new_ver/jssp/testWooAiValidate.jssp, new_ver/jssp/testWooAiStudio.jssp, docs/report/01_개발가이드.md, docs/log/log.md
+
+115. 2026-08-10 Studio UX — listSql·bindPick·폼 축소·브라우저 열기·embed 밀집
+Purpose: urlViewer 동작 후 UX — SQL 이력 listSql 오류(구 Validate) 대응, 폼 단순화, Studio 한 화면 밀집, Apply=SQL선택+액티비티명 Changes:
+
+- Validate: listSql/getSql 유지 + setBindPick/getBindPick (Option testWooAiBindPick_&lt;login&gt;)
+- Studio: SQL 클릭·등록 시 setBindPick · embed 헤더「브라우저로 보기」·CSS 밀집
+- 확장 폼: Fallback/수동 ai_sql_id 제거 · Selected SQL 표시 · activity @name + Apply + check
+- Inspect 5번째 out=defaultActivityName · Bind 에 workflowName·pick 폴백
+- 이력은 woo:testWooAiSql(workflow_name) 에 남음 — 창 닫았다 열어도 listSql 정상 시 유지
+
+Changed files: new_ver/jssp/testWooAiValidate.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/js/testWooWorkflowUi.js, new_ver/schema/testWooAiWorkflowUi.xml, new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
+
+114. 2026-08-10 Studio 임베드 — type=html iframe → ACC urlViewer+sessionToken
+Purpose: 콘솔에서 iframe HTML이 글자로 보이던 UX를 Adobe 폼 컨트롤 urlViewer 로 교체 (사용자 제시 adHocReport 패턴 · KCS UrlViewer) Changes:
+
+- `testWooExtendWorkflow`: `type="urlViewer"` `sessionToken="true"`
+  `urlExpr="$(serverUrl)+'/woo/testWooAiStudio.jssp?workflowName='+@internalName+'&embed=1'"`
+- type=html iframe 제거. Fallback URL(Option) 필드는 외부 브라우저용으로 유지
+- 가이드 §7 임베드 계약 문구 갱신
+
+Changed files: new_ver/input_form/testWooExtendWorkflow.xml, docs/report/01_개발가이드.md, docs/log/log.md
+
+113. 2026-08-10 가이드 §7 재배포 — #112 콘솔 경로·파일 대응표(A~E) 보강
+Purpose: “뭘 어디에”가 불명확하다는 피드백에 맞춰 Data schemas / JS / Input form / JSSP / uplus 외 작업을 표로 고정 Changes:
+
+- `01_개발가이드` §5-1 을 A(필수4)·B(Option)·C(uplus)·D(스킵)·E(검증) 로 재작성
+
+Changed files: docs/report/01_개발가이드.md, docs/log/log.md
+
+112. 2026-08-10 계약 B — Inspect/Bind 대상 ibankSqlDM(+레거시 customActivity) · script SQL 금지
+Purpose: 운영 액티비티 `ibankSqlDM`(AI 대상자 추출)에 `ai-sql-id` 만 바인딩하는 B안을 코드·가이드에 반영. OOTB SQL Data Management·script SQL 주입은 대상/금지 Changes:
+
+- Inspect/Bind: 주 요소 `ibankSqlDM`, 레거시 팔레트 xpath `customActivity` 병행 인식
+- 상태 메시지·폼 도움말·Studio 안내 문구를 ibankSqlDM / no script 기준으로 갱신
+- 샘플 계약 XML 을 `ibankSqlDM` + `ai-sql-id` 로 정정
+- 가이드 v1.7.6 · pipeline-contracts · skill/architecture 동기화
+- 7d 런타임·`uplus:workflow` 스키마 `ai-sql-id` 필드 추가는 저장소 외 → 운영 반영 안내로 분리
+
+Changed files: new_ver/js/testWooWorkflowUi.js, new_ver/input_form/testWooExtendWorkflow.xml, new_ver/schema/testWooAiWorkflowUi.xml, new_ver/workflow/testWooSampleCustomActivityContract.xml, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudioJs.jssp, docs/report/01_개발가이드.md, .cursor/skills/campaign-ai-studio/{SKILL.md,pipeline-contracts.md,architecture.md}, AGENTS.md, docs/log/log.md
+
+111. 2026-08-10 #96~#110 검수 P0·P1 수정 — ai-sql-id 중복·enter throw·embed CSS·로그96 결번
+Purpose: ACC 콘솔 통합 계층(#96~#110) 검수 P0 2건·P1 3건 수정. Fragment 생애주기 런타임 전환·WebApp 이관은 범위 외 Changes:
+
+- P0-1: `_twWfSetAiSqlId` — E4X XMLList 대입 시 자식 무음 유실 → length>1 이면 전부 제거 후 단일 재삽입, before/after logInfo
+- P0-2: BuildStudioUrl 진입 경로 — `testWooAiStudioBaseUrl` 비면 throw 대신 안내 HTML(옵션 미설정·설정법). BindAiSqlId 액션 경로는 throw 유지. Adobe: soapCall 예외는 모두 표시되어 <enter> throw 시 Targeting 확장 폼 진입 불가
+- P1: BindAiSqlId activityName 불일치 시 캔버스 후보 @name 목록 포함
+- P1: embed=1 CSS — 표/블록 폴백 + `@supports(flex)` · vh→부모 높이(%). DOM/스크립트 변경 없음
+- P1: Fallback URL을 iframe 바로 아래 이동 + 빈 프레임 시 브라우저 붙여넣기 안내. Web Applications 비채택 사유를 폼 상단 주석에 기록
+- P1: form enter / Refresh 2+2 호출은 오픈 vs 수동으로 분리되어 3중 아님 → 호출 축소 없이 주석만 남김
+- 로그 #96 결번 복원 기재(번호 재사용 금지). #98이 언급한 “승인 UI(#96 계열)”은 git 단일 커밋으로 특정 불가
+- ai-sql-id 참조 구조 확정 → 킬스위치 역조회(fragment → ai_sql_id → WF) 경로 성립 후보 (`10_Fragment_생애주기_설계.md` TBD 해소)
+- 4-1 Fallback URL 외부 브라우저 진단은 폐쇄망이라 로컬에서 미실행 — 배포 후 사용자 검증 항목으로 유지
+
+Changed files: new_ver/js/testWooWorkflowUi.js, new_ver/input_form/testWooExtendWorkflow.xml, new_ver/jssp/testWooAiStudio.jssp, new_ver/schema/testWooAiWorkflowUi.xml, docs/log/log.md
+
 110. 2026-08-07 InspectAiTarget — activityCount long↔int SOAP 타입 오류 → string outs
 Purpose: 폼 soapCall 이 int 로 보내고 메서드가 long 을 기대해 발생한 타입 불일치 해소 Changes:
 
@@ -149,7 +388,7 @@ Changed files: new_ver/input_form/testWooExtendWorkflow.xml, new_ver/js/testWooW
 106. 2026-08-07 AI Studio 다이얼로그 — URL·WF명 자동/readOnly · baseUrl은 인풋폼에서 고정
 Purpose: 사용자가 URL을 입력·수정하지 않도록 하고, 호스트는 개발자가 확장 폼 soapCall에서만 바꾸게 함 Changes:
 
-- testWooExtendWorkflow: form enter 시 BuildStudioUrl · internalName/URL readOnly · base=lgu-test
+- testWooExtendWorkflow: form enter 시 BuildStudioUrl · internalName/URL readOnly · base=__CAMPAIGN_SERVER_URL__
 - BuildStudioUrl(workflowName, baseUrl) 시그니처 · JS fallback 동일 호스트
 - 가이드 섹션7 진입 UX 문구 갱신
 
@@ -242,6 +481,16 @@ Purpose: 마케터가 PASS/PLAN/G1/OUT 같은 내부 코드를 이해하지 못�
 - 통과 시 상세 없으면 “이 검사를 만족했습니다.”
 
 Changed files: new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
+
+96. 2026-08-06 결번(기록 누락) — 승인 UI 추정 작업, git으로 단일 커밋 특정 불가
+Purpose: Log Index 가 95 다음 97 로 건너뛴 채번 공백을 정정. 번호를 다른 작업에 재사용하지 않음 Changes:
+
+- Index/Body 에 #96 을 **결번(기록 누락)** 으로 명시 기재
+- #98 Body 가 “승인 UI(#96 계열·폼/목록/HTML)”을 언급하나, `git log` / `-S "96."` / FragmentReview 관련 커밋으로는 95→97 사이 단일 작업을 특정할 수 없음
+- `testWooAiFragmentReview.jssp` 등은 초기·감사 커밋에 이미 존재. 실제 승인 UI 구현 로그가 누락된 것으로 판단
+- 이후 작업은 #111 부터 정상 채번
+
+Changed files: docs/log/log.md
 
 95. 2026-08-06 스모크 9c list_schemas namespace 누락 수정 (args={} → allowed ns)
 Purpose: ACC 스모크 14/15 — 9 PASS(attempts=1) · 9c 만 `namespace not allowed:  (allowed: woo)` 로 FAIL. Foundry 회귀가 아니라 스모크 계측 버그 Changes:
