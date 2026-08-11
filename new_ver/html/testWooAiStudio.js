@@ -5,8 +5,8 @@
  * 등록 = 이력 저장(ai_sql_id). chips는 서버 응답만.
  * 인증은 Cookie + 서버 logonWithToken() — X-Security-Token 헤더 미사용(ACC 미해석).
  * ACC urlViewer = MSHTML(IE) — fetch/Promise/finally/classList/confirm 금지 (#133).
- * #140: _showSqlSide 는 class만 · inline display 금지(embed table-cell).
- * #144: 진단(#twDiag)·TW-BOOT 제거 — _diag 는 no-op.
+ * #134: 진단 패널은 details 대신 div 토글 (IE details 미지원).
+ * #135: TW-BOOT. #139 baseline: #134/#136/#138 레이아웃 철회 · 진단 기본 펼침·href 기록.
  *
  * [Main Functions]
  * ===========
@@ -16,7 +16,7 @@
  * - renderGates — PASS/FAIL·게이트 코드를 사용자용 한글 라벨로 표시
  * - loadSqlList / loadSqlItem / deleteSqlItem — WF별 SQL 이력(2단계 클릭 삭제)
  * - setBindPick — SQL 클릭/등록 시 폼 Apply 용 Option pick 저장
- * - _xhrPost / _diag — IE XHR (_diag 는 #144 이후 no-op)
+ * - _xhrPost / _diag — IE XHR + 인페이지 진단 패널
  *
  * [Dependencies]
  * =========
@@ -80,8 +80,27 @@
     el.className = _trim(s.replace(/\s+/g, " "));
   }
 
-  // ---- 진단 UI 제거 (#144). 호출부는 유지하되 DOM 기록 안 함 ----
-  function _diag(msg) { /* no-op */ }
+  // ---- 인페이지 진단 (urlViewer 에서 console 없음) ----
+  function _diag(msg) {
+    try {
+      var el = $("twDiagLog");
+      if (!el) return;
+      var line = document.createElement("div");
+      var d = new Date();
+      var hh = d.getHours();
+      var mm = d.getMinutes();
+      var ss = d.getSeconds();
+      var ts =
+        (hh < 10 ? "0" : "") + hh + ":" +
+        (mm < 10 ? "0" : "") + mm + ":" +
+        (ss < 10 ? "0" : "") + ss;
+      line.appendChild(document.createTextNode(ts + " " + String(msg)));
+      el.appendChild(line);
+      if (el.childNodes.length > 200) {
+        el.removeChild(el.firstChild);
+      }
+    } catch (eD) {}
+  }
 
   function _installOnError() {
     window.onerror = function (msg, url, line, col, errObj) {
@@ -432,14 +451,13 @@
   }
 
   function _showSqlSide(on) {
-    /* inline display 금지 — embed 는 CSS table-cell, 비embed 는 float block (#140) */
     try {
       if (on) _addCls(document.body, "has-sql-side");
       else _rmCls(document.body, "has-sql-side");
     } catch (eCls) {}
     var side = $("sideSql");
     if (!side) return;
-    try { side.style.display = ""; } catch (eDisp) {}
+    side.style.display = on ? "block" : "none";
   }
 
   function _clearDelPending() {
@@ -764,10 +782,47 @@
   }
   function setBusy(b) { $("btnGen").disabled = b; $("nl").disabled = b; }
 
+  // IE 는 <details> 미지원 — #twDiagSum 클릭 토글. embed 한시적 기본 펼침 (#139)
+  function _wireDiagToggle() {
+    var sum = $("twDiagSum");
+    var log = $("twDiagLog");
+    if (!sum || !log) return;
+    if (EMBED) log.style.display = "block";
+    else if (!log.style.display) log.style.display = "none";
+    sum.onclick = function () {
+      log.style.display = (log.style.display === "none") ? "block" : "none";
+      return false;
+    };
+  }
+
   function init() {
     _installOnError();
     try {
-      _diag("init enter v=142");
+      _wireDiagToggle();
+      try {
+        var dm0 = (typeof document.documentMode !== "undefined") ? String(document.documentMode) : "n/a(non-IE)";
+          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | v=139";
+        var bootReached = !!(window.__TW_BOOT_MSG__);
+        if (bootReached) _diag(String(window.__TW_BOOT_MSG__));
+        _diag(okMsg);
+        _diag("TW-BOOT reached=" + (bootReached ? "yes" : "no"));
+        _diag("location.href=" + String(location.href || ""));
+        /* 정상 시 부트 바 숨김 */
+        var boot = $("twBoot");
+        var tbl = $("twBootTable");
+        if (boot) {
+          boot.className = "";
+          boot.style.display = "none";
+        }
+        if (tbl) {
+          tbl.className = "";
+          tbl.style.display = "none";
+        }
+      } catch (eBoot) {}
+      _diag("UA=" + String(navigator.userAgent || ""));
+      _diag("documentMode=" + (typeof document.documentMode !== "undefined" ? String(document.documentMode) : "n/a(non-IE)"));
+      _diag("compatMode=" + String(document.compatMode || ""));
+      _diag("init enter");
       var login = window.__TW_LOGIN__ || "";
       var wfEl = $("wfInfo");
       if (wfEl) {

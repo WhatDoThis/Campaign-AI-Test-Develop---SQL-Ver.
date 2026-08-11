@@ -9,14 +9,12 @@ Studio(urlViewer) + 하단 Apply. urlViewer 는 container height 로 공간 예�
 - URL 값은 보이는데 Viewer 만 희면 → Studio JSSP/JS 내부 문제.
 - FormatDate/GetDate 금지 (XTK-170016). nonce 는 ShellPick tick.
 
-[enter URL · 캐시버스트 #143]
+[enter URL 방어 #139]
 =========
-1) SOAP 호출 "이전"에 /tmp/@twStudioUrl 기본값 설정 (항상 존재, _r 없음).
-2) ShellProbe / ShellPick (tick → /tmp/@twStudioNonce).
-3) enter 직후 URL 에 _r=tick 부여 — 동일 URL 재진입 시 urlViewer(IE) 캐시 흰화면 방지.
-   (#139 의 "enter 에 _r 금지" 는 재오픈 흰화면을 유발해 철회)
-4) Reload / Apply 도 동일하게 _r=tick 갱신.
-5) Studio URL ?v=143 — #145 입력 2줄·답변 확대 리트머스.
+1) SOAP 호출 "이전"에 /tmp/@twStudioUrl 기본값 설정 (항상 존재).
+2) ShellProbe / ShellPick.
+3) 최초 enter 에는 _r 없음 (매 진입 sessionToken 재바인딩 완화).
+4) Reload Studio · Apply 직후에만 _r=tick 갱신.
 
 SOAP: ShellProbe / ShellPick / ShellBind 만 (구 Inspect*/Bind* 호출 금지).
 
@@ -39,7 +37,7 @@ schema testWooAiWorkflowUi → JS testWooWorkflowUi.js → 이 폼 (동시, Shel
 
       <enter>
         <!-- 1) SOAP 실패와 무관하게 urlViewer URL 이 항상 있도록 선행 설정 -->
-        <set expr="$(serverUrl) + '/woo/testWooAiStudio.jssp?workflowName=' + @internalName + '&amp;embed=1&amp;v=143'"
+        <set expr="$(serverUrl) + '/woo/testWooAiStudio.jssp?workflowName=' + @internalName + '&amp;embed=1&amp;v=139'"
              xpath="/tmp/@twStudioUrl"/>
         <soapCall name="ShellProbe" service="woo:testWooAiWorkflowUi">
           <param exprIn="[activities]" type="DOMElement"/>
@@ -53,9 +51,7 @@ schema testWooAiWorkflowUi → JS testWooWorkflowUi.js → 이 폼 (동시, Shel
           <param type="string" xpathOut="/tmp/@testWooAiSqlPickLabel"/>
           <param type="string" xpathOut="/tmp/@twStudioNonce"/>
         </soapCall>
-        <!-- 2) enter 마다 _r=tick — 동일 URL 재오픈 시 MSHTML 캐시 흰화면 방지 (#143) -->
-        <set expr="$(serverUrl) + '/woo/testWooAiStudio.jssp?workflowName=' + @internalName + '&amp;embed=1&amp;v=143&amp;_r=' + [/tmp/@twStudioNonce]"
-             xpath="/tmp/@twStudioUrl"/>
+        <!-- 최초 enter: _r 붙이지 않음 (#139 step2). Reload/Apply 에서만 갱신 -->
       </enter>
 
       <!-- 항상 렌더: 비면 enter 실패, 값 있는데 Viewer 희면 Studio 내부 -->
@@ -69,13 +65,13 @@ schema testWooAiWorkflowUi → JS testWooWorkflowUi.js → 이 폼 (동시, Shel
             <param type="string" xpathOut="/tmp/@twStudioNonce"/>
           </soapCall>
           <!-- Reload: _r=tick (Iif/FormatDate 금지 — XTK-170016). tick 은 ShellPick -->
-          <set expr="$(serverUrl) + '/woo/testWooAiStudio.jssp?workflowName=' + @internalName + '&amp;embed=1&amp;v=143&amp;_r=' + [/tmp/@twStudioNonce]"
+          <set expr="$(serverUrl) + '/woo/testWooAiStudio.jssp?workflowName=' + @internalName + '&amp;embed=1&amp;v=139&amp;_r=' + [/tmp/@twStudioNonce]"
                xpath="/tmp/@twStudioUrl"/>
         </enter>
       </input>
 
       <!-- height: Apply/재오픈 후 urlViewer 가 0높이로 접히는 것 방지 (#130) -->
-      <container colspan="3" height="640" name="twStudioViewer" nolabel="true">
+      <container colspan="3" height="560" name="twStudioViewer" nolabel="true">
         <input colspan="3" nolabel="true" sessionToken="true" type="UrlViewer" urlMode="true"
                urlExpr="[/tmp/@twStudioUrl]"/>
       </container>
@@ -119,7 +115,7 @@ schema testWooAiWorkflowUi → JS testWooWorkflowUi.js → 이 폼 (동시, Shel
             <param type="string" xpathOut="/tmp/@twStudioNonce"/>
           </soapCall>
           <!-- Apply 직후: _r 갱신 (Viewer 재로드용). FormatDate/Iif 금지 -->
-          <set expr="$(serverUrl) + '/woo/testWooAiStudio.jssp?workflowName=' + @internalName + '&amp;embed=1&amp;v=143&amp;_r=' + [/tmp/@twStudioNonce]"
+          <set expr="$(serverUrl) + '/woo/testWooAiStudio.jssp?workflowName=' + @internalName + '&amp;embed=1&amp;v=139&amp;_r=' + [/tmp/@twStudioNonce]"
                xpath="/tmp/@twStudioUrl"/>
           <set value="Applied. Save the workflow." xpath="/tmp/@testWooAiStatus"/>
         </enter>
