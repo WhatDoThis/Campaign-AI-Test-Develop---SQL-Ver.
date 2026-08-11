@@ -2,6 +2,7 @@
 response.setContentType("application/json;charset=utf-8");
 /*
  * testWooAiRegister.jssp — plan 재컴파일 + usedFragments/compileHash 필수
+ * 5차: 동일 workflow + 정규화 SQL 해시면 insert 스킵 (created:false + message)
  */
 try {
   TW_RESPONSE = response;
@@ -31,6 +32,7 @@ try {
     jsonOut({
       ok: true,
       passed: false,
+      created: false,
       results: results,
       sql: compiled.sql,
       summary: compiled.summary,
@@ -42,35 +44,93 @@ try {
     var used = testWoo.compiler.collectUsedFragments(p.plan);
     if (!used.length) throw new Error("[Register] usedFragments empty");
     var compileHash = testWoo.lifecycle.compileHash(p.plan, compiled.sql);
+    var sqlHash = testWoo.lifecycle.sqlContentHash(compiled.sql);
+    var wfName = String(p.workflow_name || "");
 
-    var title = String(p.title || "");
-    if (typeof TW_TITLE_MAX !== "undefined" && title.length > TW_TITLE_MAX)
-      title = title.substring(0, TW_TITLE_MAX);
+    if (wfName) {
+      var dup = testWoo.repo.findAiSqlBySqlHash(wfName, sqlHash);
+      if (dup && dup.id) {
+        jsonOut({
+          ok: true,
+          passed: true,
+          created: false,
+          ai_sql_id: dup.id,
+          status: dup.status || "registered",
+          sql: compiled.sql,
+          summary: compiled.summary,
+          usedFragments: used,
+          compileHash: compileHash,
+          sqlHash: sqlHash,
+          message:
+            "\uB3D9\uC77C\uD55C SQL\uC774 \uC774\uBBF8 \uB4F1\uB85D\uB418\uC5B4 \uC788\uC2B5\uB2C8\uB2E4. " +
+            "\uC0C8 ID\uB97C \uB9CC\uB4E4\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. (ai_sql_id=" +
+            dup.id +
+            ")"
+        });
+      } else {
+        var title = String(p.title || "");
+        if (typeof TW_TITLE_MAX !== "undefined" && title.length > TW_TITLE_MAX)
+          title = title.substring(0, TW_TITLE_MAX);
 
-    var id = testWoo.repo.saveAiSql({
-      title: title,
-      creator: currentLogin(),
-      nl_request: p.nl_request,
-      plan_json: JSON.stringify(p.plan),
-      used_fragments: JSON.stringify(used),
-      compile_hash: compileHash,
-      sql_query: compiled.sql,
-      summary_ko: compiled.summary || p.summary,
-      target_count: p.target_count != null ? p.target_count : 0,
-      workflow_name: p.workflow_name || "",
-      excluded_slots: p.excluded_slots ? JSON.stringify(p.excluded_slots) : "",
-      status: "registered"
-    });
-    jsonOut({
-      ok: true,
-      passed: true,
-      ai_sql_id: id,
-      status: "registered",
-      sql: compiled.sql,
-      summary: compiled.summary,
-      usedFragments: used,
-      compileHash: compileHash
-    });
+        var id = testWoo.repo.saveAiSql({
+          title: title,
+          creator: currentLogin(),
+          nl_request: p.nl_request,
+          plan_json: JSON.stringify(p.plan),
+          used_fragments: JSON.stringify(used),
+          compile_hash: compileHash,
+          sql_query: compiled.sql,
+          summary_ko: compiled.summary || p.summary,
+          target_count: p.target_count != null ? p.target_count : 0,
+          workflow_name: wfName,
+          excluded_slots: p.excluded_slots ? JSON.stringify(p.excluded_slots) : "",
+          status: "registered"
+        });
+        jsonOut({
+          ok: true,
+          passed: true,
+          created: true,
+          ai_sql_id: id,
+          status: "registered",
+          sql: compiled.sql,
+          summary: compiled.summary,
+          usedFragments: used,
+          compileHash: compileHash,
+          sqlHash: sqlHash
+        });
+      }
+    } else {
+      var title2 = String(p.title || "");
+      if (typeof TW_TITLE_MAX !== "undefined" && title2.length > TW_TITLE_MAX)
+        title2 = title2.substring(0, TW_TITLE_MAX);
+
+      var id2 = testWoo.repo.saveAiSql({
+        title: title2,
+        creator: currentLogin(),
+        nl_request: p.nl_request,
+        plan_json: JSON.stringify(p.plan),
+        used_fragments: JSON.stringify(used),
+        compile_hash: compileHash,
+        sql_query: compiled.sql,
+        summary_ko: compiled.summary || p.summary,
+        target_count: p.target_count != null ? p.target_count : 0,
+        workflow_name: "",
+        excluded_slots: p.excluded_slots ? JSON.stringify(p.excluded_slots) : "",
+        status: "registered"
+      });
+      jsonOut({
+        ok: true,
+        passed: true,
+        created: true,
+        ai_sql_id: id2,
+        status: "registered",
+        sql: compiled.sql,
+        summary: compiled.summary,
+        usedFragments: used,
+        compileHash: compileHash,
+        sqlHash: sqlHash
+      });
+    }
   }
 } catch (e) {
   handleApiError(e);

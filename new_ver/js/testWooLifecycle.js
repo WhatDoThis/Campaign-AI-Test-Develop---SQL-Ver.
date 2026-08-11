@@ -3,10 +3,13 @@
  * =======================================================
  * contentHash, 버전 발행, revoke, hardDelete, impact 조회.
  * publish는 dedup 판정(dedup_verdict/dedup_match_id/dedup_diff_count)도 함께 기록한다.
+ * 4차: Foundry가 status=active·active=true·approved_by=foundry 로 넘기면 그대로 저장.
+ *      fragDoc.status 없으면 기본 active (구 verified 기본값에서 변경).
+ * 5차: sqlContentHash — 정규화 SQL만 해시(Register 중복 스킵 J-9-3-4).
  *
  * [Main Functions]
  * ===========
- * - normalizeSql / contentHash / nextVersion
+ * - normalizeSql / contentHash / sqlContentHash / nextVersion
  * - publish / revoke / hardDelete / listImpact / compileHash
  *
  * [Dependencies]
@@ -145,8 +148,12 @@ testWoo.lifecycle = (function () {
     doc.@param_domain = fragDoc.param_domain || "";
     doc.@description = fragDoc.description || "";
     doc.@sample_questions = fragDoc.sample_questions || "";
-    doc.@status = fragDoc.status || "verified";
-    doc.@active = fragDoc.active === true;
+    doc.@status = fragDoc.status || "active";
+    doc.@active = fragDoc.active === true || fragDoc.status === "active";
+    if (fragDoc.approved_by) {
+      doc.@approved_by = String(fragDoc.approved_by);
+      doc.@approved_at = nowStr();
+    }
     doc.@origin = fragDoc.origin || "manual";
     doc.@source_request_id = fragDoc.source_request_id || 0;
     doc.@gate_report = fragDoc.gate_report || "";
@@ -284,9 +291,15 @@ testWoo.lifecycle = (function () {
     return _djb2(JSON.stringify(plan || {}) + "|" + normalizeSql(sql));
   }
 
+  // 5차 J-9-3-4: SQL 본문만 정규화 후 해시 (plan 제외)
+  function sqlContentHash(sql) {
+    return _djb2(normalizeSql(sql));
+  }
+
   return {
     normalizeSql: normalizeSql,
     contentHash: contentHash,
+    sqlContentHash: sqlContentHash,
     nextVersion: nextVersion,
     publish: publish,
     revoke: revoke,

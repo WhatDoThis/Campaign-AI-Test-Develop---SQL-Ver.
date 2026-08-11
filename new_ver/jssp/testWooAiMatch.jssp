@@ -1,0 +1,56 @@
+<%
+response.setContentType("application/json;charset=utf-8");
+/*
+ * testWooAiMatch.jssp (조건→WKF 매칭 API · 전역)
+ * ==============================================
+ * plan fragment name 집합 vs 전체 registered SQL · Jaccard≥0.9.
+ * 응답에 WKF·캠페인·Program·nl_request enrichment (선택 시 컨텍스트 반영용).
+ *
+ * [Endpoint]
+ * =======================
+ * POST /woo/testWooAiMatch.jssp  { plan, campaign_id?, threshold? }
+ *
+ * [Dependencies]
+ * =========
+ * - woo:testWooCommon.js / Config / Fragments / Compiler / Lifecycle
+ * - woo:testWooRepository.js / WorkflowClone.js / Match.js
+ */
+try {
+  TW_RESPONSE = response;
+  TW_REQUEST = request;
+  TW_DOCUMENT = document;
+  loadLibrary("woo:testWooCommon.js");
+  requireRight("testWooAiSqlGenerate");
+
+  var p = readPayload();
+  if (!p.plan) throw new Error("plan missing");
+
+  loadLibrary("woo:testWooConfig.js");
+  loadLibrary("woo:testWooFragments.js");
+  loadLibrary("woo:testWooCompiler.js");
+  loadLibrary("woo:testWooLifecycle.js");
+  loadLibrary("woo:testWooRepository.js");
+  loadLibrary("woo:testWooWorkflowClone.js");
+  loadLibrary("woo:testWooMatch.js");
+
+  var campaignId = String(p.campaign_id || p.operation_id || "");
+  var thr =
+    p.threshold != null ? p.threshold : testWoo.match.JACCARD_THRESHOLD;
+  var result = testWoo.match.matchByPlan(p.plan, campaignId, {
+    threshold: thr
+  });
+
+  jsonOut({
+    ok: true,
+    items: result.items,
+    count: result.count,
+    threshold: result.threshold,
+    matchKey: result.matchKey,
+    queryFragmentCount: result.queryFragmentCount,
+    scope: result.scope || "global",
+    campaign_id: result.campaign_id
+  });
+} catch (e) {
+  handleApiError(e);
+}
+%>

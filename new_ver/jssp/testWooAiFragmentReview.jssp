@@ -1,13 +1,14 @@
 <%
 response.setContentType("application/json;charset=utf-8");
 /*
- * testWooAiFragmentReview.jssp — verified fragment 승인/반려 API
+ * testWooAiFragmentReview.jssp — verified fragment 승인/반려 API (민감·킬스위치용)
+ * ==============================================================================
+ * 4차: 일반 Foundry 경로는 status=active 자동. list(verified)는 비는 것이 정상.
+ * Option testWooAiAutoApprove=0 이거나 구 verified 잔여분만 여기로 온다.
  * payload action: list | detail | approve | reject | revoke | listImpact
  *
- * dedupVerdict === "near" 인 항목은 needsDedupReview=true + dedupWarning 문구를 실어 보낸다.
- * detail 은 유사 fragment(dedupMatchId)의 sqlText 를 similar 로 함께 반환하여
- * 화면에서 sqlText 나란히 비교 + "기존 fragment 사용" 선택이 가능하게 한다.
- * (HTML 승인 화면은 미구현 — 현재는 Explorer + 본 JSON API)
+ * dedupVerdict === "near" 인 항목은 needsDedupReview=true + dedupWarning.
+ * (HTML 승인 화면은 미구현 — Explorer + 본 JSON API)
  */
 try {
   TW_RESPONSE = response;
@@ -95,7 +96,26 @@ try {
         dedupWarning: dv === "near" ? dedupWarning(dc) : ""
       });
     }
-    jsonOut({ ok: true, fragments: rows });
+    var autoOn = true;
+    try {
+      if (typeof testWoo !== "undefined" && testWoo.foundry &&
+          typeof testWoo.foundry.isAutoApprove === "function") {
+        autoOn = testWoo.foundry.isAutoApprove();
+      } else {
+        var rawAa = String(getOption("testWooAiAutoApprove") || "");
+        rawAa = rawAa.replace(/^\s+|\s+$/g, "").toLowerCase();
+        if (rawAa === "0" || rawAa === "false" || rawAa === "off" || rawAa === "no")
+          autoOn = false;
+      }
+    } catch (eAa) {}
+    jsonOut({
+      ok: true,
+      fragments: rows,
+      autoApprove: autoOn,
+      note: autoOn
+        ? "autoApprove ON — verified 큐가 비는 것이 정상(신규는 active)."
+        : "autoApprove OFF — verified 승인 대기 목록."
+    });
   } else if (action === "approve") {
     requireStudioCsrf(p);
     testWoo.repo.approveFragment(Number(p.fragmentId), currentLogin());

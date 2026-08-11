@@ -2,6 +2,7 @@
 woo:testWooExtendWorkflow (Workflow 확장 Input form · Test Woo AI Studio)
 ====================================================================
 Studio(urlViewer) + 하단 Apply. urlViewer 는 container height 로 공간 예약(#130).
+litmus v=150 (5차 전역 매칭·3줄 WKF 행과 동기).
 
 [판별 — Studio URL 칸]
 =========
@@ -37,7 +38,7 @@ schema testWooAiWorkflowUi → JS testWooWorkflowUi.js → 이 폼 (동시, Shel
 
       <enter>
         <!-- 1) SOAP 실패와 무관하게 urlViewer URL 이 항상 있도록 선행 설정 -->
-        <set expr="$(serverUrl) + '/woo/testWooAiStudio.jssp?workflowName=' + @internalName + '&amp;embed=1&amp;v=139'"
+        <set expr="$(serverUrl) + '/woo/testWooAiStudio.jssp?workflowName=' + @internalName + '&amp;embed=1&amp;v=150'"
              xpath="/tmp/@twStudioUrl"/>
         <soapCall name="ShellProbe" service="woo:testWooAiWorkflowUi">
           <param exprIn="[activities]" type="DOMElement"/>
@@ -65,7 +66,7 @@ schema testWooAiWorkflowUi → JS testWooWorkflowUi.js → 이 폼 (동시, Shel
             <param type="string" xpathOut="/tmp/@twStudioNonce"/>
           </soapCall>
           <!-- Reload: _r=tick (Iif/FormatDate 금지 — XTK-170016). tick 은 ShellPick -->
-          <set expr="$(serverUrl) + '/woo/testWooAiStudio.jssp?workflowName=' + @internalName + '&amp;embed=1&amp;v=139&amp;_r=' + [/tmp/@twStudioNonce]"
+          <set expr="$(serverUrl) + '/woo/testWooAiStudio.jssp?workflowName=' + @internalName + '&amp;embed=1&amp;v=150&amp;_r=' + [/tmp/@twStudioNonce]"
                xpath="/tmp/@twStudioUrl"/>
         </enter>
       </input>
@@ -115,7 +116,7 @@ schema testWooAiWorkflowUi → JS testWooWorkflowUi.js → 이 폼 (동시, Shel
             <param type="string" xpathOut="/tmp/@twStudioNonce"/>
           </soapCall>
           <!-- Apply 직후: _r 갱신 (Viewer 재로드용). FormatDate/Iif 금지 -->
-          <set expr="$(serverUrl) + '/woo/testWooAiStudio.jssp?workflowName=' + @internalName + '&amp;embed=1&amp;v=139&amp;_r=' + [/tmp/@twStudioNonce]"
+          <set expr="$(serverUrl) + '/woo/testWooAiStudio.jssp?workflowName=' + @internalName + '&amp;embed=1&amp;v=150&amp;_r=' + [/tmp/@twStudioNonce]"
                xpath="/tmp/@twStudioUrl"/>
           <set value="Applied. Save the workflow." xpath="/tmp/@testWooAiStatus"/>
         </enter>

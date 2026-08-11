@@ -10,7 +10,8 @@
  * ===========
  * - getByName : name 단건 (sql_text 포함, lineCount=1)
  * - searchBySlot / searchSlots : Stage A (메타만, 페이지 스캔)
- *   3번째 인자 statuses 기본 ["active"] — Foundry 재사용 판정만 verified 포함
+ *   3번째 인자 statuses 기본 ["active"] (4차 자동승인 정합)
+ *   Foundry 킬스위치 OFF 재사용만 verified 포함 가능
  *   ACC Rhino 호환: Array.map/forEach 미사용 (for 루프)
  * - listCategories : Catalog용 (sql_text 없이 페이지)
  * - toCard / clearCache
@@ -76,8 +77,7 @@ testWoo.fragments = (function () {
   }
 
   // 3. Stage A — 슬롯 1개 (DB 필터 + 페이지 스코어, sql_text 미로드)
-  // statuses: 기본 ["active"]. Foundry 내부 재사용 판정만 verified 를 함께 본다
-  // (신규 publish fragment는 승인 전 status=verified 이므로 active 필터로는 잡히지 않음).
+  // statuses: 기본 ["active"]. 킬스위치 OFF 시 Foundry가 verified 를 함께 넘김.
   function searchBySlot(slot, topN, statuses) {
     if (!slot || (!slot.text && !(slot.searchKeywords && slot.searchKeywords.length))) return [];
     var cfg = testWoo.cfg.getConfig().search;

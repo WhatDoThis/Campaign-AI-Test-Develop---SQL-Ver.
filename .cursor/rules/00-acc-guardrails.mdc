@@ -13,6 +13,7 @@ alwaysApply: true
 - Log: do not invent/skip/reorder `docs/log/log.md` numbers
 - Baseline: do not revert #133 / #135 / #137 / #141
 - Template file: `old_ver/workflow/tamplate.xml` (typo is the real name — do not "fix" to template.xml)
+- Retire unused `new_ver` assets only in phase 9: rename with `_폐기` then delete in Campaign console (never console-orphan)
 - Navtree `<command>` `view`/`viewType`: undocumented — do not rely on them until PoC-0 PASS
 - Commit: never mix docs/.cursor commits with `new_ver/` code commits
 - Commit: do not mix form XML + JSSP layout changes in one commit without deploy note

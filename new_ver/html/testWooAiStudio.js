@@ -6,23 +6,22 @@
  * 인증은 Cookie + 서버 logonWithToken() — X-Security-Token 헤더 미사용(ACC 미해석).
  * ACC urlViewer = MSHTML(IE) — fetch/Promise/finally/classList/confirm 금지 (#133).
  * #134: 진단 패널은 details 대신 div 토글 (IE details 미지원).
- * #135: TW-BOOT. #139 baseline: #134/#136/#138 레이아웃 철회 · 진단 기본 펼침·href 기록.
+ * #135: TW-BOOT. 2차: ctx 상태머신 · listAiFolders · 입력 게이트.
+ * 5차 v=151: matchShown(Generate 후만) · 뒤로/초기화 시 compose 클리어 · Max 안내 분기.
  *
  * [Main Functions]
  * ===========
- * - generate / validate / register
- * - pollQueue — Foundry 큐 상태 폴링 (QUEUE_POLL_MS 20초 × QUEUE_POLL_MAX 30회 = 10분)
- * - _renderQueueHint — awaiting_approval 안내(유니코드 이스케이프 한글 정확도 유지)
- * - renderGates — PASS/FAIL·게이트 코드를 사용자용 한글 라벨로 표시
- * - loadSqlList / loadSqlItem / deleteSqlItem — WF별 SQL 이력(2단계 클릭 삭제)
- * - setBindPick — SQL 클릭/등록 시 폼 Apply 용 Option pick 저장
+ * - generate / validate / register / runMatch
+ * - loadAiFolders / selectFolder / loadCampaigns / selectCampaign / createCampaign
+ * - createWkf / selectWkf / showOpenHint
+ * - goBack / resetCtx / renderListPane / setInputEnabled
  * - _xhrPost / _diag — IE XHR + 인페이지 진단 패널
  *
  * [Dependencies]
  * =========
- * - /woo/testWooAiGenerate|Validate|Register.jssp
+ * - /woo/testWooAiGenerate|Validate|Register|Match|StudioContext.jssp
  * - Cookie credentials + X-Requested-With / payload.csrf + pageHost
- * - Served as /woo/testWooAiStudioJs.jssp?v=… (keep in sync with html/)
+ * - Served as /woo/testWooAiStudioJs.jssp?v=151 (keep in sync with html/)
  * - ES5 only: no fetch/Promise/classList/forEach/URLSearchParams/const/let/=>
  */
 (function () {
@@ -59,9 +58,41 @@
   var WORKFLOW_NAME = _qs("workflowName") || "";
   var EMBED = _qs("embed") === "1" || window.__TW_EMBED__ === true;
 
-  var state = { plan: null, sql: "", summary: "", passed: false, nl: "", aiSqlId: null, queuePoll: null };
+  var state = {
+    plan: null,
+    sql: "",
+    summary: "",
+    passed: false,
+    nl: "",
+    aiSqlId: null,
+    queuePoll: null,
+    foundryDoneQid: null
+  };
   var _delPending = { id: null, timer: null, btn: null };
+  /* Program(folder) → Campaign → WKF */
+  var ctx = {
+    phase: "NONE",
+    listMode: "FOLDER",
+    folder: null,
+    folders: [],
+    campaigns: [],
+    campaign: null,
+    wkfs: [],
+    workflow: null,
+    canCreateWkf: true,
+    wkfMax: 15,
+    openHint: "",
+    matchShown: false,
+    stack: []
+  };
+  var SHELL_MODE = !(WORKFLOW_NAME && EMBED);
   var $ = function (id) { return document.getElementById(id); };
+
+  function _activeWorkflowName() {
+    if (WORKFLOW_NAME) return WORKFLOW_NAME;
+    if (ctx.workflow && ctx.workflow.name) return String(ctx.workflow.name);
+    return "";
+  }
 
   // ---- className helpers (classList 없음 / IE \b 이슈 회피: 공백 패딩) ----
   function _hasCls(el, c) {
@@ -237,7 +268,16 @@
       el.innerHTML =
         "<strong>[\uC6B4\uC601 \uC2B9\uC778 \uD544\uC694]</strong> fragment \uC0DD\uC131\uC740 \uC774\uBBF8 \uC644\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4." + idPart +
         "<br/>\uB9C8\uCF00\uD130\uAC00 \uC2B9\uC778\uD558\uB294 \uACBD\uB85C\uAC00 \uC544\uB2D9\uB2C8\uB2E4. <strong>\uC6B4\uC601 \uB2F4\uB2F9\uC790</strong>\uAC00 LibraryManage \uAD8C\uD55C\uC73C\uB85C \uC2B9\uC778\uD574\uC57C \uD569\uB2C8\uB2E4." +
-        "<br/>\uC2B9\uC778 \uC644\uB8CC \uD6C4 <strong>\uAC19\uC740 \uC9C8\uBB38\uC744 \uB2E4\uC2DC [\uC0DD\uC131]</strong>\uD574 \uC8FC\uC138\uC694. \uC790\uB3D9 \uC7AC\uC2DC\uB3C4\u00B7\uD478\uC2DC \uC54C\uB9BC\uC740 \uC5C6\uC2B5\uB2C8\uB2E4.";
+        "<br/>\uC2B9\uC778 \uC644\uB8CC \uD6C4 <strong>\uAC19\uC740 \uC9C8\uBB38\uC744 \uB2E4\uC2DC [\uC0DD\uC131]</strong>\uD574 \uC8FC\uC138\uC694.";
+      return;
+    }
+    if (status === "done") {
+      el.className = "banner ok";
+      el.innerHTML =
+        "<strong>[fragment \uC900\uBE44 \uC644\uB8CC]</strong> Foundry\uAC00 fragment\uB97C \uB4F1\uB85D\uD588\uC2B5\uB2C8\uB2E4." + idPart +
+        "<br/><strong>\uAC19\uC740 \uC9C8\uBB38\uC73C\uB85C [\uC0DD\uC131]\uC744 \uB2E4\uC2DC \uB204\uB974\uC138\uC694.</strong> " +
+        "(\uC7A0\uC2DC \uD6C4 \uC790\uB3D9\uC73C\uB85C \uD55C \uBC88 \uB354 \uC2DC\uB3C4\uD569\uB2C8\uB2E4.)" +
+        (lastError ? "<br/>" + esc(lastError) : "");
       return;
     }
     if (status === "infeasible" || status === "partially_infeasible") {
@@ -271,6 +311,19 @@
             qs === "done" || qs === "failed" || qs === "needs_human_design" || qs === "throttled") {
           clearInterval(state.queuePoll);
           state.queuePoll = null;
+          if (qs === "done") {
+            var qidDone = String(queueId);
+            if (state.foundryDoneQid !== qidDone) {
+              state.foundryDoneQid = qidDone;
+              setTimeout(function () {
+                try {
+                  generate();
+                } catch (eAuto) {
+                  _diag("auto generate after foundry: " + eAuto);
+                }
+              }, 600);
+            }
+          }
         }
       }, function () {});
       if (attempts >= maxAttempts && state.queuePoll) {
@@ -279,7 +332,7 @@
         $("hint").className = "banner warn";
         $("hint").innerHTML =
           "<strong>[\uC2DC\uAC04 \uCD08\uACFC]</strong> \uC0C1\uD0DC \uC870\uD68C\uB97C \uC911\uB2E8\uD588\uC2B5\uB2C8\uB2E4 (queueId=" + queueId + "). " +
-          "\uC6B4\uC601 \uB2F4\uB2F9\uC790\uC5D0\uAC8C \uD655\uC778 \uD6C4, \uC2B9\uC778\uC774 \uB418\uC5C8\uC73C\uBA74 \uAC19\uC740 \uC9C8\uBB38\uC744 \uB2E4\uC2DC [\uC0DD\uC131]\uD574 \uC8FC\uC138\uC694.";
+          "Foundry \uC644\uB8CC \uD6C4 <strong>\uAC19\uC740 \uC9C8\uBB38\uC73C\uB85C [\uC0DD\uC131]</strong>\uC744 \uB2E4\uC2DC \uB204\uB974\uC138\uC694.";
       }
     }, QUEUE_POLL_MS);
     _renderQueueHint("queued", queueId, reviewUrl, "");
@@ -335,11 +388,18 @@
   }
 
   function generate() {
+    if (SHELL_MODE && (!ctx.campaign || !ctx.campaign.id)) {
+      showErr("\uCEA0\uD398\uC778\uC744 \uBA3C\uC800 \uC120\uD0DD\uD558\uC138\uC694.");
+      return;
+    }
     var nl = _trim($("nl").value);
     if (!nl) return;
     state.nl = nl; clearErr(); setBusy(true);
     _diag("generate start");
-    post("testWooAiGenerate.jssp", { nl_request: nl, workflow_name: WORKFLOW_NAME }, function (res) {
+    post("testWooAiGenerate.jssp", {
+      nl_request: nl,
+      workflow_name: _activeWorkflowName()
+    }, function (res) {
       try {
         if (res.status === "queued" && res.queueId) {
           hideResultCards();
@@ -365,12 +425,19 @@
         state.summary = res.summary || "";
         state.passed = !!res.passed;
         renderChips(res.chips);
-        renderSummaryHint(res.summary);
         renderSql(state.sql);
         renderGates(res.results || []);
         $("btnReg").disabled = !state.passed;
-        if (!state.passed) showErr(res.error || "validation failed");
+        if (!state.passed) {
+          showErr(res.error || "validation failed");
+          renderSummaryHint(res.summary, false);
+        } else {
+          renderSummaryHint(res.summary, true);
+        }
         hideFunnel();
+        if (SHELL_MODE && ctx.campaign && ctx.campaign.id && state.plan) {
+          runMatch(null);
+        }
       } finally {
         setBusy(false);
       }
@@ -393,8 +460,8 @@
       if (v.chips) renderChips(v.chips);
       renderSql(state.sql);
       renderGates(v.results);
-      if (v.summary) renderSummaryHint(v.summary);
       $("btnReg").disabled = !v.passed;
+      renderSummaryHint(v.summary || state.summary, !!v.passed);
     }, function (e) {
       showErr(String(e && e.message ? e.message : e));
     });
@@ -402,12 +469,18 @@
 
   function register() {
     if (!state.passed) return;
+    if (SHELL_MODE && !_activeWorkflowName()) {
+      showErr(
+        "\uBA3C\uC800 WKF\uB97C \uC120\uD0DD\uD558\uAC70\uB098 \uC0C8 WKF\uB97C \uC0DD\uC131\uD558\uC138\uC694."
+      );
+      return;
+    }
     setBusy(true); clearErr();
     var title = String(state.nl || "").substring(0, TITLE_MAX);
     _diag("register start");
     post("testWooAiRegister.jssp", {
       plan: state.plan,
-      workflow_name: WORKFLOW_NAME,
+      workflow_name: _activeWorkflowName(),
       title: title,
       target_count: 0,
       nl_request: state.nl
@@ -421,6 +494,17 @@
         }
         state.aiSqlId = r.ai_sql_id;
         if (r.sql) state.sql = r.sql;
+        setInfoBar(_folderInfoText());
+        if (r.created === false) {
+          $("hint").className = "banner warn";
+          $("hint").textContent =
+            r.message ||
+            ("\uB3D9\uC77C SQL \uAE30\uC874 \uB4F1\uB85D \u2014 ai_sql_id=" + r.ai_sql_id);
+          $("btnReg").disabled = true;
+          setBindPick(r.ai_sql_id);
+          loadSqlList();
+          return;
+        }
         $("hint").className = "banner ok";
         $("hint").textContent = EMBED
           ? ("Registered. ai_sql_id=" + r.ai_sql_id +
@@ -439,14 +523,745 @@
     });
   }
 
+  // 5차: plan → Jaccard≥0.9 WKF (캠페인 전체 listWkfs 아님)
+  function runMatch(done) {
+    if (!SHELL_MODE || !ctx.campaign || !ctx.campaign.id || !state.plan) {
+      if (done) done(false);
+      return;
+    }
+    _diag("runMatch start");
+    post(
+      "testWooAiMatch.jssp",
+      {
+        plan: state.plan,
+        campaign_id: ctx.campaign.id,
+        operation_id: ctx.campaign.id
+      },
+      function (res) {
+        if (!res || !res.ok) {
+          ctx.wkfs = [];
+          ctx.matchShown = false;
+          if (!ctx.workflow) {
+            _showSqlSide(false);
+            renderListPane();
+          }
+          showErr(_errText(res) || "match failed");
+          if (done) done(false);
+          return;
+        }
+        clearErr();
+        ctx.wkfs = res.items || [];
+        ctx.matchShown = true;
+        if (!ctx.workflow) {
+          _showSqlSide(false);
+          renderListPane();
+          var h = $("hint");
+          if (h && state.passed) {
+            var n = ctx.wkfs.length;
+            h.className = "banner ok";
+            h.textContent =
+              (state.summary || "SQL\uC774 \uC900\uBE44\uB418\uC5C8\uC2B5\uB2C8\uB2E4.") +
+              " \u2014 \uC804\uC5ED \uC720\uC0AC WKF " +
+              n +
+              "\uAC74. \uC120\uD0DD \uC2DC Program/\uCEA0\uD398\uC778\uC774 \uC790\uB3D9 \uBC18\uC601\uB429\uB2C8\uB2E4. \uC0C8 WKF\uB294 \uD604\uC7AC \uCEA0\uD398\uC778\uC5D0 \uC0DD\uC131\uB429\uB2C8\uB2E4.";
+          }
+        }
+        if (done) done(true);
+      },
+      function (err) {
+        ctx.wkfs = [];
+        ctx.matchShown = false;
+        if (!ctx.workflow) {
+          _showSqlSide(false);
+          renderListPane();
+        }
+        showErr(String(err && err.message ? err.message : err));
+        if (done) done(false);
+      }
+    );
+  }
+
+  // 뒤로가기/초기화: 이전 Generate·매칭이 캠페인 재진입에 남지 않게 정리
+  function _clearComposeState() {
+    state.plan = null;
+    state.sql = "";
+    state.summary = "";
+    state.passed = false;
+    state.nl = "";
+    state.aiSqlId = null;
+    state.foundryDoneQid = null;
+    ctx.wkfs = [];
+    ctx.matchShown = false;
+    try {
+      var nlEl = $("nl");
+      if (nlEl) nlEl.value = "";
+    } catch (eNl) {}
+    try {
+      hideResultCards();
+    } catch (eH) {}
+    try {
+      var sqlBox = $("sql");
+      if (sqlBox) sqlBox.textContent = "";
+    } catch (eS) {}
+  }
+
   function setBindPick(aiSqlId) {
-    if (!WORKFLOW_NAME || aiSqlId == null || aiSqlId === "" || aiSqlId === 0) return;
+    var wf = _activeWorkflowName();
+    if (!wf || aiSqlId == null || aiSqlId === "" || aiSqlId === 0) return;
     post("testWooAiValidate.jssp", {
       action: "setBindPick",
-      workflow_name: WORKFLOW_NAME,
+      workflow_name: wf,
       ai_sql_id: aiSqlId
     }, function () {}, function () {
       /* Apply 는 폼 ShellPick — pick 실패해도 Studio 사용은 유지 */
+    });
+  }
+
+  function setInfoBar(text) {
+    var el = $("twInfoText") || $("twInfoBar");
+    if (!el) return;
+    el.textContent = text || "\uCEA0\uD398\uC778: (\uBBF8\uC120\uD0DD)";
+  }
+
+  function _refreshOpenButtons() {
+    var on = !!(ctx.workflow && ctx.workflow.id);
+    var b1 = $("btnTwOpenWkf");
+    var b2 = $("btnTwGotoWkf");
+    if (b1) b1.disabled = !on;
+    if (b2) b2.disabled = !on;
+  }
+
+  function showOpenHint() {
+    if (!ctx.workflow || !ctx.workflow.id) {
+      showErr("\uBA3C\uC800 WKF\uB97C \uC120\uD0DD\uD558\uC138\uC694.");
+      return;
+    }
+    var hint =
+      ctx.openHint ||
+      ("Explorer\uC5D0\uC11C \uD574\uB2F9 WKF\uB97C \uC5F4\uC5B4 \uC8FC\uC138\uC694 (name=" +
+        ctx.workflow.name +
+        ", id=" +
+        ctx.workflow.id +
+        ")");
+    var h = $("hint");
+    if (h) {
+      h.className = "banner warn";
+      h.textContent = hint;
+    }
+    clearErr();
+  }
+
+  function setInputEnabled(on) {
+    var nl = $("nl");
+    var btn = $("btnGen");
+    var hint = $("twNlHint");
+    if (nl) nl.disabled = !on;
+    if (btn) btn.disabled = !on;
+    if (hint) {
+      if (on) _addCls(hint, "hidden");
+      else {
+        _rmCls(hint, "hidden");
+        hint.textContent =
+          "\uC624\uB978\uCABD\uC5D0\uC11C Program\uC744 \uACE0\uB978 \uB4A4 \uCEA0\uD398\uC778\uC744 \uC120\uD0DD\uD558\uC138\uC694";
+      }
+    }
+  }
+
+  function _folderInfoText() {
+    if (!ctx.folder) return "Program: (\uBBF8\uC120\uD0DD)";
+    var t = "Program: " + ctx.folder.label + " / " + ctx.folder.name;
+    if (ctx.campaign && ctx.campaign.name) {
+      t +=
+        " | \uCEA0\uD398\uC778: " +
+        (ctx.campaign.label || ctx.campaign.name) +
+        " / " +
+        ctx.campaign.name;
+    }
+    if (ctx.workflow && ctx.workflow.name) {
+      t +=
+        " | WKF: " +
+        (ctx.workflow.label || ctx.workflow.name) +
+        " / " +
+        ctx.workflow.name +
+        " (id=" +
+        ctx.workflow.id +
+        ")";
+    }
+    if (state.aiSqlId) {
+      t += " | SQL: ai_sql_id=" + state.aiSqlId;
+    }
+    return t;
+  }
+
+  function _pushStack() {
+    ctx.stack.push({
+      phase: ctx.phase,
+      listMode: ctx.listMode,
+      folder: ctx.folder
+        ? { id: ctx.folder.id, name: ctx.folder.name, label: ctx.folder.label }
+        : null,
+      campaign: ctx.campaign
+        ? {
+            id: ctx.campaign.id,
+            name: ctx.campaign.name,
+            label: ctx.campaign.label
+          }
+        : null,
+      workflow: ctx.workflow
+        ? {
+            id: ctx.workflow.id,
+            name: ctx.workflow.name,
+            label: ctx.workflow.label
+          }
+        : null
+    });
+  }
+
+  function _releaseCurrentLock(done) {
+    if (!ctx.workflow || !ctx.workflow.id) {
+      if (done) done();
+      return;
+    }
+    var wid = ctx.workflow.id;
+    post(
+      "testWooAiStudioContext.jssp",
+      { action: "releaseLock", workflow_id: wid },
+      function () {
+        if (done) done();
+      },
+      function () {
+        if (done) done();
+      }
+    );
+  }
+
+  function renderListPane() {
+    var box = $("twDummyList");
+    var title = $("twListTitle");
+    var side = $("sideSql");
+    if (!box) return;
+    if (side) side.style.display = "none";
+    box.style.display = "block";
+    box.innerHTML = "";
+
+    if (ctx.listMode === "FOLDER") {
+      if (title) title.textContent = "AI Program";
+      if (!ctx.folders.length) {
+        var empty = document.createElement("div");
+        empty.className = "side-empty";
+        empty.appendChild(document.createTextNode(
+          "AI Program\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. isAiFolder=\uCC38 \uD3F4\uB354\uB97C \uBA3C\uC800 \uC900\uBE44\uD558\uC138\uC694."
+        ));
+        box.appendChild(empty);
+        return;
+      }
+      for (var i = 0; i < ctx.folders.length; i++) {
+        (function (row) {
+          var el = document.createElement("div");
+          el.className = "shell-item";
+          el.appendChild(document.createTextNode(
+            (row.label || row.name) + " (" + row.name + ")"
+          ));
+          el.onclick = function () {
+            selectFolder(row);
+            return false;
+          };
+          box.appendChild(el);
+        })(ctx.folders[i]);
+      }
+      return;
+    }
+
+    if (ctx.listMode === "CAMPAIGN") {
+      if (title) title.textContent = "\uCEA0\uD398\uC778 \uBAA9\uB85D";
+      var createCamp = document.createElement("div");
+      createCamp.className = "shell-item";
+      createCamp.appendChild(
+        document.createTextNode("\uC0C8 \uCEA0\uD398\uC778 \uC0DD\uC131")
+      );
+      createCamp.onclick = function () {
+        createCampaign();
+        return false;
+      };
+      box.appendChild(createCamp);
+
+      if (!ctx.campaigns.length) {
+        var emptyC = document.createElement("div");
+        emptyC.className = "side-empty";
+        emptyC.appendChild(
+          document.createTextNode(
+            "\uCEA0\uD398\uC778\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uC704\uC5D0\uC11C \uC0C8 \uCEA0\uD398\uC778\uC744 \uC0DD\uC131\uD558\uC138\uC694."
+          )
+        );
+        box.appendChild(emptyC);
+        return;
+      }
+      for (var c = 0; c < ctx.campaigns.length; c++) {
+        (function (row) {
+          var el = document.createElement("div");
+          el.className = "shell-item";
+          var cnt = row.wkfCount != null ? row.wkfCount : 0;
+          var mx = row.wkfMax != null ? row.wkfMax : ctx.wkfMax;
+          el.appendChild(
+            document.createTextNode(
+              (row.label || row.name) +
+                " (" +
+                row.name +
+                ") \u2014 WKF " +
+                cnt +
+                "/" +
+                mx
+            )
+          );
+          el.onclick = function () {
+            selectCampaign(row);
+            return false;
+          };
+          box.appendChild(el);
+        })(ctx.campaigns[c]);
+      }
+      return;
+    }
+
+    if (ctx.listMode === "WKF") {
+      if (title) {
+        title.textContent = ctx.matchShown
+          ? "\uC720\uC0AC WKF (\uC804\uC5ED)"
+          : "WKF";
+      }
+      var createRow = document.createElement("div");
+      if (ctx.canCreateWkf) {
+        createRow.className = "shell-item";
+        createRow.appendChild(
+          document.createTextNode("\uC0C8 WKF \uC0DD\uC131")
+        );
+        createRow.onclick = function () {
+          createWkf();
+          return false;
+        };
+      } else {
+        createRow.className = "shell-item locked";
+        createRow.appendChild(
+          document.createTextNode(
+            "\uC0C8 WKF \uC0DD\uC131 \uBD88\uAC00 (Max " + ctx.wkfMax + ")"
+          )
+        );
+        createRow.onclick = function () {
+          showErr(
+            "\uC774 \uCEA0\uD398\uC778\uC758 WKF\uAC00 \uC0C1\uD55C(" +
+              ctx.wkfMax +
+              ")\uC5D0 \uB3C4\uB2EC\uD588\uC2B5\uB2C8\uB2E4."
+          );
+          return false;
+        };
+      }
+      box.appendChild(createRow);
+
+      if (!ctx.wkfs.length) {
+        var emptyW = document.createElement("div");
+        emptyW.className = "side-empty";
+        var emptyMsg = "";
+        if (!ctx.matchShown) {
+          emptyMsg = ctx.canCreateWkf
+            ? "\uC67C\uCABD\uC5D0\uC11C \uC870\uAC74 [\uC0DD\uC131] \uD6C4 \uC804\uC5ED \uC720\uC0AC WKF\uAC00 \uD45C\uC2DC\uB429\uB2C8\uB2E4. \uB610\uB294 \uC704\uC5D0\uC11C \uC0C8 WKF\uB97C \uBA3C\uC800 \uB9CC\uB4DC\uC138\uC694."
+            : "\uC67C\uCABD\uC5D0\uC11C \uC870\uAC74 [\uC0DD\uC131] \uD6C4 \uC720\uC0AC WKF\uAC00 \uD45C\uC2DC\uB429\uB2C8\uB2E4. (\uC774 \uCEA0\uD398\uC778\uC740 WKF Max " +
+              ctx.wkfMax +
+              " \u2014 \uC0C8 WKF \uBD88\uAC00)";
+        } else if (ctx.canCreateWkf) {
+          emptyMsg =
+            "\uC720\uC0AC WKF\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4 (Jaccard 0.9 \uBBF8\uB9CC). \uC0C8 WKF\uB97C \uC0DD\uC131\uD558\uC138\uC694.";
+        } else {
+          emptyMsg =
+            "\uC720\uC0AC WKF\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4 (Jaccard 0.9 \uBBF8\uB9CC). \uC774 \uCEA0\uD398\uC778\uC740 WKF \uC0C1\uD55C(Max " +
+            ctx.wkfMax +
+            ")\uC774\uB77C \uC0C8 WKF\uB97C \uB9CC\uB4E4 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uB2E4\uB978 \uCEA0\uD398\uC778\uC744 \uC120\uD0DD\uD558\uC138\uC694.";
+        }
+        emptyW.appendChild(document.createTextNode(emptyMsg));
+        box.appendChild(emptyW);
+        return;
+      }
+      for (var j = 0; j < ctx.wkfs.length; j++) {
+        (function (row) {
+          var el = document.createElement("div");
+          el.className = row.locked ? "sql-item locked" : "sql-item";
+
+          var wfLabel = row.label || row.name || "";
+          var wfName = row.name || "";
+          var line1 = document.createElement("div");
+          line1.className = "sid";
+          var l1 = wfLabel + " / " + wfName;
+          if (row.exact) l1 += " \u2014 \uB3D9\uC77C\uC870\uAC74";
+          else if (row.matchLabel) l1 += " \u2014 " + row.matchLabel;
+          if (row.locked) l1 += " \u2014 \uC7A0\uAE08: " + (row.locked_by || "?");
+          line1.textContent = l1;
+          line1.title = wfLabel + " / " + wfName;
+
+          var campLabel = row.campaign_label || row.campaign_name || "?";
+          var campName = row.campaign_name || "?";
+          var progLabel =
+            row.program_label || row.program_name || "?";
+          var line2 = document.createElement("div");
+          line2.className = "meta";
+          var l2 =
+            campLabel +
+            " / " +
+            campName +
+            " | " +
+            progLabel;
+          line2.textContent = l2;
+          line2.title = l2;
+
+          var nlTxt = row.nl_request || "(NL \uC5C6\uC74C)";
+          var line3 = document.createElement("div");
+          line3.className = "meta";
+          line3.textContent = nlTxt;
+          line3.title = nlTxt;
+
+          el.appendChild(line1);
+          el.appendChild(line2);
+          el.appendChild(line3);
+          el.onclick = function () {
+            if (row.locked) {
+              showErr(
+                "\uB2E4\uB978 \uC0AC\uC6A9\uC790\uAC00 \uC810\uC720 \uC911\uC785\uB2C8\uB2E4: " +
+                  (row.locked_by || "?")
+              );
+              return false;
+            }
+            selectWkf(row);
+            return false;
+          };
+          box.appendChild(el);
+        })(ctx.wkfs[j]);
+      }
+      return;
+    }
+
+    if (title) title.textContent = "\uBAA9\uB85D";
+  }
+
+  function selectFolder(row) {
+    if (!row) return;
+    _pushStack();
+    ctx.folder = {
+      id: String(row.id || ""),
+      name: String(row.name || ""),
+      label: String(row.label || row.name || "")
+    };
+    ctx.campaign = null;
+    ctx.campaigns = [];
+    ctx.workflow = null;
+    ctx.openHint = "";
+    ctx.wkfs = [];
+    ctx.phase = "PROGRAM_SELECTED";
+    ctx.listMode = "CAMPAIGN";
+    setInfoBar(_folderInfoText());
+    setInputEnabled(false);
+    _refreshOpenButtons();
+    renderListPane();
+    loadCampaigns();
+  }
+
+  function loadCampaigns() {
+    if (!SHELL_MODE || !ctx.folder || !ctx.folder.id) return;
+    post(
+      "testWooAiStudioContext.jssp",
+      {
+        action: "listCampaigns",
+        program_id: ctx.folder.id,
+        folder_id: ctx.folder.id,
+        limit: 200
+      },
+      function (res) {
+        if (!res || !res.ok) {
+          ctx.campaigns = [];
+          renderListPane();
+          showErr(_errText(res) || "listCampaigns failed");
+          return;
+        }
+        clearErr();
+        ctx.campaigns = res.items || [];
+        if (res.wkfMax != null) ctx.wkfMax = res.wkfMax;
+        renderListPane();
+      },
+      function (err) {
+        ctx.campaigns = [];
+        renderListPane();
+        showErr(String(err && err.message ? err.message : err));
+      }
+    );
+  }
+
+  function createCampaign() {
+    if (!ctx.folder || !ctx.folder.id) {
+      showErr("AI Program\uC744 \uBA3C\uC800 \uC120\uD0DD\uD558\uC138\uC694.");
+      return;
+    }
+    setBusy(true);
+    post(
+      "testWooAiStudioContext.jssp",
+      {
+        action: "createCampaign",
+        program_id: ctx.folder.id,
+        folder_id: ctx.folder.id,
+        label: "AI Campaign / " + (ctx.folder.label || ctx.folder.name)
+      },
+      function (res) {
+        setBusy(false);
+        if (!res || !res.ok || !res.campaign) {
+          showErr(_errText(res) || "createCampaign failed");
+          return;
+        }
+        clearErr();
+        _enterCampaign(res.campaign, false);
+      },
+      function (err) {
+        setBusy(false);
+        showErr(String(err && err.message ? err.message : err));
+      }
+    );
+  }
+
+  function _enterCampaign(row, push) {
+    if (!row || !row.id) return;
+    if (push) _pushStack();
+    ctx.campaign = {
+      id: String(row.id || ""),
+      name: String(row.name || ""),
+      label: String(row.label || row.name || "")
+    };
+    ctx.workflow = null;
+    ctx.openHint = "";
+    ctx.wkfs = [];
+    ctx.canCreateWkf = row.canCreateWkf !== false;
+    if (row.wkfMax != null) ctx.wkfMax = row.wkfMax;
+    ctx.phase = "CAMPAIGN_SELECTED";
+    ctx.listMode = "WKF";
+    /* 매칭은 Generate 성공 후에만. 재진입 시 이전 plan으로 자동 Match 금지 */
+    ctx.wkfs = [];
+    ctx.matchShown = false;
+    setInfoBar(_folderInfoText());
+    setInputEnabled(true);
+    _refreshOpenButtons();
+    renderListPane();
+  }
+
+  function selectCampaign(row) {
+    _enterCampaign(row, true);
+  }
+
+  function createWkf() {
+    if (!ctx.campaign || !ctx.campaign.id) {
+      showErr("\uCEA0\uD398\uC778\uC744 \uBA3C\uC800 \uC120\uD0DD\uD558\uC138\uC694.");
+      return;
+    }
+    if (!ctx.canCreateWkf) {
+      showErr(
+        "\uC774 \uCEA0\uD398\uC778\uC758 WKF\uAC00 \uC0C1\uD55C(" +
+          ctx.wkfMax +
+          ")\uC5D0 \uB3C4\uB2EC\uD588\uC2B5\uB2C8\uB2E4."
+      );
+      return;
+    }
+    setBusy(true);
+    post(
+      "testWooAiStudioContext.jssp",
+      {
+        action: "createWkf",
+        campaign_id: ctx.campaign.id,
+        operation_id: ctx.campaign.id,
+        label: "AI WKF / " + (ctx.campaign.label || ctx.campaign.name)
+      },
+      function (res) {
+        setBusy(false);
+        if (!res || !res.ok || !res.workflow) {
+          showErr(_errText(res) || "createWkf failed");
+          if (state.plan) runMatch(null);
+          else renderListPane();
+          return;
+        }
+        clearErr();
+        ctx.workflow = {
+          id: String(res.workflow.id || ""),
+          name: String(res.workflow.name || ""),
+          label: String(res.workflow.label || "")
+        };
+        if (!EMBED) WORKFLOW_NAME = String(res.workflow.name || "");
+        ctx.openHint = String(res.open_hint || "");
+        state.aiSqlId = null;
+        setInfoBar(_folderInfoText());
+        _refreshOpenButtons();
+        loadSqlList();
+        showOpenHint();
+      },
+      function (err) {
+        setBusy(false);
+        showErr(String(err && err.message ? err.message : err));
+        if (state.plan) runMatch(null);
+        else renderListPane();
+      }
+    );
+  }
+
+  // 전역 매칭 행 선택 시 Program·Campaign 정보바/생성 대상 반영
+  function _applyMatchContext(row) {
+    if (!row) return;
+    if (row.program_id) {
+      ctx.folder = {
+        id: String(row.program_id),
+        name: String(row.program_name || ""),
+        label: String(row.program_label || row.program_name || "")
+      };
+    }
+    if (row.campaign_id) {
+      ctx.campaign = {
+        id: String(row.campaign_id),
+        name: String(row.campaign_name || ""),
+        label: String(row.campaign_label || row.campaign_name || "")
+      };
+    }
+  }
+
+  function selectWkf(row) {
+    if (!row || !row.id) return;
+    setBusy(true);
+    post(
+      "testWooAiStudioContext.jssp",
+      {
+        action: "selectWkf",
+        workflow_id: String(row.id),
+        workflow_name: String(row.name || "")
+      },
+      function (res) {
+        setBusy(false);
+        if (!res || !res.ok) {
+          showErr(_errText(res) || "selectWkf failed");
+          if (state.plan) runMatch(null);
+          else renderListPane();
+          return;
+        }
+        clearErr();
+        _applyMatchContext(row);
+        ctx.workflow = {
+          id: String(row.id),
+          name: String(row.name || ""),
+          label: String(row.label || row.name || "")
+        };
+        // Tools Studio(embed=0)는 URL workflowName 이 없음 → 선택 WKF 로 바인딩
+        if (!EMBED) WORKFLOW_NAME = String(row.name || "");
+        ctx.openHint = String(res.open_hint || "");
+        state.aiSqlId = null;
+        setInfoBar(_folderInfoText());
+        _refreshOpenButtons();
+        if (res.lock_warning) {
+          $("hint").className = "banner warn";
+          $("hint").textContent =
+            "WKF \uC120\uD0DD\uB428 (\uC7A0\uAE08 \uACBD\uACE0: " + res.lock_warning + ")";
+        }
+        loadSqlList();
+      },
+      function (err) {
+        setBusy(false);
+        showErr(String(err && err.message ? err.message : err));
+        if (state.plan) runMatch(null);
+        else renderListPane();
+      }
+    );
+  }
+
+  function goBack() {
+    if (!SHELL_MODE) return;
+    _releaseCurrentLock(function () {
+      ctx.workflow = null;
+      ctx.openHint = "";
+      if (!EMBED) WORKFLOW_NAME = "";
+      _showSqlSide(false);
+      _refreshOpenButtons();
+      if (!ctx.stack.length) {
+        resetCtx();
+        return;
+      }
+      var prev = ctx.stack.pop();
+      ctx.phase = prev.phase;
+      ctx.listMode = prev.listMode;
+      ctx.folder = prev.folder;
+      ctx.campaign = prev.campaign || null;
+      ctx.workflow = null;
+      /* WKF 뎁스를 벗어나면 이전 조건·매칭 폐기 (재진입 시 잔상 방지) */
+      if (ctx.listMode !== "WKF") {
+        _clearComposeState();
+      }
+      if (ctx.listMode === "WKF" && ctx.campaign) {
+        setInfoBar(_folderInfoText());
+        setInputEnabled(true);
+        ctx.wkfs = [];
+        ctx.matchShown = false;
+        renderListPane();
+      } else if (ctx.listMode === "CAMPAIGN" && ctx.folder) {
+        ctx.campaign = null;
+        setInfoBar(_folderInfoText());
+        setInputEnabled(false);
+        loadCampaigns();
+      } else if (ctx.folder) {
+        setInfoBar(_folderInfoText());
+        setInputEnabled(false);
+        renderListPane();
+      } else {
+        setInfoBar("Program: (\uBBF8\uC120\uD0DD)");
+        setInputEnabled(false);
+        renderListPane();
+      }
+    });
+  }
+
+  function resetCtx() {
+    if (!SHELL_MODE) return;
+    _releaseCurrentLock(function () {
+      ctx.phase = "NONE";
+      ctx.listMode = "FOLDER";
+      ctx.folder = null;
+      ctx.campaigns = [];
+      ctx.campaign = null;
+      ctx.wkfs = [];
+      ctx.workflow = null;
+      ctx.openHint = "";
+      ctx.matchShown = false;
+      ctx.stack = [];
+      _clearComposeState();
+      setInfoBar("Program: (\uBBF8\uC120\uD0DD)");
+      setInputEnabled(false);
+      _refreshOpenButtons();
+      var hintR = $("hint");
+      if (hintR) {
+        hintR.className = "banner warn";
+        hintR.textContent =
+          "Program \u2192 \uCEA0\uD398\uC778 \uC120\uD0DD/\uC0DD\uC131 \uD6C4 \uC870\uAC74\uC744 \uC785\uB825\uD558\uC138\uC694. (\uCEA0\uD398\uC778\uB2F9 WKF Max 15)";
+      }
+      loadAiFolders();
+    });
+  }
+
+  function loadAiFolders() {
+    if (!SHELL_MODE) return;
+    ctx.phase = "FOLDER_LIST";
+    ctx.listMode = "FOLDER";
+    post("testWooAiStudioContext.jssp", {
+      action: "listAiFolders",
+      limit: 200
+    }, function (res) {
+      if (!res || !res.ok) {
+        ctx.folders = [];
+        renderListPane();
+        showErr(_errText(res) || "listAiFolders failed");
+        return;
+      }
+      clearErr();
+      ctx.folders = res.items || [];
+      renderListPane();
+    }, function (err) {
+      ctx.folders = [];
+      renderListPane();
+      showErr(String(err && err.message ? err.message : err));
     });
   }
 
@@ -456,8 +1271,15 @@
       else _rmCls(document.body, "has-sql-side");
     } catch (eCls) {}
     var side = $("sideSql");
-    if (!side) return;
-    side.style.display = on ? "block" : "none";
+    var dummy = $("twDummyList");
+    if (side) side.style.display = on ? "block" : "none";
+    if (dummy) dummy.style.display = on ? "none" : "block";
+    var title = $("twListTitle");
+    if (title) {
+      title.textContent = on
+        ? "\uC774 WF SQL \uC774\uB825"
+        : "\uBAA9\uB85D";
+    }
   }
 
   function _clearDelPending() {
@@ -478,15 +1300,16 @@
   function loadSqlList() {
     var side = $("sideSql");
     if (!side) return;
-    if (!WORKFLOW_NAME) {
+    var wf = _activeWorkflowName();
+    if (!wf) {
       _showSqlSide(false);
       return;
     }
-    _diag("loadSqlList start");
+    _diag("loadSqlList start wf=" + wf);
     _showSqlSide(true);
     post("testWooAiValidate.jssp", {
       action: "listSql",
-      workflow_name: WORKFLOW_NAME,
+      workflow_name: wf,
       limit: 50
     }, function (res) {
       _clearDelPending();
@@ -506,7 +1329,9 @@
         if (empty) {
           empty.style.display = "";
           empty.textContent =
-            "\uB4F1\uB85D\uB41C SQL \uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uC0DD\uC131 \uD6C4 \uB4F1\uB85D\uD558\uBA74 \uC5EC\uAE30 \uBAA8\uC785\uB2C8\uB2E4.";
+            "SQL \uC774\uB825\uC774 \uBE44\uC5B4 \uC788\uC2B5\uB2C8\uB2E4. " +
+            "\uC67C\uCABD\uC5D0\uC11C [\uC0DD\uC131] \uD6C4 \uBC18\uB4DC\uC2DC [\uB4F1\uB85D]\uC744 \uB204\uB974\uC138\uC694. " +
+            "\uC0DD\uC131\uB9CC\uC73C\uB85C\uB294 \uC5EC\uAE30\uC5D0 \uC548 \uB0A9\uB2C8\uB2E4.";
         }
         _diag("loadSqlList items=0");
         return;
@@ -624,6 +1449,7 @@
       state.nl = it.nl_request || "";
       state.passed = false;
       state.plan = null;
+      setInfoBar(_folderInfoText());
       setBindPick(it.id);
       if (it.nl_request) $("nl").value = it.nl_request;
       try {
@@ -766,9 +1592,20 @@
     $("sql").textContent = sql || "";
     _rmCls($("cardCode"), "hidden");
   }
-  function renderSummaryHint(summary) {
-    $("hint").className = "banner ok";
-    $("hint").textContent = summary || "Review conditions.";
+  function renderSummaryHint(summary, showRegisterHint) {
+    var el = $("hint");
+    if (!el) return;
+    el.className = "banner ok";
+    var base = summary || "SQL\uC774 \uC900\uBE44\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
+    if (showRegisterHint) {
+      el.innerHTML =
+        esc(base) +
+        "<br/><strong>[\uB2E4\uC74C] \uC544\uB798 [\uB4F1\uB85D] \uBC84\uD2BC\uC744 \uB204\uB974\uC138\uC694.</strong> " +
+        "\uC0DD\uC131\uB9CC\uC73C\uB85C\uB294 SQL \uC774\uB825\uC5D0 \uC548 \uB0A9\uB2C8\uB2E4. " +
+        "\uB4F1\uB85D \uD6C4 \uC624\uB978\uCABD \uBAA9\uB85D\uC5D0 \uB098\uD0C0\uB0A9\uB2C8\uB2E4.";
+    } else {
+      el.textContent = base;
+    }
   }
   function hideFunnel() { _addCls($("cardFunnel"), "hidden"); }
   function hideResultCards() {
@@ -801,7 +1638,7 @@
       _wireDiagToggle();
       try {
         var dm0 = (typeof document.documentMode !== "undefined") ? String(document.documentMode) : "n/a(non-IE)";
-          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | v=139";
+          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | v=151";
         var bootReached = !!(window.__TW_BOOT_MSG__);
         if (bootReached) _diag(String(window.__TW_BOOT_MSG__));
         _diag(okMsg);
@@ -822,13 +1659,23 @@
       _diag("UA=" + String(navigator.userAgent || ""));
       _diag("documentMode=" + (typeof document.documentMode !== "undefined" ? String(document.documentMode) : "n/a(non-IE)"));
       _diag("compatMode=" + String(document.compatMode || ""));
-      _diag("init enter");
+      _diag("init enter shellMode=" + (SHELL_MODE ? "1" : "0"));
       var login = window.__TW_LOGIN__ || "";
       var wfEl = $("wfInfo");
       if (wfEl) {
         wfEl.textContent = "user: " + (login || "?") +
           " / workflow: " + (WORKFLOW_NAME || "n/a") + " / register->ai_sql_id";
       }
+      setInfoBar("Program: (\uBBF8\uC120\uD0DD)");
+      var btnBack = $("btnTwBack");
+      var btnReset = $("btnTwReset");
+      var btnOpen = $("btnTwOpenWkf");
+      var btnGoto = $("btnTwGotoWkf");
+      if (btnBack) btnBack.onclick = function () { goBack(); return false; };
+      if (btnReset) btnReset.onclick = function () { resetCtx(); return false; };
+      if (btnOpen) btnOpen.onclick = function () { showOpenHint(); return false; };
+      if (btnGoto) btnGoto.onclick = function () { showOpenHint(); return false; };
+      _refreshOpenButtons();
       var btnGen = $("btnGen");
       var btnReg = $("btnReg");
       var nl = $("nl");
@@ -845,26 +1692,36 @@
           }
         };
       }
-      if (!WORKFLOW_NAME) {
-        var hint = $("hint");
-        if (hint) {
-          hint.className = "banner warn";
-          hint.textContent =
-            "workflowName \uC5C6\uC74C \u2014 WF \uCE94\uBC84\uC2A4 AI Studio \uBC84\uD2BC\uC73C\uB85C \uC5F4\uBA74 \uC774 WF SQL \uBAA9\uB85D\uC774 \uD45C\uC2DC\uB429\uB2C8\uB2E4. \uC218\uB3D9 URL\uB3C4 \uAC00\uB2A5\uD569\uB2C8\uB2E4.";
+      if (SHELL_MODE) {
+        setInputEnabled(false);
+        var hint0 = $("hint");
+        if (hint0) {
+          hint0.className = "banner warn";
+          hint0.textContent =
+            "Program \u2192 \uCEA0\uD398\uC778 \uC120\uD0DD/\uC0DD\uC131 \uD6C4 \uC870\uAC74\uC744 \uC785\uB825\uD558\uC138\uC694. (\uCEA0\uD398\uC778\uB2F9 WKF Max 15)";
         }
-      }
-      // 첫 페인트 후 목록 로드 — 동기 예외로 전체가 비는 것 방지
-      setTimeout(function () {
-        try { loadSqlList(); }
-        catch (eL) {
-          var h2 = $("hint");
-          if (h2) {
-            h2.className = "banner err";
-            h2.textContent = "loadSqlList: " + String(eL && eL.message ? eL.message : eL);
+        setTimeout(function () {
+          try { loadAiFolders(); }
+          catch (eF) {
+            _diag("loadAiFolders throw: " + String(eF && eF.message ? eF.message : eF));
           }
-          _diag("loadSqlList throw: " + String(eL && eL.message ? eL.message : eL));
-        }
-      }, 0);
+        }, 0);
+      } else {
+        setInputEnabled(true);
+        var hintH = $("twNlHint");
+        if (hintH) _addCls(hintH, "hidden");
+        setTimeout(function () {
+          try { loadSqlList(); }
+          catch (eL) {
+            var h2 = $("hint");
+            if (h2) {
+              h2.className = "banner err";
+              h2.textContent = "loadSqlList: " + String(eL && eL.message ? eL.message : eL);
+            }
+            _diag("loadSqlList throw: " + String(eL && eL.message ? eL.message : eL));
+          }
+        }, 0);
+      }
     } catch (eInit) {
       try {
         var h = $("hint");

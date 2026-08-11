@@ -26,6 +26,7 @@
  *   none 턴에 parallel_tool_calls 미포함 — Azure Claude 400 방지)
  * - dryRunSlot : 큐 부작용 없이 triage+생성 1회 (계측기)
  * - peekQueue : 읽기 전용 큐 조회 (스모크의 getIfExists 파싱 검증 전용)
+ * - isAutoApprove : Option testWooAiAutoApprove (기본 ON → status=active)
  *
  * [Dependencies]
  * =========
@@ -33,6 +34,7 @@
  * - testWoo.probe(preflight), testWoo.dedup, testWoo.lifecycle, testWoo.gates
  * - testWoo.fragments(publish 후 Stage A 재검색), testWoo.compiler(부분 실행 미리보기)
  * - testWoo.cfg / testWoo.env, xtk.queryDef / xtk.session#Write
+ * - Option testWooAiAutoApprove (비움/1/true=ON · 0/false=OFF → verified+승인대기)
  * - loadLibrary("woo:testWooFoundry.js")
  */
 var testWoo = testWoo || {};
@@ -40,8 +42,22 @@ testWoo.foundry = (function () {
   "use strict";
 
   var QUEUE_SCHEMA = "woo:testWooAiRequestQueue";
+  var OPT_AUTO_APPROVE = "testWooAiAutoApprove";
   var STALE_SCAN_LIMIT = 50;
   var DEFAULT_STALE_MS = 30 * 60 * 1000;
+
+  // 4차: 기본 ON. "0"/"false"/"off"/"no" 만 OFF (민감·회귀용 킬스위치)
+  function isAutoApprove() {
+    var raw = "";
+    try {
+      raw = String(getOption(OPT_AUTO_APPROVE) || "");
+    } catch (eO) {
+      raw = "";
+    }
+    raw = String(raw).replace(/^\s+|\s+$/g, "").toLowerCase();
+    if (raw === "0" || raw === "false" || raw === "off" || raw === "no") return false;
+    return true;
+  }
   var SCHEMA_HINT = "스키마 배포가 선행되지 않았습니다. " +
     "woo:testWooAiRequestQueue 재등록 → Update database structure 후 다시 실행하세요.";
   // F-0 출력 계약 — _fragDocFromLlm 이 읽는 키와 1:1. 프롬프트·되먹임·강제 턴에 재사용.
@@ -631,6 +647,7 @@ testWoo.foundry = (function () {
     if (typeof tags === "string") tagsStr = tags;
     else if (tags && tags.length) tagsStr = tags.join(",");
 
+    var auto = isAutoApprove();
     return {
       name: frag.name,
       label: frag.label || frag.name,
@@ -644,8 +661,9 @@ testWoo.foundry = (function () {
       param_domain: domainJson,
       description: frag.description || "",
       sample_questions: JSON.stringify([frag.rationale || ""]),
-      status: "verified",
-      active: false,
+      status: auto ? "active" : "verified",
+      active: auto,
+      approved_by: auto ? "foundry" : "",
       origin: "foundry",
       source_request_id: queueId
     };
@@ -664,16 +682,17 @@ testWoo.foundry = (function () {
   }
 
   // publish 직후 남은 슬롯이 새 fragment로 커버되는지 Stage A로 재검색한다.
-  // Foundry 신규 fragment는 status=verified(active 아님)이므로 verified 까지 포함해 검색한다.
+  // 자동승인 ON → active만. OFF(킬스위치) → verified 잔여분도 포함.
   function _resolveRemainingBySearch(pending, slotResults) {
     if (!pending.length) return { pending: pending, resolved: 0 };
     if (testWoo.fragments && testWoo.fragments.clearCache) testWoo.fragments.clearCache();
     var stillMissing = [];
     var resolved = 0;
+    var statuses = isAutoApprove() ? ["active"] : ["active", "verified"];
     for (var k = 0; k < pending.length; k++) {
       var hit = null;
       try {
-        hit = testWoo.fragments.searchSlots([pending[k]], null, ["active", "verified"]);
+        hit = testWoo.fragments.searchSlots([pending[k]], null, statuses);
       } catch (eS) {
         logWarning("[testWoo.foundry._resolveRemainingBySearch] " + String(eS.message || eS));
       }
@@ -923,7 +942,7 @@ testWoo.foundry = (function () {
           logInfo("[testWoo.foundry] dedup reuse " + dedup.verdict + " id=" + dedupMatchId);
           fragmentId = dedupMatchId || null;
         } else {
-          // near 도 publish 하되(status=verified 유지) 운영 승인 화면에서 비교 검토하게 표시
+          // near도 publish. 4차: 자동승인 시 active 직행(승인 큐 없음). 플래그만 slot_results에 남김(7차).
           if (dedup.verdict === "near") {
             slotNeedsReview = true;
             needsDedupReview = true;
@@ -984,18 +1003,26 @@ testWoo.foundry = (function () {
       }
 
       if (created > 0) {
+        var autoOn = isAutoApprove();
+        var qStatus = autoOn ? "done" : "awaiting_approval";
+        var qErr = "";
+        if (needsDedupReview) {
+          qErr = autoOn
+            ? "near dedup — fragment는 active로 등록됨. 7차 중복 관리에서 검토."
+            : "유사한 기존 fragment가 있습니다 — 운영 승인 화면에서 비교 검토가 필요합니다.";
+        }
         _updateQueue(queueId, {
-          status: "awaiting_approval",
+          status: qStatus,
           missing_slots_json: "[]",
-          last_error: needsDedupReview ?
-            "유사한 기존 fragment가 있습니다 — 운영 승인 화면에서 비교 검토가 필요합니다." : "",
+          last_error: qErr,
           slot_results: JSON.stringify(slotResults),
           evidence_log: JSON.stringify(allEvidence),
           tokens_used: tokensUsed
         });
         return {
-          ok: true, created: created, status: "awaiting_approval",
-          needsDedupReview: needsDedupReview, slotResults: slotResults
+          ok: true, created: created, status: qStatus,
+          needsDedupReview: needsDedupReview, slotResults: slotResults,
+          autoApprove: autoOn
         };
       }
 
@@ -1161,6 +1188,7 @@ testWoo.foundry = (function () {
     runToolLoop: runToolLoop,
     generateFragmentForSlot: generateFragmentForSlot,
     dryRunSlot: dryRunSlot,
-    peekQueue: peekQueue
+    peekQueue: peekQueue,
+    isAutoApprove: isAutoApprove
   };
 })();

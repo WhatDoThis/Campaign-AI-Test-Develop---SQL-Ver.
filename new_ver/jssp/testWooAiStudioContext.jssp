@@ -1,0 +1,138 @@
+<%
+response.setContentType("application/json;charset=utf-8");
+/*
+ * testWooAiStudioContext.jssp (Studio 컨텍스트 API)
+ * ==================================================
+ * 2차: listAiFolders.
+ * 3차 v=144: listCampaigns / createCampaign(T2) / listWkfs / createWkf(T3b) /
+ * selectWkf / releaseLock. 계층: Program → Campaign → WKF.
+ *
+ * [Endpoint]
+ * =======================
+ * POST /woo/testWooAiStudioContext.jssp
+ *
+ * [Dependencies]
+ * =========
+ * - woo:testWooCommon.js
+ * - woo:testWooStudioContext.js
+ * - woo:testWooWorkflowClone.js
+ */
+try {
+  TW_RESPONSE = response;
+  TW_REQUEST = request;
+  TW_DOCUMENT = document;
+  loadLibrary("woo:testWooCommon.js");
+  requireRight("testWooAiSqlGenerate");
+  loadLibrary("woo:testWooStudioContext.js");
+  loadLibrary("woo:testWooWorkflowClone.js");
+
+  var p = readPayload();
+  var action = String(
+    p.action || TW_REQUEST.getParameter("action") || ""
+  ).toLowerCase();
+
+  if (action === "listaifolders") {
+    var lim = p.limit != null ? p.limit : 200;
+    var items = testWoo.studioContext.listAiFolders(lim);
+    jsonOut({ ok: true, items: items, count: items.length });
+  } else if (action === "listcampaigns") {
+    var progId = String(p.program_id || p.folder_id || "");
+    var limC = p.limit != null ? p.limit : 200;
+    var campRes = testWoo.wfClone.listCampaignsByProgram(progId, limC);
+    jsonOut({
+      ok: true,
+      items: campRes.items,
+      count: campRes.items.length,
+      program: campRes.program,
+      wkfMax: campRes.wkfMax
+    });
+  } else if (action === "createcampaign") {
+    requireStudioCsrf(p);
+    var progIdC = String(p.program_id || p.folder_id || "");
+    var camp = testWoo.wfClone.createCampaign(progIdC, p.label);
+    jsonOut({ ok: true, campaign: camp });
+  } else if (action === "listwkfs") {
+    var cidL = String(p.campaign_id || p.operation_id || "");
+    if (!cidL) {
+      throw new Error("campaign_id required (not program_id)");
+    }
+    var limW = p.limit != null ? p.limit : 200;
+    var wkfRes = testWoo.wfClone.listWkfsByCampaign(cidL, limW);
+    jsonOut({
+      ok: true,
+      items: wkfRes.items,
+      count: wkfRes.items.length,
+      wkfCount: wkfRes.wkfCount,
+      wkfMax: wkfRes.wkfMax,
+      canCreateWkf: wkfRes.canCreateWkf,
+      template: testWoo.wfClone.getTemplateName(),
+      template_id: testWoo.wfClone.getWkfTemplateId(),
+      campaign_template_id: testWoo.wfClone.getCampaignTemplateId(),
+      open_mode: "fallback"
+    });
+  } else if (action === "createwkf") {
+    requireStudioCsrf(p);
+    var cidC = String(p.campaign_id || p.operation_id || "");
+    if (!cidC) {
+      throw new Error("campaign_id required (not program_id)");
+    }
+    var created = testWoo.wfClone.createWkfFromTemplate(cidC, p.label);
+    jsonOut({
+      ok: true,
+      workflow: created,
+      open_mode: "fallback",
+      open_hint:
+        "Explorer\uC5D0\uC11C \uD574\uB2F9 WKF\uB97C \uC5F4\uC5B4 \uC8FC\uC138\uC694 (name=" +
+        created.name +
+        ", id=" +
+        created.id +
+        ")"
+    });
+  } else if (action === "selectwkf") {
+    requireStudioCsrf(p);
+    var widS = String(p.workflow_id || "");
+    var wnameS = String(p.workflow_name || "");
+    var lock = null;
+    var lockWarn = "";
+    try {
+      lock = testWoo.wfClone.acquireLock(widS, wnameS);
+    } catch (eLock) {
+      // 타 유저 점유만 하드 실패. 스키마/일시 Write 오류는 선택은 허용(SQL 목록 진입).
+      if (eLock && eLock.code === "LOCKED") throw eLock;
+      lockWarn = String(
+        eLock && eLock.message != null ? eLock.message : eLock
+      );
+      try {
+        logWarning("[testWooAiStudioContext.selectWkf] lock soft-fail: " + lockWarn);
+      } catch (eLw) {}
+    }
+    jsonOut({
+      ok: true,
+      workflow_id: widS,
+      workflow_name: wnameS,
+      lock: lock,
+      lock_warning: lockWarn,
+      open_mode: "fallback",
+      open_hint:
+        "Explorer\uC5D0\uC11C \uD574\uB2F9 WKF\uB97C \uC5F4\uC5B4 \uC8FC\uC138\uC694 (name=" +
+        wnameS +
+        ", id=" +
+        widS +
+        ")"
+    });
+  } else if (action === "releaselock") {
+    requireStudioCsrf(p);
+    var widR = String(p.workflow_id || "");
+    testWoo.wfClone.releaseLock(widR);
+    jsonOut({ ok: true, released: true, workflow_id: widR });
+  } else {
+    throw new Error(
+      "unknown action: " +
+        action +
+        " (listAiFolders|listCampaigns|createCampaign|listWkfs|createWkf|selectWkf|releaseLock)"
+    );
+  }
+} catch (e) {
+  handleApiError(e);
+}
+%>

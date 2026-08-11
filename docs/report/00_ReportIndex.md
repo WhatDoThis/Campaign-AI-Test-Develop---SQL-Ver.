@@ -8,7 +8,10 @@
 | `11_고도화_추적표.md` | 고도화 아이디어 전수 ID(66) · 판정 · 차수 매핑 — 유실 방지 소스 |
 | `upgrade_plan/00_INDEX.md` | 고도화 차수 문서 라우팅 (for AI) |
 | `upgrade_plan/00_고도화 개발 아이디어_관리자 작성본.md` | 관리자 원본 아이디어 (요약·삭제 금지) |
-| `upgrade_plan/01_0차_베이스라인안정화.md` ~ `10_8차_확장폼폐기.md` | 차수별 AI 실행 가이드 (+ `04_3a_PoC.md`) |
+| `upgrade_plan/01_0차_베이스라인안정화.md` ~ `11_9차_미사용코드폐기정리.md` | 차수별 AI 실행 가이드 (+ `04_3a_PoC.md`; 9차=미사용 `_폐기`·콘솔 정리) |
+| `upgrade_plan/04_3a_PoC_RESULT.md` | PoC-1~3 HUMAN 실측 절차·RESULT 기입 (new_ver 코드 변경 없음) |
+| `upgrade_plan/04_3a_PoC_Campaign.md` | PoC-C: bare Write 캠페인(위치 PASS·품질 FAIL) |
+| `upgrade_plan/04_3a_PoC_Template.md` | PoC-T: opEmptyTemplate_LLM / wfEmptyTemplate_CUSTOM 공식 API 검증 |
 | `10_Fragment_생애주기_설계.md` | Fragment 승인 모델 게이트→라벨 전환 설계 — 현행 enum 매핑 · 빈도 기반 검수 · 야간 게이트 재실행 · 킬스위치는 revoked 재사용 |
 | `09_SQL생성추가_디버깅3.md` | F-0~F-5 반영 검증 후 잔여 C-1·E-1·E-2·A-1 — sanitize/compress 순서·phase 예산 누수·tokenBudget·자격 검증·스모크 9c |
 | `08_SQL생성추가_디버깅2.md` | Foundry 생성 단계 근원 진단 F-0~F-5 — 출력 계약 부재·루프 종료 불일치·자가진단 알고리즘·dryRunSlot 계측기 |

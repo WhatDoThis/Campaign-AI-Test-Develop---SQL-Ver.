@@ -1,6 +1,45 @@
 # Log
 
 ## Log Index
+187. 2026-08-11 5차 — 매칭잔상/Max안내 분기 (matchShown · v=151)
+186. 2026-08-11 5차 보완 — 전역 유사WKF·3줄목록·컨텍스트 자동반영 v=150
+185. 2026-08-11 5차 — 조건매칭(Jaccard≥0.9)·SQL목록·Register dedup v=149
+184. 2026-08-11 4차·TG-E HUMAN PASS — Foundry→SQL등록 완료 · 다음 5차
+183. 2026-08-11 v=148 — 생성 성공 시 [등록] 안내 배너
+182. 2026-08-11 v=147 — Foundry done 안내·자동재생성 · WKF→SQL 목록
+181. 2026-08-11 4차 — Fragment 자동승인 (active + Option 킬스위치)
+180. 2026-08-11 v=146 HUMAN PASS — 고정 UI · 3차 셸 축 완료
+179. 2026-08-11 v=146 — Studio 작업영역 560px 고정 (목록 길이 무관)
+178. 2026-08-11 v=145 — litmus 정합 + 목록 스크롤 · v=144 HUMAN PASS 기록
+177. 2026-08-11 v=144 — createCampaign=T2 · createWkf=T3b 템플릿 API
+176. 2026-08-11 PoC-T3b PASS — WKF102/op-id=23000 · CreateInstanceFromModel 확정
+175. 2026-08-11 PoC-T3b 생성 OK id=29320 · 검증 쿼리 @operation-id 수정
+174. 2026-08-11 PoC-T3a FAIL — CreateWorkflowFromModelId returns 0 · T3b로 전환
+173. 2026-08-11 PoC-T2 PASS — CreateOperationFromModelId+program-id · OP48/WKF101
+172. 2026-08-11 PoC-T1 — opEmptyTemplate_LLM id=10002 확정
+171. 2026-08-11 PoC-T — 캠페인/WKF는 템플릿 API · 구현 보류
+170. 2026-08-11 3차 정정 — Program→Campaign→WKF · Max15 · PoC-C PASS · v=143
+169. 2026-08-11 PoC-C 스크립트 — Program id→fullName 조회 후 Campaign Write
+168. 2026-08-11 계층 정정 — Program→Campaign→WKF · PoC-C · Max15
+167. 2026-08-11 3차 WKF 라이프사이클 — Write클론·soft-lock·open폴백 v=142
+166. 2026-08-11 3차 템플릿 확정 — WKF89(id=26021) · PoC RESULT 정리
+165. 2026-08-11 PoC-2 보완 — WKF는 program 연결 필수(folder만으론 AI UI 미표시)
+164. 2026-08-11 PoC-1~3 종료 — PoC-3 스킵→soft-lock · 3차 가능
+163. 2026-08-11 PoC-2 PASS — Write 클론 WKF_testWooPoC2_001 (state=0)
+162. 2026-08-11 PoC-1 FAIL — xtk://open 미동작 · PoC-2 진행
+161. 2026-08-11 PoC-1~3 HUMAN 실측 절차 — RESULT 대기 (코드 변경 없음)
+160. 2026-08-11 isAiFolder 폼 colspan=2 — Advanced colcount=2 정렬
+159. 2026-08-11 isAiFolder nms:program 확장 — XML-110013 unknown attribute 해소
+158. 2026-08-11 isAiFolder 패치 대상 정정 — nms:program→nms:plan:lib/edition
+157. 2026-08-11 Folder 폼 isAiFolder UI — woo 확장폼 + nms:program ref 패치
+156. 2026-08-11 2차 상태머신·@isAiFolder — listAiFolders · 입력게이트 v=141
+155. 2026-08-11 1차 진입점과셸 — Tools rights · 정보바+table2열 · 더미목록 v=140
+154. 2026-08-11 INDEX §3.0 — 운영자 응답=배포·HUMAN·다음키만 · PoC-0 HUMAN 대기
+153. 2026-08-11 INDEX §3.5 — 배포/재배포 목록 필수 출력
+152. 2026-08-11 INDEX §8 — 캠페인 반영·테스트 게이트 TG-A~J
+151. 2026-08-11 0차 베이스라인 안정화 — 정적 검증 PASS · HUMAN_CONSOLE 대기
+150. 2026-08-11 INDEX 단일진입점 — 차수명만으로 라우팅·실행 프로토콜
+149. 2026-08-11 9차 가이드 — 미사용 코드 `_폐기` 개명·콘솔 삭제 정리
 148. 2026-08-11 로드맵 문서 P0-2·P1 수정 — PoC-0·INJ-8-2 본문승인·가드레일
 147. 2026-08-11 P0 브랜치 분리 — roadmap new_ver 복원 · fix/embed-layout
 146. 2026-08-11 고도화 기반 — 추적표·Rules/Skills/Agents·차수 가이드(0~8+PoC)
@@ -151,6 +190,273 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+187. 2026-08-11 5차 — 매칭잔상/Max안내 분기 (matchShown · v=151)
+Purpose: 뒤로/초기화 후 캠페인 재진입 시 이전 plan 매칭·Max 모순 안내 제거. Changes:
+
+- matchShown: Generate→runMatch 성공 후에만 "유사 WKF" 모드
+- 캠페인 진입 시 자동 runMatch 제거 · goBack/reset 시 _clearComposeState
+- Max일 때 빈목록 문구를 "새 WKF 생성" 권유와 분리
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
+
+186. 2026-08-11 5차 보완 — 전역 유사WKF·3줄목록·컨텍스트 자동반영 v=150
+Purpose: 유사 WKF를 캠페인 한정→전역 registered SQL로 검색하고, 선택 시 Program/Campaign 반영. Changes:
+
+- Match: campaign 필터 제거 · resolveWorkflowsByName enrichment(nl/캠페인/Program)
+- Studio: sql-item 3줄(WKF·캠페인|Program·NL) · ellipsis+title · litmus v=150
+- 새 WKF는 여전히 현재 선택 캠페인에 생성
+Changed files: new_ver/js/testWooMatch.js, new_ver/js/testWooWorkflowClone.js, new_ver/js/testWooRepository.js, new_ver/jssp/testWooAiMatch.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
+
+185. 2026-08-11 5차 — 조건매칭(Jaccard≥0.9)·SQL목록·Register dedup v=149
+Purpose: NL plan fragment 집합 Jaccard 매칭(경로 A/B) · 동일 SQL 해시 스킵 · 정보바 SQL ID. Changes:
+
+- testWooMatch.js + testWooAiMatch.jssp (exact + Jaccard≥0.9, overlapCount/unionCount)
+- Register: sqlContentHash + findAiSqlBySqlHash → created:false + 안내 banner
+- Studio: 캠페인 listWkfs 제거 · runMatch · 새 WKF 항상 노출 · litmus v=149
+Changed files: new_ver/js/testWooMatch.js, new_ver/jssp/testWooAiMatch.jssp, new_ver/js/testWooRepository.js, new_ver/js/testWooLifecycle.js, new_ver/jssp/testWooAiRegister.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/input_form/testWooExtendWorkflow.xml, docs/plan/5차_plan.md, docs/log/log.md
+
+184. 2026-08-11 4차·TG-E HUMAN PASS — Foundry→SQL등록 완료 · 다음 5차
+Purpose: HUMAN — 신규 frag active·승인 없이 Generate→등록·SQL 목록. Changes:
+
+- 4차_plan PASS · 다음 라우팅 5차
+Changed files: docs/plan/4차_plan.md, docs/log/log.md
+
+183. 2026-08-11 v=148 — 생성 성공 시 [등록] 안내 배너
+Purpose: HUMAN — SQL 생성 후 등록 안내 없어 목록 비어 헤맴. Changes:
+
+- renderSummaryHint(passed)에 [등록] CTA · 빈 SQL 목록 문구 강화 · litmus v=148
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
+
+182. 2026-08-11 v=147 — Foundry done 안내·자동재생성 · WKF→SQL 목록
+Purpose: HUMAN — 큐 done 후 재생성 안내 없음·WKF 선택 시 SQL 미전환/에러. Changes:
+
+- done 배너 + queueId당 자동 generate 1회
+- selectWkf→WORKFLOW_NAME·loadSqlList · lock soft-fail · locked_at formatDate
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/js/testWooWorkflowClone.js, new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
+
+181. 2026-08-11 4차 — Fragment 자동승인 (active + Option 킬스위치)
+Purpose: Foundry publish→active·큐 done. near도 승인대기 제거. Option testWooAiAutoApprove. Changes:
+
+- Foundry isAutoApprove · fragDoc active · queue done
+- Lifecycle 기본 active + approved_by/at
+- FragmentReview note · navtree verified 주석 폐기
+- Studio UI 미변경 (본 차수)
+Changed files: new_ver/js/testWooFoundry.js, new_ver/js/testWooLifecycle.js, new_ver/js/testWooFragments.js, new_ver/js/testWooRepository.js, new_ver/jssp/testWooAiFragmentReview.jssp, new_ver/navtree/testWooAiNavtree.xml, docs/plan/4차_plan.md, docs/log/log.md
+
+180. 2026-08-11 v=146 HUMAN PASS — 고정 UI · 3차 셸 축 완료
+Purpose: HUMAN — litmus v=146 · 작업영역 고정 UI 원하는 대로. 생성/Max15는 v=144에서 PASS. Changes:
+
+- RESULT/plan 3차 UI+기능 PASS · 다음 TG-D 잔여 또는 4차
+Changed files: docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/plan/3차_plan.md, docs/log/log.md
+
+179. 2026-08-11 v=146 — Studio 작업영역 560px 고정 (목록 길이 무관)
+Purpose: HUMAN UI — 목록 max 시 composer 부유·min 시 버튼 잘림. 작업영역 고정 px. Changes:
+
+- #twMainTable 560px · 답변420 + composer140 · 목록 height:500 고정
+- litmus/embed URL v=146
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
+
+178. 2026-08-11 v=145 — litmus 정합 + 목록 스크롤 · v=144 HUMAN PASS 기록
+Purpose: HUMAN 기능 PASS. 진단 v=143 잔존·15건 목록 UI 깨짐 수정. Changes:
+
+- StudioJs/html litmus v=145 · ListPane max-height 420px overflow
+- ExtendWorkflow embed URL v=145
+- RESULT에 HUMAN PASS · BindPick 삭제 가이드 · Integer Option OK
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/input_form/testWooExtendWorkflow.xml, docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/log/log.md
+
+177. 2026-08-11 v=144 — createCampaign=T2 · createWkf=T3b 템플릿 API
+Purpose: PoC-T2/T3b 확정 API를 Studio 생성 경로에 반영. bare Write·WKF89 클론 제거. Changes:
+
+- createCampaign: CreateOperationFromModelId + program-id Write
+- createWkfFromTemplate: CreateInstanceFromModel(17234)
+- Options 기본: CampaignTemplateId=10002 · WkfTemplateId=17234 · Name=wfEmptyTemplate_CUSTOM
+- Studio litmus v=144
+Changed files: new_ver/js/testWooWorkflowClone.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/html/testWooAiStudio.js, docs/plan/3차_plan.md, docs/report/upgrade_plan/04_3a_PoC_Template.md, docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/log/log.md
+
+176. 2026-08-11 PoC-T3b PASS — WKF102/op-id=23000 · CreateInstanceFromModel 확정
+Purpose: HUMAN UI — OP48 Targeting에 PoC-T3b WKF(WKF102) · Being edited · operation-id=23000 · LLM 그래프. Changes:
+
+- RESULT/Template/plan T3b PASS · v=144 구현 준비
+Changed files: docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/report/upgrade_plan/04_3a_PoC_Template.md, docs/plan/3차_plan.md, docs/log/log.md
+
+175. 2026-08-11 PoC-T3b 생성 OK id=29320 · 검증 쿼리 @operation-id 수정
+Purpose: CreateInstanceFromModel 성공(29320). 검증 ExecuteQuery만 XTK-170036. Changes:
+
+- Template/RESULT에 T3b 실측 · [@operation-id] · T3b-check 스크립트
+Changed files: docs/report/upgrade_plan/04_3a_PoC_Template.md, docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/log/log.md
+
+174. 2026-08-11 PoC-T3a FAIL — CreateWorkflowFromModelId returns 0 · T3b로 전환
+Purpose: HUMAN 실측 workflowId=0(무생성). Community soft-fail과 동일 → CreateInstanceFromModel로 전환. Changes:
+
+- Template/RESULT/plan에 T3a FAIL · T3b 스크립트 기입
+Changed files: docs/report/upgrade_plan/04_3a_PoC_Template.md, docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/plan/3차_plan.md, docs/log/log.md
+
+173. 2026-08-11 PoC-T2 PASS — CreateOperationFromModelId+program-id · OP48/WKF101
+Purpose: HUMAN 실측 — 템플릿 10002 생성 후 program-id=29110 연결. 캠페인+WKF(customActivity) 동반. Changes:
+
+- RESULT/PoC_Template/plan에 T2 PASS · 확정 2단계 절차 기입
+Changed files: docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/report/upgrade_plan/04_3a_PoC_Template.md, docs/plan/3차_plan.md, docs/log/log.md
+
+172. 2026-08-11 PoC-T1 — opEmptyTemplate_LLM id=10002 확정
+Purpose: HUMAN 제공 — 캠페인 템플릿 id=10002. PoC-T2 CreateOperationFromModelId에 사용. Changes:
+
+- PoC_Template / RESULT / 3차_plan에 id=10002 기입
+Changed files: docs/report/upgrade_plan/04_3a_PoC_Template.md, docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/plan/3차_plan.md, docs/log/log.md
+
+171. 2026-08-11 PoC-T — 캠페인/WKF는 템플릿 API · 구현 보류
+Purpose: HUMAN — bare Write 캠페인은 껍데기. 새 캠페인=opEmptyTemplate_LLM, WKF추가=wfEmptyTemplate_CUSTOM(17234). 공식 Create*FromModelId 조사. 코드 미변경. Changes:
+
+- 04_3a_PoC_Template.md · RESULT/plan 템플릿 정정 · ReportIndex
+Changed files: docs/report/upgrade_plan/04_3a_PoC_Template.md, docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/plan/3차_plan.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+170. 2026-08-11 3차 정정 — Program→Campaign→WKF · Max15 · PoC-C PASS · v=143
+Purpose: PoC-C PASS(OP_testWooPoCC_001/20000). 계층 정정 — Campaign 생성·목록·WKF는 operation-id=캠페인. Max15. Changes:
+
+- wfClone: list/createCampaign · list/createWkf(campaign) · Max15
+- Context API listCampaigns/createCampaign · listWkfs campaign_id 필수
+- Studio UI CAMPAIGN 모드 · litmus v=143
+Changed files: new_ver/js/testWooWorkflowClone.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/input_form/testWooExtendWorkflow.xml, docs/plan/3차_plan.md, docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/log/log.md
+
+169. 2026-08-11 PoC-C 스크립트 — Program id→fullName 조회 후 Campaign Write
+Purpose: fullName 수기 입력 제거. xtk:folder @id로 @fullName 조회 후 operation Write. Changes:
+
+- 04_3a_PoC_Campaign.md 스크립트 보완
+Changed files: docs/report/upgrade_plan/04_3a_PoC_Campaign.md, docs/log/log.md
+
+168. 2026-08-11 계층 정정 — Program→Campaign→WKF · PoC-C · Max15
+Purpose: HUMAN 정정 — 2차 AI폴더는 Program. 그 안 Campaign(nms:operation) 생성/선택 후 WKF. v=142는 Program에 WKF를 붙인 오해 구현. Changes:
+
+- RESULT·3차_plan 계층 정정 · 캠페인당 WKF Max=15
+- PoC-C 절차 문서 신설 (캠페인 Write 가능 여부)
+Changed files: docs/plan/3차_plan.md, docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/report/upgrade_plan/04_3a_PoC_Campaign.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+167. 2026-08-11 3차 WKF 라이프사이클 — Write클론·soft-lock·open폴백 v=142
+Purpose: PoC RESULT 반영 — 템플릿 WKF89 클론, operation-id=AI프로그램, soft-lock, xtk://open 폴백. Spawn 금지. Changes:
+
+- NEW schema testWooAiWkfLock · js testWooWorkflowClone
+- Context API listWkfs/createWkf/selectWkf/releaseLock
+- Studio UI 새 WKF 생성·잠금·열기안내 · litmus v=142 (JSSP+embed form)
+- plan: docs/plan/3차_plan.md · 템플릿 WKF89(26021) RESULT 정리(#166)
+Changed files: new_ver/schema/testWooAiWkfLock.xml, new_ver/js/testWooWorkflowClone.js, new_ver/js/testWooStudioContext.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/input_form/testWooExtendWorkflow.xml, docs/plan/3차_plan.md, docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/log/log.md
+
+166. 2026-08-11 3차 템플릿 확정 — WKF89(id=26021) · PoC RESULT 정리
+Purpose: 운영자 확정 — 클론 소스는 WKF89(26021). PoC-2의 WKF94는 검증용. Changes:
+
+- RESULT 3차 전제에 템플릿 WKF89/26021 · Option명 권장 기입
+Changed files: docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/log/log.md
+
+165. 2026-08-11 PoC-2 보완 — WKF는 program 연결 필수(folder만으론 AI UI 미표시)
+Purpose: HUMAN 실측 — 클론 WKF가 Campaign workflows(1104)에는 보이나 operation/program-id=0이라 isAi 프로그램(TEST1/2)에 안 보임. 3차 Write에 program 링크 필수. Changes:
+
+- RESULT 3차 전제에 프로그램 단위 관리·DoD 보강 기입
+Changed files: docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/report/upgrade_plan/04_3a_PoC.md, docs/log/log.md
+
+164. 2026-08-11 PoC-1~3 종료 — PoC-3 스킵→soft-lock · 3차 가능
+Purpose: PoC-3 workflow @lockedBy DB확장은 필수 아님. 운영자 요청으로 미실시=FAIL(폴백). 3차 잠금은 soft-lock 테이블. Changes:
+
+- RESULT: PoC-1 FAIL · PoC-2 PASS · PoC-3 FAIL(스킵) · 3차 전제표 확정
+Changed files: docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/report/upgrade_plan/04_3a_PoC.md, docs/log/log.md
+
+163. 2026-08-11 PoC-2 PASS — Write 클론 WKF_testWooPoC2_001 (state=0)
+Purpose: HUMAN 실측 — queryDef+Write로 중지 상태 WKF 복제 성공. Spawn 미사용. Changes:
+
+- RESULT·04_3a_PoC에 PoC-2 PASS 기입 (id=29140, src=26800/WKF94)
+Changed files: docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/report/upgrade_plan/04_3a_PoC.md, docs/log/log.md
+
+162. 2026-08-11 PoC-1 FAIL — xtk://open 미동작 · PoC-2 진행
+Purpose: HUMAN 실측 — 외부 HTML `xtk://open` 클릭으로 Explorer WKF 미오픈. 3차는 폴백 경로 확정. Changes:
+
+- RESULT·04_3a_PoC RESULT표에 PoC-1 FAIL(pk=26800) 기입
+Changed files: docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/report/upgrade_plan/04_3a_PoC.md, docs/log/log.md
+
+161. 2026-08-11 PoC-1~3 HUMAN 실측 절차 — RESULT 대기 (코드 변경 없음)
+Purpose: 3차 선행 PoC-1(open)·PoC-2(Write clone)·PoC-3(lockedBy) 콘솔 실측 가이드 배포. Agent 자체 PASS 금지. Changes:
+
+- `04_3a_PoC_RESULT.md` 신설 — 검증 절차·기입란·회신 형식
+- `04_3a_PoC.md` RESULT를 WAITING + RESULT.md 링크로 갱신
+- ReportIndex에 RESULT 파일 등록
+Changed files: docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/report/upgrade_plan/04_3a_PoC.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+160. 2026-08-11 isAiFolder 폼 colspan=2 — Advanced colcount=2 정렬
+Purpose: Advanced parameters(colcount=2)에서 체크박스가 한 칸만 차지해 라벨 열이 비는 현상 수정. Changes:
+
+- testWooExtendFolder 내부 colspan=2 · xtk:folder ref 삽입줄에 colspan=2 명시
+Changed files: new_ver/input_form/testWooExtendFolder.xml, new_ver/input_form/testWooNmsProgramAiFolderPatch.xml, docs/log/log.md
+
+159. 2026-08-11 isAiFolder nms:program 확장 — XML-110013 unknown attribute 해소
+Purpose: Program 폴더 편집 컨텍스트가 nms:program이라 xtk:folder 확장만으로는 폼 xpath 검증 실패. Changes:
+
+- woo:program(@isAiFolder, sqlname=iIsAiFolder) 추가 · folder와 컬럼 공유
+- testWooExtendFolder entity-schema=nms:program · 패치 안내 xtk:folder 확정
+Changed files: new_ver/schema/testWooProgramExt.xml, new_ver/schema/testWooFolderExt.xml, new_ver/input_form/testWooExtendFolder.xml, new_ver/input_form/testWooNmsProgramAiFolderPatch.xml, docs/log/log.md
+
+158. 2026-08-11 isAiFolder 패치 대상 정정 — nms:program→nms:plan:lib/edition
+Purpose: 운영자 제공 nms:program XML에 Internal data가 없고 Edit이 nms:plan:lib/edition을 ref함을 반영. Changes:
+
+- 패치 안내 대상 폼을 nms:plan (lib/edition · Internal data · @fullName 다음)으로 수정
+Changed files: new_ver/input_form/testWooNmsProgramAiFolderPatch.xml, docs/log/log.md
+
+157. 2026-08-11 Folder 폼 isAiFolder UI — woo 확장폼 + nms:program ref 패치
+Purpose: Program 폴더 Properties > Advanced > Internal data 하단에 AI Studio folder 체크 UI 제공. Adobe factory 폼 extends 불가 → WF와 동일 ref 패턴. Changes:
+
+- woo:testWooExtendFolder (checkbox @isAiFolder)
+- nms:program Internal data insert 패치 안내
+Changed files: new_ver/input_form/testWooExtendFolder.xml, new_ver/input_form/testWooNmsProgramAiFolderPatch.xml, new_ver/schema/testWooFolderExt.xml, docs/log/log.md
+
+156. 2026-08-11 2차 상태머신·@isAiFolder — listAiFolders · 입력게이트 v=141
+Purpose: Studio 컨텍스트 상태머신과 AI 폴더(@isAiFolder) 선택→입력 활성까지 완성. WKF 실데이터는 3차. Changes:
+
+- schema woo:folder 확장 · StudioContext JS/JSSP · 셸 Back/Reset · v=141
+- INDEX: html은 콘솔 배포 아님 명시
+Changed files: new_ver/schema/testWooFolderExt.xml, new_ver/js/testWooStudioContext.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/input_form/testWooExtendWorkflow.xml, docs/report/upgrade_plan/00_INDEX.md, docs/plan/2차_plan.md, docs/log/log.md
+
+155. 2026-08-11 1차 진입점과셸 — Tools rights · 정보바+table2열 · 더미목록 v=140
+Purpose: PoC-0 PASS 후 Tools 진입(rights)과 IE-safe 3분할 셸 골격(데이터 더미)을 고정. Changes:
+
+- PoC-0 RESULT PASS 기입 · 분기 A(view 유지+rights)
+- Studio 셸 #twInfoBar/#twMainTable · 더미 3행 · v=140 · html 동기 · 폼 URL v 동기
+Changed files: new_ver/navtree/testWooAiNavtree.xml, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/input_form/testWooExtendWorkflow.xml, docs/report/upgrade_plan/04_3a_PoC.md, docs/plan/1차_plan.md, docs/log/log.md
+
+154. 2026-08-11 INDEX §3.0 — 운영자 응답=배포·HUMAN·다음키만 · PoC-0 HUMAN 대기
+Purpose: 운영자는 코드 리뷰 없이 콘솔 배포·테스트만 수행. Agent 자체검증 후 배포목록·TG·다음 라우팅키만 전달하도록 INDEX에 고정. PoC-0은 RESULT HUMAN 대기. Changes:
+
+- INDEX §3.0 운영자 응답 계약 · §3.3/§3.4 정합
+- PoC-0: navtree Tools URL뷰 실측 가이드(TG-A) 제공 · new_ver 미변경
+Changed files: docs/report/upgrade_plan/00_INDEX.md, docs/log/log.md
+
+153. 2026-08-11 INDEX §3.5 — 배포/재배포 목록 필수 출력
+Purpose: 매 구현 Chat 종료·TG 가이드에 repo경로·콘솔위치·신규/덮어쓰기 조치 표를 의무화해 캠페인 반영 누락을 막음. Changes:
+
+- §3.5 템플릿·조치 정의·규칙 · §3.3/§8.0/별칭 `배포목록` 연결
+Changed files: docs/report/upgrade_plan/00_INDEX.md, docs/log/log.md
+
+152. 2026-08-11 INDEX §8 — 캠페인 반영·테스트 게이트 TG-A~J
+Purpose: 차수 묶음별 캠페인 반영·테스트 가능 시점과 체크리스트를 INDEX에 고정해, 구현 Chat 종료 시 Agent가 자동으로 테스트 가이드를 제공하게 함. Changes:
+
+- TG-A~J 총괄표·게이트별 배포/테스트 목록·권장 묶음(예: TG-D≈0~3)
+- 종료 프로토콜 §3.3-6 · 별칭 `테스트`/`TG-n` 라우팅
+Changed files: docs/report/upgrade_plan/00_INDEX.md, docs/log/log.md
+
+151. 2026-08-11 0차 베이스라인 안정화 — 정적 검증 PASS · HUMAN_CONSOLE 대기
+Purpose: #141 베이스라인 고정. 신규 기능 없이 회귀 스캔·litmus·종료 게이트만 수행하고 콘솔 화면 DoD는 운영자 확인으로 남김. Changes:
+
+- 선행 `git diff main -- new_ver/` EMPTY (docs/roadmap-v2)
+- 정적: 금지 API call 0 · CSS 금지 0 · FormatDate 0 · Reload colspan=3 · StudioJs↔html sync · v=139
+- plan 기록 · acc-id-tracer PASS · acc-verifier READY(화면 DoD BLOCKED)
+Changed files: docs/plan/0차_plan.md, docs/log/log.md
+
+150. 2026-08-11 INDEX 단일진입점 — 차수명만으로 라우팅·실행 프로토콜
+Purpose: 매 Chat에서 00_INDEX만 @하고 차수만 말해도 Agent가 가이드·공통문서를 찾아 진행하도록 INDEX를 라우팅 프로토콜로 확장. Changes:
+
+- 사용자입력→동작 8단계, 별칭표, 공통필수문서, 라우팅표, 시작/종료 체크리스트, 병렬·금지·착수순서
+Changed files: docs/report/upgrade_plan/00_INDEX.md, docs/log/log.md
+
+149. 2026-08-11 9차 가이드 — 미사용 코드 `_폐기` 개명·콘솔 삭제 정리
+Purpose: 고도화 마지막 차수(8차) 이후 디버깅 안정화 뒤 new_ver 미사용 자산과 Campaign 등록 객체를 깔끔히 제거하는 절차를 로드맵에 추가. Changes:
+
+- `11_9차_미사용코드폐기정리.md` — CLEAN-9-1~5, `_폐기` 파일명 규칙, 콘솔 삭제 순서, 시드 후보·폐기목록 템플릿
+- INDEX/추적표/8차 후속/ReportIndex/가드레일 연결
+Changed files: docs/report/upgrade_plan/11_9차_미사용코드폐기정리.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/10_8차_확장폼폐기.md, docs/report/11_고도화_추적표.md, docs/report/00_ReportIndex.md, .cursor/rules/00-acc-guardrails.mdc, docs/log/log.md
 
 148. 2026-08-11 로드맵 문서 P0-2·P1 수정 — PoC-0·INJ-8-2 본문승인·가드레일
 Purpose: 검수 P0-2/P1 반영. navtree view 비문서화 리스크를 PoC-0으로 막고, INJ-8-2 본문 반영을 운영자 승인으로 확정. Changes:

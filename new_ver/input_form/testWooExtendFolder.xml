@@ -1,0 +1,29 @@
+<!--
+woo:testWooExtendFolder (Folder/Program 확장 Input form · isAiFolder)
+====================================================================
+Program 폴더 Advanced 편집 문서는 nms:program → entity-schema=nms:program.
+(xtk:folder 만 쓰면 XML-110013 Attribute isAiFolder unknown)
+
+[Deploy]
+=========
+1) schema: woo:folder + woo:program → Update database structure
+2) 본 폼 등록/덮어쓰기
+3) xtk:folder lib/formAdvancedParam 에 ref 삽입 (@fullName 다음)
+
+[Dependencies]
+=========
+- testWooFolderExt.xml · testWooProgramExt.xml
+-->
+<form _cs="Folder Test Woo AI extend (woo)" entity-schema="nms:program" entitySchema="xtk:form"
+      img="xtk:form.png" label="Folder Test Woo AI extend" name="testWooExtendFolder"
+      namespace="woo" xtkschema="xtk:form">
+
+  <container name="lib" type="visibleGroup" visibleIf="false">
+    <!-- 부모 xtk:folder Advanced 는 colcount=2 → 직계/내부 모두 colspan=2 -->
+    <form colcount="2" label="AI Studio folder" name="aiFolderFlag"
+          nothingToEdit="false" nothingToSave="false">
+      <input colspan="2" label="AI Studio folder" type="checkbox" xpath="@isAiFolder"/>
+    </form>
+  </container>
+
+</form>

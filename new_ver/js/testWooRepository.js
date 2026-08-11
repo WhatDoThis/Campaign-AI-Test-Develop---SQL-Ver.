@@ -7,10 +7,13 @@
  * ===========
  * - saveAiSql / enqueueRequest / getQueueStatus / upsertGapLog / listGapLog
  * - listAiSqlByWorkflow / getAiSqlById / deleteAiSql — WF별 SQL 목록·불러오기·삭제 (섹션 7b)
+ * - listAiSqlForMatch / findAiSqlBySqlHash — 5차 매칭·Register 중복 스킵
+ * - approveFragment : 민감/킬스위치 OFF 잔여 verified → active (4차 일반 경로는 Foundry 자동)
  *
  * [Dependencies]
  * =========
  * - xtk.session.Write / GetNewIds / queryDef
+ * - testWoo.lifecycle.sqlContentHash (findAiSqlBySqlHash)
  * - loadLibrary("woo:testWooRepository.js")
  */
 var testWoo = testWoo || {};
@@ -345,6 +348,86 @@ testWoo.repo = (function () {
     return true;
   }
 
+  // 5a. 매칭용 등록 SQL (used_fragments·compile_hash·nl · sql 본문 제외)
+  function listAiSqlForMatch(limit) {
+    var lim = limit != null ? Number(limit) : 500;
+    if (isNaN(lim) || lim < 1) lim = 500;
+    if (lim > 5000) lim = 5000;
+    var q = xtk.queryDef.create(
+      <queryDef schema={SQL_SCHEMA} operation="select" lineCount={String(lim)}>
+        <select>
+          <node expr="@id"/><node expr="@workflow_name"/>
+          <node expr="@used_fragments"/><node expr="@compile_hash"/>
+          <node expr="@nl_request"/><node expr="@title"/>
+          <node expr="@status"/><node expr="@creation_date"/>
+        </select>
+        <where>
+          <condition expr="@status = 'registered'"/>
+        </where>
+        <orderBy>
+          <node expr="@creation_date" sortDesc="true"/>
+        </orderBy>
+      </queryDef>);
+    var res = q.ExecuteQuery();
+    var rows = [];
+    for each (var r in res.testWooAiSql) {
+      rows.push({
+        id: Number(r.@id),
+        workflow_name: String(r.@workflow_name || ""),
+        used_fragments: String(r.@used_fragments || "[]"),
+        compile_hash: String(r.@compile_hash || ""),
+        nl_request: String(r.@nl_request || ""),
+        title: String(r.@title || ""),
+        status: String(r.@status || ""),
+        creation_date: String(r.@creation_date || "")
+      });
+    }
+    return rows;
+  }
+
+  // 5b. 동일 workflow + 정규화 SQL 해시 중복 조회 (J-9-3-4)
+  function findAiSqlBySqlHash(workflowName, sqlHash) {
+    var wf = _wfName(workflowName);
+    var want = _trim(sqlHash);
+    if (!wf || !want) return null;
+    if (!testWoo.lifecycle || !testWoo.lifecycle.sqlContentHash) {
+      throw new Error(
+        "[testWoo.repo.findAiSqlBySqlHash] lifecycle.sqlContentHash missing"
+      );
+    }
+    var esc = wf.replace(/'/g, "''");
+    var q = xtk.queryDef.create(
+      <queryDef schema={SQL_SCHEMA} operation="select" lineCount="100">
+        <select>
+          <node expr="@id"/><node expr="@title"/><node expr="@status"/>
+          <node expr="@sql_query"/><node expr="@workflow_name"/>
+          <node expr="@creation_date"/><node expr="@compile_hash"/>
+        </select>
+        <where>
+          <condition expr={"@workflow_name = '" + esc + "'"}/>
+        </where>
+        <orderBy>
+          <node expr="@creation_date" sortDesc="true"/>
+        </orderBy>
+      </queryDef>);
+    var res = q.ExecuteQuery();
+    for each (var r in res.testWooAiSql) {
+      var h = testWoo.lifecycle.sqlContentHash(String(r.@sql_query || ""));
+      if (h === want) {
+        return {
+          id: Number(r.@id),
+          title: String(r.@title || ""),
+          status: String(r.@status || ""),
+          workflow_name: String(r.@workflow_name || ""),
+          creation_date: String(r.@creation_date || ""),
+          compile_hash: String(r.@compile_hash || ""),
+          sqlHash: h
+        };
+      }
+    }
+    return null;
+  }
+
   // 5. ai_sql_id 단건 (Studio 불러오기 / 커스텀 액티비티 로드용)
   function getAiSqlById(id) {
     var n = Number(id);
@@ -398,6 +481,8 @@ testWoo.repo = (function () {
     rejectFragment: rejectFragment,
     completeQueue: completeQueue,
     listAiSqlByWorkflow: listAiSqlByWorkflow,
+    listAiSqlForMatch: listAiSqlForMatch,
+    findAiSqlBySqlHash: findAiSqlBySqlHash,
     deleteAiSql: deleteAiSql,
     getAiSqlById: getAiSqlById
   };

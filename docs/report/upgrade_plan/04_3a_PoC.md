@@ -126,9 +126,11 @@ PoC-0 FAIL 이면 1차 착수 금지(폴백 경로로 1차 설계만 허용).
 
 ## RESULT (채워 넣을 것)
 
+상세 절차·기입란: [`04_3a_PoC_RESULT.md`](04_3a_PoC_RESULT.md) (HUMAN 대기 — Agent 자체 PASS 금지)
+
 | PoC | 판정 | 증거 | 결정된 폴백 | 일자 |
 |---|---|---|---|---|
-| PoC-0 | | | view 유지 / 런처 form= | |
-| PoC-1 | | | | |
-| PoC-2 | | | | |
-| PoC-3 | | | | |
+| PoC-0 | PASS | Tools→Test Woo AI Studio 렌더(제목/본문) HUMAN 확인 | view 유지 | 2026-08-11 |
+| PoC-1 | FAIL | html xtk://open 무반응 (pk=26800) | 정보바+콘솔에서 여세요 | 2026-08-11 |
+| PoC-2 | PASS | id=29140 folder=1104 · program-id=0(AI프로그램 미표시) | Write+**3차는 program 연결** | 2026-08-11 |
+| PoC-3 | FAIL(스킵) | DB 확장 실험 미실시(운영자 판단) | soft-lock `testWooAiWkfLock` | 2026-08-11 |

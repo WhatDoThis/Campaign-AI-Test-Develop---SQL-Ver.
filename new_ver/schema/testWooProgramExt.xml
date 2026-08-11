@@ -1,0 +1,32 @@
+<!--
+woo:program (nms:program 확장 · AI Studio 폴더 플래그)
+======================================================
+Program 폴더 Properties 편집 컨텍스트는 nms:program.
+xtk:folder 만 확장하면 XML-110013: Attribute 'isAiFolder' unknown (nms:program).
+
+[Main Functions]
+===========
+- nms:program 폼/문서에 @isAiFolder 노출
+- 물리 컬럼은 folder 확장과 동일 sqlname 공유 (XtkFolder)
+
+[Attributes]
+=========
+- isAiFolder (boolean) sqlname=iIsAiFolder
+
+[Dependencies]
+=========
+- new_ver/schema/testWooFolderExt.xml (listAiFolders용 xtk:folder)
+- Update database structure (컬럼 이미 있으면 스키마만 재생성)
+-->
+<srcSchema _cs="Program AI extend (woo)" extendedSchema="nms:program"
+           entitySchema="xtk:srcSchema" img="xtk:schema.png"
+           label="Program (Test Woo AI)" mappingType="sql" name="program"
+           namespace="woo" xtkschema="xtk:srcSchema">
+
+  <element name="program">
+    <attribute default="false" desc="AI Studio campaign folder flag (UI-3-2)"
+               label="AI Studio folder" name="isAiFolder" sqlname="iIsAiFolder"
+               type="boolean" user="true"/>
+  </element>
+
+</srcSchema>
