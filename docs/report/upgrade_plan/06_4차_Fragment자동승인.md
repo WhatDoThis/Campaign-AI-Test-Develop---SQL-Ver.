@@ -49,6 +49,7 @@
 | `new_ver/js/testWooRepository.js` | 수정 | 승인 API는 관리/민감용으로 축소 가능 |
 | `new_ver/js/testWooFragments.js` | 확인 | Stage A가 active 요구 — 자동 active와 정합 |
 | `new_ver/jssp/testWooAiFragmentReview.jssp` | 수정(최소) | 자동승인 후 큐 상태 메시지 |
+| `new_ver/navtree/testWooAiNavtree.xml` | 수정 | Fragments view의 sysFilter **주석 블록**이 `@status='verified' AND @active=0` 기준이라 자동승인 후 무효 → 주석을 `active` 정책에 맞게 갱신하거나 제거(운영 필터와 모순 금지) |
 | `docs/log/log.md` | 수정 | 로그 |
 
 **금지 경로**: `testWooAiStudio.jssp`, `testWooAiStudioJs.jssp`, `testWooAiStudio.js`, `input_form/**`
@@ -85,6 +86,7 @@
 - [ ] near dedup 건이 승인 대기 큐에 남지 않는다
 - [ ] Option으로 자동승인 OFF 가능(킬스위치)
 - [ ] Studio 파일 git diff 없음
+- [ ] navtree Fragments sysFilter 주석이 자동승인 정책(`active`)과 모순되지 않는다
 
 ## 9. HUMAN_CONSOLE
 

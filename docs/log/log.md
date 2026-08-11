@@ -1,6 +1,8 @@
 # Log
 
 ## Log Index
+148. 2026-08-11 로드맵 문서 P0-2·P1 수정 — PoC-0·INJ-8-2 본문승인·가드레일
+147. 2026-08-11 P0 브랜치 분리 — roadmap new_ver 복원 · fix/embed-layout
 146. 2026-08-11 고도화 기반 — 추적표·Rules/Skills/Agents·차수 가이드(0~8+PoC)
 145. 2026-08-10 embed UI — 입력 2줄 · 답변 영역 확대 (v=143)
 144. 2026-08-10 Studio UI — 진단/TW-BOOT 제거 · 입력·이력 확대 (v=142)
@@ -149,6 +151,22 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+148. 2026-08-11 로드맵 문서 P0-2·P1 수정 — PoC-0·INJ-8-2 본문승인·가드레일
+Purpose: 검수 P0-2/P1 반영. navtree view 비문서화 리스크를 PoC-0으로 막고, INJ-8-2 본문 반영을 운영자 승인으로 확정. Changes:
+
+- PoC-0 신설(1차 선행) · 1차 Step1 PASS/FAIL 분기 · 4차 navtree sysFilter 주석 DoD
+- 3차 lockedBy 파일명 고정(PASS: testWooWorkflowExt / FAIL: testWooAiWkfLock)
+- 6차 원안 본문 Write 유지(registered SQL만) · 추적표·INDEX·가드레일(tamplate/view/docs-code분리)
+Changed files: docs/report/upgrade_plan/*, docs/report/11_고도화_추적표.md, .cursor/rules/00-acc-guardrails.mdc, docs/log/log.md
+
+147. 2026-08-11 P0 브랜치 분리 — roadmap new_ver 복원 · fix/embed-layout
+Purpose: docs/roadmap-v2 커밋에 혼입된 new_ver 변경을 제거하고 문서 브랜치를 main 코드 베이스라인과 일치시킴. Changes:
+
+- 진단: html/js −2KB = #twDiag/_diag no-op·TW-BOOT 제거(b). #133 `_xhrPost` 유지(a 아님)
+- docs/roadmap-v2: new_ver 4파일을 main과 동일하게 복원 커밋
+- 레이아웃 후보만 fix/embed-layout 브랜치로 분리(0차 DoD 후 병합 검토)
+Changed files: new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
 
 146. 2026-08-11 고도화 기반 — 추적표·Rules/Skills/Agents·차수 가이드(0~8+PoC)
 Purpose: 관리자 아이디어 전수 ID화 + 커서 운용체계 + AI 실행용 차수 문서로 유실·환각 구현을 차단. new_ver 코드 변경 없음. Changes:

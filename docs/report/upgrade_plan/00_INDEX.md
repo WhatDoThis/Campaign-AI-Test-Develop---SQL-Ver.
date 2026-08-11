@@ -13,9 +13,10 @@
 
 | 순서 | 파일 | 코드? | 비고 |
 |---|---|---|---|
-| 기반 | (본 INDEX + 추적표 + rules/skills/agents) | 없음 | #142 |
-| 0 | `01_0차_베이스라인안정화.md` | 검증 위주 | #141 유지 |
-| 1 | `02_1차_진입점과셸.md` | 있음 | WF 확장 폼 존치 |
+| 기반 | (본 INDEX + 추적표 + rules/skills/agents) | 없음 | docs only |
+| **0-pre** | `04_3a_PoC.md` 의 **PoC-0** | 없음 | **1차 선행 필수** (Tools/navtree) |
+| 0 | `01_0차_베이스라인안정화.md` | 검증 위주 | #141 유지 · `docs/roadmap-v2`의 `new_ver/`는 main과 동일해야 함 |
+| 1 | `02_1차_진입점과셸.md` | 있음 | PoC-0 분기 · WF 확장 폼 존치 |
 | 2 | `03_2차_상태머신과캠페인폴더.md` | 있음 | `@isAiFolder` |
 | 3a | `04_3a_PoC.md` | **없음** | 3차 30일 전 |
 | 3 | `05_3차_WKF라이프사이클.md` | 있음 | Spawn 금지 |
@@ -37,3 +38,5 @@
 
 - UI-3-2 = folder `@isAiFolder` 확장
 - J-9-5-2 = 구현 불가 (6차에 경량 언급만)
+- INJ-8-2 = **본문 반영 승인**(2026-08-11). ID-only 축소 폐기. registered SQL만 주입 + ai-sql-id 병행
+- 문서 브랜치에 `new_ver/` 코드 커밋 혼입 금지 (코드 후보는 `fix/embed-layout`)

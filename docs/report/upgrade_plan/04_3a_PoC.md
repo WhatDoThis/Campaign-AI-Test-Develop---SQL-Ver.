@@ -1,36 +1,39 @@
 # 3a · PoC 선행 검증 (for AI + HUMAN)
 
 > **코드 변경 금지.** 결과만 `docs/report/upgrade_plan/04_3a_PoC_RESULT.md`로 기록(또는 본 파일 하단 RESULT 채움).  
-> 3차 착수 **최소 수일 전**(요청문: 30일 전 권장) 완료.
+> **PoC-0은 1차 착수 전 필수.** PoC-1~3은 3차 착수 전(요청문: 30일 전 권장).
 
 ## 0. 실행 프롬프트
 
 ```
-[PoC · 3차 선행 검증]
+[PoC · 선행 검증 — PoC-0 필수 / PoC-1~3는 3차 전]
 첨부: docs/report/upgrade_plan/04_3a_PoC.md
 규칙: new_ver 코드 수정 금지. 검증방법/성공기준/폴백/소요만.
 산출: 각 PoC PASS|FAIL + 증거(스크린샷 설명/로그)를 RESULT 섹션에 기입.
+PoC-0 FAIL 이면 1차 착수 금지(폴백 경로로 1차 설계만 허용).
 ```
 
 ## 1. 차수 목표
 
-3차에 필요한 환경 의존 3건을 공식문서+콘솔 실측으로 확정한다.
+1차에 필요한 navtree Tools 진입(PoC-0)과, 3차에 필요한 환경 의존 3건(PoC-1~3)을 공식문서+콘솔 실측으로 확정한다.
 
 ## 2. 커버 ID (PoC)
 
-| ID | 질문 |
-|---|---|
-| PoC-1 | `xtk://open/?schema=xtk:workflow&form=xtk:workflow&pk=<id>` 가 JSSP-in-urlViewer(MSHTML)에서 동작하는가 |
-| PoC-2 | `old_ver/workflow/tamplate.xml` data를 queryDef→Write insert 시 액티비티·전이·변수 보존 + 상태가 중지인가 (Spawn 미사용) |
-| PoC-3 | `xtk:workflow`에 `@lockedBy` 추가 후 DB 업데이트 시 영향 기술 WF 목록·재시작 필요 여부 |
+| ID | 질문 | 선행 대상 |
+|---|---|---|
+| PoC-0 | navtree `<command>` 의 URL 뷰(`view`/`viewType`)가 Tools에서 Studio를 여는가 | **1차** |
+| PoC-1 | `xtk://open/?schema=xtk:workflow&form=xtk:workflow&pk=<id>` 가 JSSP-in-urlViewer(MSHTML)에서 동작하는가 | 3차 |
+| PoC-2 | `old_ver/workflow/tamplate.xml` data를 queryDef→Write insert 시 액티비티·전이·변수 보존 + 상태가 중지인가 (Spawn 미사용) | 3차 |
+| PoC-3 | `xtk:workflow`에 `@lockedBy` 추가 후 DB 업데이트 시 영향 기술 WF 목록·재시작 필요 여부 | 3차 |
 
 ## 3. 선행 / 후속
 
-- 선행: 2차 권장(폴더 컨텍스트 있으면 테스트 용이). 최소 0차.
-- 후속: 3차 전부. PoC-1 FAIL이면 3차는 폼 버튼 폴백만 설계.
+- 선행: PoC-0은 0차 후 즉시. PoC-1~3는 2차 권장(최소 0차).
+- 후속: PoC-0 → 1차. PoC-1~3 → 3차. PoC-1 FAIL이면 3차는 폼 버튼 폴백만.
 
 ## 4. 어도비 근거
 
+- Navtree / Global commands: https://experienceleague.adobe.com/en/docs/campaign-classic/using/configuring-campaign-classic/navigation-hierarchy/configuration — documented `<command>` attrs: name, label, desc, form, rights, promptLabel; action = **input form or SOAP call** (URL view not documented)
 - Open protocol (overview use case): https://experienceleague.adobe.com/en/docs/campaign-classic/using/designing-content/web-applications/use-cases-creating-overviews
 - Data APIs: https://experienceleague.adobe.com/en/docs/campaign-classic/using/configuring-campaign-classic/api/data-oriented-apis
 - Spawn (사용 금지 대조군): https://experienceleague.adobe.com/developer/campaign-api/api/sm-workflow-Spawn.html
@@ -42,9 +45,19 @@
 | 본 파일 RESULT 섹션 또는 `04_3a_PoC_RESULT.md` | 신규/수정 | 실측 기록 |
 | `docs/log/log.md` | 수정 | PoC 완료 로그(선택) |
 
-**new_ver 코드 변경 = FAIL 조건**
+**new_ver 코드 변경 = FAIL 조건** (PoC-0 폴백용 런처 폼은 **1차 구현 시** 작성 — PoC 단계에서는 만들지 않음)
 
 ## 6. 검증 상세
+
+### PoC-0 — navtree command URL 뷰 (1차 선행 · 필수)
+
+| 항목 | 내용 |
+|---|---|
+| 배경 | 공식 `<command>` 속성은 name/label/desc/**form**/rights/promptLabel. *"This action can be an input form or a SOAP call."* 현재 `testWooAiNavtree.xml`의 `view` / `viewType="view"`는 **비문서화** 속성이다. |
+| 검증방법 | 현행 `woo:testWooAiNav` navtree를 콘솔에 등록(또는 이미 등록된 것 확인) → 메뉴 **Tools**에 `Test Woo AI Studio` 노출 여부 → 클릭 시 `/woo/testWooAiStudio.jssp`가 렌더되는지 확인. `__CAMPAIGN_SERVER_URL__` 치환 필수. |
+| 성공기준 | Tools에 항목이 보이고, 클릭 시 Studio JSSP가 로드된다(제목/본문 가시). |
+| 실패 시 폴백 | 신규 입력폼 `woo:testWooAiStudioLauncher`(urlViewer 단일 컨테이너) + `<command form="woo:testWooAiStudioLauncher" rights="…">`. 이는 공식 스펙(`form` 속성). **1차 문서 Step 1 FAIL 분기**로 구현. |
+| 소요예상 | 30분 이내 |
 
 ### PoC-1 — xtk://open from urlViewer
 
@@ -82,18 +95,22 @@
 
 ## 8. DoD
 
+- [ ] PoC-0 PASS|FAIL + 폴백 결정 기록 (**1차 전 필수**)
 - [ ] PoC-1 PASS|FAIL + 폴백 결정 기록
 - [ ] PoC-2 PASS|FAIL + 생성 WKF internalName 예시
 - [ ] PoC-3 PASS|FAIL + 영향 목록
-- [ ] 3차 문서의 "PoC 결과 전제"가 갱신 가능
+- [ ] 1차/3차 문서의 "PoC 결과 전제"가 갱신 가능
 
 ## 9. HUMAN_CONSOLE
 
 - 스테이징 콘솔 작업 전부 운영자 수행
 - Agent는 절차 안내·결과 문서화만
+- PoC-0: navtree 등록 → Tools 클릭 5분 스모크
 
 ## 10. 테스트·디버깅
 
+- PoC-0 실패(메뉴 없음): hierarchy 미등록 / rights 치환 / rights·viewType 무시
+- PoC-0 실패(메뉴는 있으나 빈 창): URL/JSSP 404 — secrets URL 확인
 - PoC-2 실패 시: Write XML에 `xtkschema`, 네임스페이스, `data` CDATA 깨짐 여부 확인
 - PoC-1 실패가 "아무 반응 없음"이면 MSHTML이 커스텀 프로토콜 무시 → 폴백 확정
 
@@ -111,6 +128,7 @@
 
 | PoC | 판정 | 증거 | 결정된 폴백 | 일자 |
 |---|---|---|---|---|
+| PoC-0 | | | view 유지 / 런처 form= | |
 | PoC-1 | | | | |
 | PoC-2 | | | | |
 | PoC-3 | | | | |
