@@ -1,6 +1,11 @@
 # Log
 
 ## Log Index
+146. 2026-08-11 고도화 기반 — 추적표·Rules/Skills/Agents·차수 가이드(0~8+PoC)
+145. 2026-08-10 embed UI — 입력 2줄 · 답변 영역 확대 (v=143)
+144. 2026-08-10 Studio UI — 진단/TW-BOOT 제거 · 입력·이력 확대 (v=142)
+143. 2026-08-10 재오픈 흰화면 — enter 에도 _r=tick (urlViewer 캐시)
+142. 2026-08-10 embed SQL 이력 세로 채움 — table-cell 2열 · composer→main (v=140)
 141. 2026-08-10 폼 그리드 좌측공백 — Reload 버튼 colspan=3
 140. 2026-08-10 폼 enter 방어 — twStudioUrl 선행 set · _r 는 Reload/Apply만
 139. 2026-08-10 baseline — #134/#136/#138 레이아웃 철회 (#133/#135/#137 유지)
@@ -144,6 +149,50 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+146. 2026-08-11 고도화 기반 — 추적표·Rules/Skills/Agents·차수 가이드(0~8+PoC)
+Purpose: 관리자 아이디어 전수 ID화 + 커서 운용체계 + AI 실행용 차수 문서로 유실·환각 구현을 차단. new_ver 코드 변경 없음. Changes:
+
+- `docs/report/11_고도화_추적표.md` — 66 ID · 판정 · 차수 매핑 (UI-3-2=`@isAiFolder`, J-9-5-2=불가·경량언급, FLOW-5-3=Jaccard 0.9)
+- `.cursor/rules/00-acc-guardrails.mdc` + skills 5 + agents 3 (`acc-verifier`/`acc-id-tracer`/`acc-doc-writer`)
+- `docs/report/upgrade_plan/00_INDEX.md` + `01_0차`~`10_8차` + `04_3a_PoC` — Chat 첨부용 단독완결 가이드(HUMAN_CONSOLE·DoD·디버그)
+- ReportIndex 갱신 · 브랜치 `docs/roadmap-v2`
+Changed files: docs/report/11_고도화_추적표.md, docs/report/upgrade_plan/*, docs/report/00_ReportIndex.md, .cursor/rules/00-acc-guardrails.mdc, .cursor/skills/acc-*/, .cursor/agents/*, docs/log/log.md
+
+145. 2026-08-10 embed UI — 입력 2줄 · 답변 영역 확대 (v=143)
+Purpose: #144 에서 입력창을 과도하게 키운 것을 되돌리고, 생성 결과(답변) 영역에 공간을 배분 Changes:
+
+- textarea#nl: height 52px(~2줄), composer 를 hint 바로 아래로 이동
+- .answer 래퍼 min-height 280px · SQL pre max-height 240px
+- 폼/Studio ?v=143 (카드 id 동일 — JS 로직 변경 없음)
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
+
+144. 2026-08-10 Studio UI — 진단/TW-BOOT 제거 · 입력·이력 확대 (v=142)
+Purpose: 사용자용 UI 정리 — 진단 섹션·노란 TW-BOOT 제거, 자연어 입력창과 SQL 이력 세로 확대 Changes:
+
+- #twDiag / #twBoot / 노란 bgcolor 테이블 삭제 (상단 노란 깜빡임 원인)
+- embed textarea#nl height 200px(min) · body/side min-height 420px (table-cell 동시 확장)
+- urlViewer container height 560→640 · 폼/Studio ?v=142
+- _diag no-op · onerror 는 hint 배너만
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
+
+143. 2026-08-10 재오픈 흰화면 — enter 에도 _r=tick (urlViewer 캐시)
+Purpose: 동일 WF 창 닫았다 재오픈 시 Studio URL 에 _r 없어 urlViewer(IE)가 이전 문서를 재사용해 흰화면이 나던 문제 수정 Changes:
+
+- 원인: #139 가 enter 에서 _r 를 빼 동일 URL 재진입 → MSHTML 캐시. Reload 만 _r 갱신되어 그때만 정상
+- enter: ShellPick 후 twStudioUrl 에 `_r=`+tick 재설정 (선행 set 은 SOAP 실패 폴백 유지)
+- 폼 캐시 리트머스 v=141
+- Studio JSSP 변경 없음
+Changed files: new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
+
+142. 2026-08-10 embed SQL 이력 세로 채움 — table-cell 2열 · composer→main (v=140)
+Purpose: #139 float baseline 에서 SQL 이력이 콘텐츠 높이만 잡아 위·아래 공백이 생기던 문제를 해소. Changes:
+
+- embed: display:table / table-cell 2열(좌 64% / 우 36%), 행 높이 동일
+- composer 를 .main 안으로 이동(입력창이 이력 옆에 붙지 않음)
+- _showSqlSide: inline display 제거 → CSS table-cell 유지
+- 캐시 버스트 Studio/폼 ?v=140
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
 
 141. 2026-08-10 폼 그리드 좌측공백 — Reload 버튼 colspan=3
 Purpose: urlViewer 좌측 ~425px 공백 원인 확정(폼 그리드) · CSS 무수정 Changes:

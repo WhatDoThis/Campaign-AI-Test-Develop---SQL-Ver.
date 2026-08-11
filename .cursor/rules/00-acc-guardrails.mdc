@@ -1,0 +1,17 @@
+---
+description: ACC v7 absolute bans for Campaign AI Studio (Test Woo). Fail closed.
+alwaysApply: true
+---
+
+# ACC Guardrails (절대 금지)
+
+- Browser/JSSP client: `fetch`, `Promise`, `.finally`, `classList`, `forEach`, `alert`, `confirm`
+- ES6: `let`, `const`, arrow `=>`, template literals, `Array.map/filter/find/includes`
+- CSS: `flex`, `grid`, `vh`, CSS variables (`var(--*)`), `calc()`
+- API: `xtk:workflow#Spawn` (starts WF — never for create/clone)
+- XTK: `FormatDate`, `GetDate` in form scripts (XTK-170016)
+- Log: do not invent/skip/reorder `docs/log/log.md` numbers
+- Baseline: do not revert #133 / #135 / #137 / #141
+- Commit: do not mix form XML + JSSP layout changes in one commit without deploy note
+- Deploy order: schema → js library → form/navtree → JSSP
+- Cache litmus: Studio URL must show `v=<n>`; missing `v=` = stale client
