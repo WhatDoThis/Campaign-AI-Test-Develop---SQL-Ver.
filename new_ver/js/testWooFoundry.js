@@ -15,13 +15,14 @@
  * - peekQueue — 읽기 전용 큐 조회
  * - isAutoApprove — Option testWooAiAutoApprove 판정
  * - assertAtomicFrag — #167 원자성 게이트(컬럼1·축1·이름에 값 금지)
- * - processQueueItem — #168-A library_cache_hit 시 triage/generate 스킵(툴 0)
+ * - processQueueItem — #169 libraryLookup 히트 시 triage/generate 스킵(툴 0)
  * - auditIndexPollution — origin=foundry 색인(synonyms) 오염 읽기 전용 감사
  * - repairIndexPollution — 오염 synonyms·sample_questions 교정(dryRun 기본)
  *
  * [Dependencies]
  * =========
- * - testWoo.feasibility·toolkit·llm·repo·probe·dedup·lifecycle·gates·fragments·compiler
+ * - testWoo.feasibility.libraryLookup·triage — #169 서가 우선(공유)
+ * - testWoo.toolkit·llm·repo·probe·dedup·lifecycle·gates·fragments·compiler
  * - testWoo.toolkit.classifyField·resolveDomain·checkSourceFreshness — #168-A
  * - woo:testWooAiRequestQueue — xtk.queryDef·xtk.session#Write
  * - woo:testWooAiFragment — 축 재사용 시 param_domain merge Write · 색인 감사/수리
@@ -34,7 +35,7 @@
  * - publish/reuse 후 Stage A가 잡도록 sample_questions·synonyms에 자기 슬롯 키워드만 기록(#164)
  * - maxNewFragments 도달·created>0 → queued 이어달리기(attempt 복원); created=0만 needs_human_design
  * - #167: frag=축1=컬럼1 · 값은 {{param}}+param_domain · 다축/값구이 name 거부
- * - #168-A: frag=_source 탐색캐시 · library hit 시 툴0 · fingerprint/TTL·stale/orphaned
+ * - #168-A/#169: frag=_source · library hit 시 툴0 · fingerprint/TTL·stale/orphaned
  * - #168-A hotfix: _sqlFilterColumns 가 {{param}}/리터럴 RHS 에서도 컬럼 추출
  * - 색인 수리: synonyms·sample_questions만 Write · sql_text/key_column/scope_key/params/status/active/name 금지
  */
@@ -998,85 +999,66 @@ testWoo.foundry = (function () {
     try { return JSON.parse(String(raw)); } catch (e) { return null; }
   }
 
-  // 결정화된 축 frag(_source·tags 축1): 값 토큰(서울/경기)이 달라도 Stage A 후보면 재사용.
-  // #164 삼킴 방지 — _source 없는 후보는 기존 AND 커버리지(_coversSlot)만 인정.
-  function _coversCachedAxis(card, slot) {
-    if (!card) return false;
-    var domain = _parseDomain(card.param_domain);
-    if (!domain || !domain._source) return false;
-    var axes = _tagAxes(card.tags);
-    if (axes.length !== 1) return false;
-    return true;
-  }
-
-  // #168-A V3: _source 가 있는 라이브러리 frag 로 슬롯을 커버하면 triage/generate 스킵(툴 0).
+  // #169: feasibility.libraryLookup 공유. stale면 여기서 갱신 후 히트.
+  // (구 _coversCachedAxis: 단일축+_source만으로 히트 → 타축 삼킴. libraryLookup이 도메인 값 매칭 강제)
   function _tryLibraryCacheHit(slot) {
-    if (!testWoo.fragments || !testWoo.fragments.searchBySlot) return { ok: false };
-    if (!testWoo.toolkit || !testWoo.toolkit.checkSourceFreshness) return { ok: false };
+    if (!testWoo.feasibility || !testWoo.feasibility.libraryLookup) return { ok: false };
     var statuses = isAutoApprove() ? ["active"] : ["active", "verified"];
-    var cands = [];
-    try {
-      cands = testWoo.fragments.searchBySlot(slot, 8, statuses) || [];
-    } catch (eS) {
-      return { ok: false };
-    }
-    for (var i = 0; i < cands.length; i++) {
-      var card = cands[i];
-      if (!_coversSlot(card, slot) && !_coversCachedAxis(card, slot)) continue;
-      var full = null;
-      try {
-        full = testWoo.fragments.getByName(card.name);
-      } catch (eG) {
-        full = null;
-      }
-      if (!full || !full.id) continue;
-      var domain = _parseDomain(full.param_domain);
-      if (!domain || !domain._source) continue;
-      var src = domain._source;
-      var fresh;
-      try {
-        fresh = testWoo.toolkit.checkSourceFreshness(src);
-      } catch (eF) {
-        fresh = { status: "stale", reason: String(eF.message || eF) };
-      }
-      if (fresh.status === "orphaned") {
-        _markFragmentLifecycle(full.id, "orphaned", domain);
-        extraEvidencePushSafe({
-          reason: "frag_orphaned",
-          detail: fresh.reason,
-          fragmentId: full.id,
-          name: full.name
-        });
-        continue;
-      }
-      if (fresh.status === "stale") {
-        _markFragmentLifecycle(full.id, "stale", domain);
-        var refreshed = _refreshFragmentDomain(full);
-        if (!refreshed.ok) {
-          extraEvidencePushSafe({
-            reason: "frag_stale",
-            detail: fresh.reason,
-            fragmentId: full.id,
-            name: full.name
-          });
-          continue;
-        }
-        full = refreshed.frag || full;
-        domain = refreshed.domain || domain;
-      } else if (fresh.status === "ttl_expired") {
-        var refreshedT = _refreshFragmentDomain(full);
-        if (refreshedT.ok) {
-          full = refreshedT.frag || full;
-          domain = refreshedT.domain || domain;
-        }
+    var lib = testWoo.feasibility.libraryLookup(slot, { statuses: statuses });
+    if (lib && lib.ok) {
+      // ttl_expired: 백그라운드 갱신 시도(실패해도 히트 유지)
+      if (lib.freshness === "ttl_expired" && lib.name &&
+          testWoo.fragments && testWoo.fragments.getByName) {
+        try {
+          var fullT = testWoo.fragments.getByName(lib.name);
+          if (fullT) {
+            var refreshedT = _refreshFragmentDomain(fullT);
+            if (refreshedT.ok) {
+              return {
+                ok: true,
+                fragmentId: Number((refreshedT.frag || fullT).id),
+                name: String((refreshedT.frag || fullT).name || lib.name),
+                domain: refreshedT.domain || lib.domain,
+                resolvedBy: "library_cache_hit"
+              };
+            }
+          }
+        } catch (eT) { /* keep hit */ }
       }
       return {
         ok: true,
-        fragmentId: Number(full.id),
-        name: String(full.name || ""),
-        domain: domain,
+        fragmentId: lib.fragmentId,
+        name: lib.name,
+        domain: lib.domain,
         resolvedBy: "library_cache_hit"
       };
+    }
+    if (lib && lib.freshness === "stale" && lib.fragmentId) {
+      _markFragmentLifecycle(lib.fragmentId, "stale", lib.domain);
+      var fullS = null;
+      try {
+        fullS = testWoo.fragments.getByName(lib.name);
+      } catch (eS) {
+        fullS = null;
+      }
+      if (fullS) {
+        var refreshed = _refreshFragmentDomain(fullS);
+        if (refreshed.ok) {
+          return {
+            ok: true,
+            fragmentId: Number((refreshed.frag || fullS).id),
+            name: String((refreshed.frag || fullS).name || lib.name),
+            domain: refreshed.domain || lib.domain,
+            resolvedBy: "library_cache_hit"
+          };
+        }
+      }
+      extraEvidencePushSafe({
+        reason: "frag_stale",
+        detail: lib.reason || "stale",
+        fragmentId: lib.fragmentId,
+        name: lib.name
+      });
     }
     return { ok: false };
   }
@@ -1501,7 +1483,7 @@ testWoo.foundry = (function () {
         var slotId = slot.id;
         var slotText = slot.text;
 
-        // #168-A V3: 탐색 캐시(_source) hit → triage/generate/툴 0회
+        // #169: 서가(_source) hit → triage/generate/툴 0회
         var libHit = _tryLibraryCacheHit(slot);
         if (libHit.ok) {
           feasibleCount++;
@@ -1512,7 +1494,7 @@ testWoo.foundry = (function () {
             confidence: "high",
             narrative: "library_cache_hit name=" + libHit.name +
               " (탐색 결과 캐시 — toolkit 호출 0)",
-            evidence: { libraryCacheHit: true, toolCalls: 0 },
+            evidence: { libraryCacheHit: true, toolCalls: 0, source: "library" },
             alternatives: [],
             fragmentId: libHit.fragmentId,
             resolvedBy: libHit.resolvedBy,
@@ -1527,7 +1509,38 @@ testWoo.foundry = (function () {
         }
 
         var triageResult = testWoo.feasibility.triage(
-          { id: slotId, text: slotText }, cfg, row.nl_text);
+          {
+            id: slotId,
+            text: slotText,
+            searchKeywords: slot.searchKeywords || []
+          }, cfg, row.nl_text);
+
+        // triage Stage A 히트도 generate 스킵(서가 우선 이중 방어)
+        if (triageResult.libraryHit ||
+            triageResult.resolvedBy === "library_cache_hit") {
+          feasibleCount++;
+          slotResults.push({
+            slotId: slotId,
+            slotText: slotText,
+            verdict: "feasible",
+            confidence: triageResult.confidence || "high",
+            narrative: triageResult.narrative ||
+              ("library_cache_hit via triage name=" +
+                String(triageResult.evidence && triageResult.evidence.fragmentName || "")),
+            evidence: triageResult.evidence ||
+              { libraryCacheHit: true, toolCalls: 0, source: "library" },
+            alternatives: [],
+            fragmentId: triageResult.fragmentId || null,
+            resolvedBy: "library_cache_hit",
+            needsDedupReview: false
+          });
+          logInfo("[testWoo.foundry] library_cache_hit(via triage) slot=" +
+            String(slotId) + " id=" + String(triageResult.fragmentId || ""));
+          var reuseTr = _resolveRemainingBySearch(pending, slotResults);
+          pending = reuseTr.pending;
+          feasibleCount += reuseTr.resolved;
+          continue;
+        }
 
         if (!triageResult.canProceed) {
           infeasibleCount++;
@@ -1965,7 +1978,17 @@ testWoo.foundry = (function () {
       triage = testWoo.feasibility.triage({ id: "dry", text: text }, cfg, text);
       logInfo("[testWoo.foundry.dryRunSlot] triage verdict=" + String(triage.verdict) +
         " confidence=" + String(triage.confidence) +
-        " canProceed=" + String(triage.canProceed));
+        " canProceed=" + String(triage.canProceed) +
+        (triage.libraryHit ? " libraryHit=1" : ""));
+      if (triage.libraryHit || triage.resolvedBy === "library_cache_hit") {
+        return {
+          ok: true, reason: "library_cache_hit",
+          triage: triage, fragDoc: null, gate: null, attempts: 0,
+          tokensUsed: 0, evidence: _collectEvidence(),
+          fragmentId: triage.fragmentId || null,
+          rawContentPreview: ""
+        };
+      }
       if (!triage.canProceed && opts.forceGenerate !== true) {
         return {
           ok: false, reason: "triage blocked",

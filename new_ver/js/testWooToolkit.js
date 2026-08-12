@@ -5,14 +5,15 @@
  * OpenRouter tools용 spec·invoke·evidenceLog.
  * Triage·Foundry가 schema 조사·probe_sql·search_columns 호출.
  * #168-A: 탐색(툴) 결과를 frag._source 로 결정화. classifyField·fingerprint·TTL.
+ * #169: 요청 단위 invoke 캐시 · evidence에 resultCount/cacheHit/elapsedMs.
  *
  * [Main Functions]
  * ===========
  * - register — tool name→handler 등록
  * - specs — OpenRouter tools[] 스펙 반환
- * - invoke — tool name+args 실행
+ * - invoke — tool name+args 실행(동일 args는 요청 내 캐시, 예산 미차감)
  * - env — 허용 namespace·예산 요약
- * - resetRequest — 요청 단위 카운터 초기화
+ * - resetRequest — 요청 단위 카운터·invoke 캐시 초기화
  * - setPhaseBudget — triage|generate 단계 예산
  * - markPhase — 현재 phase 표시
  * - resetBudget — (deprecated) 전체 예산 리셋
@@ -50,6 +51,7 @@ testWoo.toolkit = (function () {
   var _evidenceSeq = 0;
   var _schemaListCache = {};
   var _classifyCache = {};
+  var _invokeCache = {};
 
   // ACC schema type 문자열(Experience League schema-structure). 추측 추가 금지.
   var RANGE_TYPES = {
@@ -138,11 +140,54 @@ testWoo.toolkit = (function () {
     return s.length > 300 ? s.substring(0, 300) + "..." : s;
   }
 
-  function _appendEvidence(name, args, result) {
+  function _resultCountOf(result) {
+    if (!result || result.error) return 0;
+    if (result.matches && typeof result.matches.length === "number")
+      return result.matches.length;
+    if (result.schemas && typeof result.schemas.length === "number")
+      return result.schemas.length;
+    if (result.values && typeof result.values.length === "number")
+      return result.values.length;
+    if (result.columns && typeof result.columns.length === "number")
+      return result.columns.length;
+    if (result.links && typeof result.links.length === "number")
+      return result.links.length;
+    if (result.returnedAttributes != null) return Number(result.returnedAttributes) || 0;
+    if (result.distinctCount != null && !isNaN(Number(result.distinctCount)))
+      return Number(result.distinctCount);
+    if (result.ok === true && result.total != null) return Number(result.total) || 0;
+    return 0;
+  }
+
+  function _rawResultLength(result) {
+    try {
+      return String(JSON.stringify(result || {})).length;
+    } catch (eL) {
+      return 0;
+    }
+  }
+
+  function _invokeCacheKey(name, argsObj) {
+    var a = argsObj || {};
+    var keys = [];
+    for (var k in a) {
+      if (a.hasOwnProperty(k)) keys.push(k);
+    }
+    keys.sort();
+    var parts = [String(name)];
+    for (var i = 0; i < keys.length; i++) {
+      parts.push(keys[i] + "=" + String(a[keys[i]]));
+    }
+    return parts.join("|");
+  }
+
+  function _appendEvidence(name, args, result, meta) {
+    meta = meta || {};
     _evidenceSeq++;
     var matchCount = null;
     if (result && result.matches && typeof result.matches.length === "number")
       matchCount = result.matches.length;
+    var rc = meta.resultCount != null ? Number(meta.resultCount) : _resultCountOf(result);
     _evidenceLog.push({
       seq: _evidenceSeq,
       tool: name,
@@ -151,6 +196,12 @@ testWoo.toolkit = (function () {
       partialScan: !!(result && result.partialScan),
       schemaLoadFailed: !!(result && result.schemaLoadFailed),
       matchCount: matchCount,
+      resultCount: isNaN(rc) ? 0 : rc,
+      truncated: !!(result && result.truncated),
+      cacheHit: !!meta.cacheHit,
+      elapsedMs: meta.elapsedMs != null ? Number(meta.elapsedMs) : 0,
+      rawResultLength: meta.rawResultLength != null ?
+        Number(meta.rawResultLength) : _rawResultLength(result),
       at: formatDate(new Date(), "%4Y/%2M/%2D %02H:%02N:%02S")
     });
   }
@@ -181,6 +232,7 @@ testWoo.toolkit = (function () {
     _evidenceSeq = 0;
     _schemaListCache = {};
     _classifyCache = {};
+    _invokeCache = {};
   }
 
   // 단계별 예산 카운터를 연다. markPhase 직전에 호출한다.
@@ -228,6 +280,28 @@ testWoo.toolkit = (function () {
   }
 
   function invoke(name, argsObj) {
+    var entry = _registry[String(name)];
+    if (!entry) return { error: "unknown tool: " + name };
+
+    // #169: 요청 단위 캐시 — 동일 키 재호출은 DB 미실행·예산 미차감
+    var cacheKey = _invokeCacheKey(name, argsObj);
+    if (_invokeCache.hasOwnProperty(cacheKey)) {
+      var cached = _invokeCache[cacheKey];
+      var rcHit = _resultCountOf(cached);
+      _appendEvidence(name, argsObj, cached, {
+        cacheHit: true,
+        elapsedMs: 0,
+        resultCount: rcHit,
+        rawResultLength: _rawResultLength(cached)
+      });
+      logInfo("[testWoo.toolkit] invoke name=" + name +
+        " args=" + _summarizeArgs(argsObj) +
+        " ok=" + !!(cached && !cached.error) +
+        " resultCount=" + rcHit +
+        " cacheHit=true elapsedMs=0");
+      return cached;
+    }
+
     var b = _budgets();
     if (_totalCalls >= b.total)
       return { error: "tool call budget exceeded (total " + b.total + ")" };
@@ -243,26 +317,36 @@ testWoo.toolkit = (function () {
     if (name === "search_columns" && _searchColumnsCalls >= b.searchColumns)
       return { error: "tool call budget exceeded (search_columns " + b.searchColumns + ")" };
 
-    var entry = _registry[String(name)];
-    if (!entry) return { error: "unknown tool: " + name };
-
     _totalCalls++;
     _phaseCalls++;
     if (name === "probe_sql") _probeCalls++;
     if (name === "probe_values") _probeValuesCalls++;
     if (name === "search_columns") _searchColumnsCalls++;
 
+    var t0 = new Date().getTime();
     var result;
     try {
       result = entry.impl(argsObj || {});
     } catch (e) {
       result = { error: String(e.message || e) };
     }
-    _appendEvidence(name, argsObj, result);
+    var elapsed = new Date().getTime() - t0;
+    if (!result.error) _invokeCache[cacheKey] = result;
+    var rc = _resultCountOf(result);
+    var rawLen = _rawResultLength(result);
+    _appendEvidence(name, argsObj, result, {
+      cacheHit: false,
+      elapsedMs: elapsed,
+      resultCount: rc,
+      rawResultLength: rawLen
+    });
     var ok = !!(result && !result.error);
-    // 실패 사유를 저널에 남긴다. ok=false 만 찍으면 원인 추적에 evidence_log 조회가 필요하다.
     logInfo("[testWoo.toolkit] invoke name=" + name +
-      " args=" + _summarizeArgs(argsObj) + " ok=" + ok);
+      " args=" + _summarizeArgs(argsObj) +
+      " ok=" + ok +
+      " resultCount=" + rc +
+      " truncated=" + !!(result && result.truncated) +
+      " cacheHit=false elapsedMs=" + elapsed);
     if (!ok)
       logWarning("[testWoo.toolkit] invoke failed name=" + name +
         " reason=" + String((result && result.error) || "unknown"));

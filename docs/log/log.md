@@ -1,6 +1,8 @@
 # Log
 
 ## Log Index
+218. 2026-08-12 #169-P0 — library hit 타축 삼킴(단일축+_source) 차단
+217. 2026-08-12 #169 Library-First — Triage 서가 우선·invoke 캐시
 216. 2026-08-12 #168-A hotfix — {{param}} SQL에서 filter 컬럼 미추출 수정
 215. 2026-08-12 #168-A 개정 — frag=_source 탐색캐시·library hit·fingerprint
 214. 2026-08-12 #168-A 필드 도메인 자동 판정(schema-agnostic)·스냅샷
@@ -219,6 +221,24 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+218. 2026-08-12 #169-P0 — library hit 타축 삼킴(단일축+_source) 차단
+Purpose: 2회차 동일 NL에서 age library_cache_hit 후 gender 미생성·Stage A unmatched「남성」. 원인=libraryLookup이 키워드 커버 없이 단일축+_source만으로 히트.
+Changes:
+- `_libraryCoverOk`: AND 커버 또는 (단일축+_source ∧ domain nlMap/bucket 값 매칭). 값 매칭 없으면 미스→triage/생성.
+- Foundry 구 `_coversCachedAxis` 제거(공유 libraryLookup만 사용).
+Verification: 「서울/Z요금제/20대」는 도메인 매칭으로 히트 유지 · 「남성」은 gender frag 없으면 미스. HUMAN 재검증.
+Changed files: new_ver/js/testWooFeasibility.js, new_ver/js/testWooFoundry.js, docs/log/log.md
+
+217. 2026-08-12 #169 Library-First — Triage 서가 우선·invoke 캐시
+Purpose: Active `_source` frag(region/plan)가 있는데도 Triage가 서가를 안 읽고 search_columns만 태워 Infeasible가 되던 경로를 차단. 0-2 실측 도메인 JSON은 수집 완료.
+Changes:
+- Feasibility: `libraryLookup` → triage 전 Stage A. 히트 시 툴0·feasible. 미스 시만 toolkit. 컬럼有·probe無면 probe_values 강제 → value_not_found+후보.
+- Toolkit: 요청 단위 invoke 캐시·resultCount/cacheHit/elapsedMs.
+- Foundry: `_tryLibraryCacheHit`가 `feasibility.libraryLookup` 공유. triage libraryHit도 generate 스킵.
+- 문서 `33_LibraryFirst_서가우선_169.md` · INDEX/진행판/ReportIndex.
+Verification: Rhino syntax OK. HUMAN V1=2회차 스키마툴0·신규frag0 (배포 후).
+Changed files: new_ver/js/testWooFeasibility.js, new_ver/js/testWooToolkit.js, new_ver/js/testWooFoundry.js, docs/report/upgrade_plan/33_LibraryFirst_서가우선_169.md, docs/report/upgrade_plan/{00_INDEX,01_진행판}.md, docs/report/00_ReportIndex.md, docs/log/log.md
 
 216. 2026-08-12 #168-A hotfix — {{param}} SQL에서 filter 컬럼 미추출 수정
 Purpose: queueId=29894에서 4슬롯 모두 domain attach가 filter column missing으로 실패·frag 0건. 원인=_sqlFilterColumns 연산자 뒤 \b가 RHS 공백/리터럴에서 실패.
