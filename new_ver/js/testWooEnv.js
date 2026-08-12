@@ -4,6 +4,7 @@
  * litmus 동기 __v=159 (#160 배포정합).
  * Git 관리 상수. 배포 후 JS 라이브러리만 재등록하면 튜닝 반영.
  * 시크릿은 XtkOption 3개만 — 나머지는 ENV 객체.
+ * #164: maxNewFragments=10 · tokenBudget=200000 · toolkit.totalCallBudget=384.
  *
  * [Main Functions]
  * ===========
@@ -109,9 +110,9 @@ testWoo.env = (function () {
       enabled: true,
       maxTurns: 6,
       batchSize: 3,
-      maxNewFragments: 3,
+      maxNewFragments: 10,
       namespaces: "woo",
-      tokenBudget: 60000,
+      tokenBudget: 200000,
       dailyBudget: 500000,
       gateRetries: 2,
       staleProcessingMinutes: 30
@@ -151,15 +152,15 @@ testWoo.env = (function () {
     /* ------------------------------------------------------------------
      * toolkit — LLM tool calling 요청당 호출 상한 (OWASP LLM06)
      * totalCallBudget 산식:
-     *   maxNewFragments(3) * (triageCallBudget 12 + generateCallBudget 24) + margin 24
-     *   = 3*36 + 24 = 132
+     *   maxNewFragments(10) * (triageCallBudget 12 + generateCallBudget 24) + margin 24
+     *   = 10*36 + 24 = 384
      *   (maxNewFragments 만 올리면 total 도 같이 올려야 슬롯 2·3에서 기아 난다)
      * triageCallBudget / generateCallBudget: 단계별 상한 (setPhaseBudget).
      *   산출: triage ≈ maxTurns(6) × ~2콜, generate ≈ maxTurns(6) × attempts(3)
      * probeSql/probeValues/searchColumnsBudget: 다중 슬롯이 공유하는 요청 단위 상한(슬롯당 아님)
      * ------------------------------------------------------------------ */
     toolkit: {
-      totalCallBudget: 132,
+      totalCallBudget: 384,
       triageCallBudget: 12,
       generateCallBudget: 24,
       probeSqlBudget: 18,

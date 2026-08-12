@@ -26,6 +26,7 @@
  * - 건별 실패: 큐 status/err_id 저장 → logWarning(순서 뒤집으면 processing 고착)
  * - tokenBudget 초과 → needs_human_design(dryRunSlot 제외)
  * - publish/reuse 후 Stage A가 잡도록 sample_questions·synonyms에 자기 슬롯 키워드만 기록(#164)
+ * - maxNewFragments 도달·created>0 → queued 이어달리기(attempt 복원); created=0만 needs_human_design
  */
 var testWoo = testWoo || {};
 testWoo.foundry = (function () {
@@ -930,10 +931,27 @@ testWoo.foundry = (function () {
         feasibleCount++;
         // maxNewFragments 는 실제 publish 건수만 센다
         if (created >= maxNew) {
+          var restSlots = [slot].concat(pending);
+          if (created > 0) {
+            // [#164] 상한 도달이지 실패가 아니다. 남은 슬롯을 큐에 되돌려 다음 배치가 잇는다.
+            // attempt_count 를 prevAttempt 로 되돌리지 않으면 3회 만에 max attempts 로 죽는다.
+            _updateQueue(queueId, {
+              status: "queued",
+              attempt_count: claim.prevAttempt,
+              last_error: "maxNewFragments(" + maxNew + ") 도달 — 남은 " +
+                restSlots.length + "건은 다음 배치에서 계속합니다.",
+              missing_slots_json: JSON.stringify(restSlots),
+              slot_results: JSON.stringify(slotResults),
+              evidence_log: JSON.stringify(_collectEvidence()),
+              tokens_used: tokensUsed
+            });
+            return { ok: true, reason: "continued", created: created };
+          }
+          // created === 0 → 진전이 없으므로 사람에게 넘긴다(무한 재큐잉 방지 불변식).
           _updateQueue(queueId, {
             status: "needs_human_design",
             last_error: "요청이 과도하게 복잡하거나 fragment 라이브러리 재설계가 필요합니다.",
-            missing_slots_json: JSON.stringify([slot].concat(pending)),
+            missing_slots_json: JSON.stringify(restSlots),
             slot_results: JSON.stringify(slotResults),
             evidence_log: JSON.stringify(_collectEvidence()),
             tokens_used: tokensUsed
