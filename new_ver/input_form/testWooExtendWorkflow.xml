@@ -2,7 +2,7 @@
 woo:testWooExtendWorkflow (Workflow 확장 Input form · Test Woo AI Studio)
 ====================================================================
 Studio(urlViewer) + 하단 Apply. urlViewer 는 container height 로 공간 예약(#130).
-litmus v=150 (5차 전역 매칭·3줄 WKF 행과 동기).
+urlViewer height=630 — Studio embed 작업영역 +70(NL textarea/목록) 정합.
 
 [판별 — Studio URL 칸]
 =========
@@ -71,8 +71,8 @@ schema testWooAiWorkflowUi → JS testWooWorkflowUi.js → 이 폼 (동시, Shel
         </enter>
       </input>
 
-      <!-- height: Apply/재오픈 후 urlViewer 가 0높이로 접히는 것 방지 (#130) -->
-      <container colspan="3" height="560" name="twStudioViewer" nolabel="true">
+      <!-- height: Apply/재오픈 후 urlViewer 가 0높이로 접히는 것 방지 (#130) · +70 NL/목록 -->
+      <container colspan="3" height="630" name="twStudioViewer" nolabel="true">
         <input colspan="3" nolabel="true" sessionToken="true" type="UrlViewer" urlMode="true"
                urlExpr="[/tmp/@twStudioUrl]"/>
       </container>

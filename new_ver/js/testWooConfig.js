@@ -4,6 +4,7 @@
  * litmus 동기 __v=159 (#160 배포정합).
  * XtkOption 시크릿 3개와 testWooEnv 상수를 합쳐 파이프라인 cfg 객체 반환.
  * LLM·Foundry·Match 모듈이 공통으로 getConfig() 호출.
+ * #168-A: triage.domainProbeRowLimit·domainTtlDays 패스스루(snapshotCap=valueProbeLimitMax).
  *
  * [Main Functions]
  * ===========
@@ -89,7 +90,9 @@ testWoo.cfg = (function () {
         partialExecutionAllowed: E.triage.partialExecutionAllowed,
         valueProbeLimit: E.triage.valueProbeLimit,
         valueProbeLimitMax: E.triage.valueProbeLimitMax,
-        valueProbeCardinalityCap: E.triage.valueProbeCardinalityCap
+        valueProbeCardinalityCap: E.triage.valueProbeCardinalityCap,
+        domainProbeRowLimit: E.triage.domainProbeRowLimit,
+        domainTtlDays: E.triage.domainTtlDays
       },
       toolkit: E.toolkit,
       guard: G

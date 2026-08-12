@@ -5,6 +5,7 @@
  * Git 관리 상수. 배포 후 JS 라이브러리만 재등록하면 튜닝 반영.
  * 시크릿은 XtkOption 3개만 — 나머지는 ENV 객체.
  * #164: maxNewFragments=10 · tokenBudget=200000 · toolkit.totalCallBudget=384.
+ * #168-A: triage.domainProbeRowLimit · domainTtlDays (snapshotCap=valueProbeLimitMax 재사용).
  *
  * [Main Functions]
  * ===========
@@ -128,7 +129,10 @@ testWoo.env = (function () {
      * clarifyMaxRounds: ambiguous 재질의 상한 (슬롯당). 권장 2
      * partialExecutionAllowed: partially_infeasible 시 미리보기 SQL 허용
      * valueProbeLimit: probe_values DISTINCT 기본 limit. 권장 50, max 200
+     * valueProbeLimitMax: DISTINCT 샘플 상한(= #168 domainSnapshotCap 재사용, 중복키 금지)
      * valueProbeCardinalityCap: COUNT(DISTINCT) 초과 시 값 목록 생략. 권장 10000
+     * domainProbeRowLimit: #168-A R5 전 테이블 행수 가드. 초과 시 COUNT 생략→highCard
+     * domainTtlDays: param_domain._source 스냅샷 TTL(일). 만료 시에만 1회 갱신
      * ------------------------------------------------------------------ */
     triage: {
       enabled: true,
@@ -138,7 +142,9 @@ testWoo.env = (function () {
       partialExecutionAllowed: true,
       valueProbeLimit: 50,
       valueProbeLimitMax: 200,
-      valueProbeCardinalityCap: 10000
+      valueProbeCardinalityCap: 10000,
+      domainProbeRowLimit: 1000000,
+      domainTtlDays: 7
     },
 
     /* ------------------------------------------------------------------

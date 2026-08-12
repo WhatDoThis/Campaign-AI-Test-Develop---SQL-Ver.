@@ -15,11 +15,13 @@
  * =========
  * - /woo/testWooAiStudioJs.jssp?v=159 — 클라이언트 IIFE
  * - Option testWooAiMatchEnabled — 1/true만 ON
+ * - input_form testWooExtendWorkflow — urlViewer height=630(embed 본문+70 정합)
  *
  * [Invariants]
  * ===========
  * - MSHTML: fetch/Promise/flex/CSS변수 금지 · 한글 HTML 엔티티
  * - litmus URL v=159 필수 — Foundry 후 재큐잉 차단
+ * - NL textarea·목록 고정 height(+70) — 단독 630 / embed 510
  */
 response.setContentType("text/html;charset=utf-8");
 try {
@@ -153,7 +155,7 @@ if (!_login) {
   </script>
   <style type="text/css">
     /* IE11: var/flex/grid/vh/calc 금지 — table + 고정 px
-     * 작업영역 560px 고정: 좌(답변420+composer140) / 우(제목+목록500) — 목록 길이와 무관 */
+     * 작업영역 630px: 좌(답변420+composer210) / 우(제목+목록570) — NL textarea +70 */
     header,footer,main,aside,nav,details,summary,section,article{display:block;}
     *{box-sizing:border-box;} html,body{height:100%;margin:0;}
     body{font-family:"Segoe UI",Tahoma,sans-serif;background:#f0f2f5;color:#0f172a;line-height:1.5;}
@@ -171,13 +173,13 @@ if (!_login) {
     #twNlHint.hidden{display:none !important;}
     .sql-item .badge-lock{display:inline-block;font-size:.68rem;font-weight:700;padding:1px 6px;margin-left:6px;border-radius:6px;background:#fffbeb;color:#b45309;border:1px solid #fcd34d;}
     .sql-item .nl-line{color:#0f172a;font-size:.78rem;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-    #twMainTable{width:100%;height:560px;border-collapse:collapse;table-layout:fixed;}
-    #twLeftCol{vertical-align:top;width:68%;height:560px;overflow:hidden;}
-    #twListPane{vertical-align:top;width:32%;height:560px;overflow:hidden;border-left:1px solid #e2e8f0;background:#f8fafc;padding:8px 12px;}
+    #twMainTable{width:100%;height:630px;border-collapse:collapse;table-layout:fixed;}
+    #twLeftCol{vertical-align:top;width:68%;height:630px;overflow:hidden;}
+    #twListPane{vertical-align:top;width:32%;height:630px;overflow:hidden;border-left:1px solid #e2e8f0;background:#f8fafc;padding:8px 12px;}
     #twAnswer{height:420px;overflow:auto;padding:12px 16px;}
     #twListPane h2,#twListTitle{font-size:.78rem;margin:0 0 8px;height:22px;line-height:22px;overflow:hidden;color:#64748b;text-transform:uppercase;letter-spacing:.03em;}
     /* 목록: max-height 대신 고정 height — 빈 목록도 동일 창 높이 유지 */
-    #twDummyList,#sideSql{height:500px;overflow:auto;}
+    #twDummyList,#sideSql{height:570px;overflow:auto;}
     .shell-item{border:1px solid #e2e8f0;border-radius:10px;padding:10px;margin-bottom:8px;cursor:pointer;background:#fff;font-size:.82rem;}
     .shell-item:hover,.shell-item.active{border-color:#2563eb;background:#eff6ff;}
     .shell-item.locked{opacity:0.55;cursor:not-allowed;background:#f8fafc;}
@@ -215,8 +217,8 @@ if (!_login) {
     pre.code{font-family:Consolas,monospace;font-size:.78rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;overflow:auto;white-space:pre-wrap;max-height:220px;color:#0f766e;}
     .banner{padding:10px 14px;border-radius:8px;font-size:.9rem;margin:0 0 10px 0;}
     .banner.err{background:#fef2f2;color:#b91c1c;} .banner.warn{background:#fffbeb;color:#b45309;} .banner.ok{background:#ecfdf5;color:#047857;}
-    .composer{padding:8px 16px 10px;border-top:1px solid #e2e8f0;display:block;height:140px;overflow:hidden;}
-    textarea#nl{display:block;width:100%;font:inherit;border:1px solid #e2e8f0;border-radius:14px;padding:10px 14px;resize:none;height:48px;max-height:48px;box-sizing:border-box;}
+    .composer{padding:8px 16px 10px;border-top:1px solid #e2e8f0;display:block;height:210px;overflow:hidden;}
+    textarea#nl{display:block;width:100%;font:inherit;border:1px solid #e2e8f0;border-radius:14px;padding:10px 14px;resize:none;height:118px;max-height:118px;box-sizing:border-box;}
     .btn{font:inherit;font-weight:600;border:none;border-radius:8px;padding:8px 16px;cursor:pointer;background:#2563eb;color:#fff;}
     .btn:disabled{opacity:.5;cursor:not-allowed;} .btn-outline{background:#fff;color:#0f172a;border:1px solid #e2e8f0;}
     .actions{display:block;margin-top:6px;}
@@ -241,13 +243,13 @@ if (!_login) {
     }
     body.embed .header .wf{font-size:.65rem;display:block;margin-top:1px;color:#64748b;}
     body.embed #twInfoBar{height:40px;line-height:40px;padding:0 8px;font-size:.75rem;}
-    body.embed #twMainTable{height:440px;}
-    body.embed #twLeftCol,body.embed #twListPane{height:440px;}
+    body.embed #twMainTable{height:510px;}
+    body.embed #twLeftCol,body.embed #twListPane{height:510px;}
     body.embed #twAnswer{height:320px;padding:6px 8px;}
     body.embed #twListPane{padding:6px 8px;}
-    body.embed #twDummyList,body.embed #sideSql{height:390px;}
-    body.embed .composer{height:120px;padding:6px 8px;}
-    body.embed textarea#nl{height:36px;max-height:36px;padding:6px 10px;border-radius:10px;font-size:.85rem;}
+    body.embed #twDummyList,body.embed #sideSql{height:460px;}
+    body.embed .composer{height:190px;padding:6px 8px;}
+    body.embed textarea#nl{height:106px;max-height:106px;padding:6px 10px;border-radius:10px;font-size:.85rem;}
     body.embed .actions{margin-top:4px;}
     body.embed .btn{padding:6px 12px;font-size:.85rem;border-radius:6px;}
     body.embed #hint{font-size:.72rem;padding:4px 8px;line-height:1.35;color:#047857;}

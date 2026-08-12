@@ -1,6 +1,12 @@
 # Log
 
 ## Log Index
+216. 2026-08-12 #168-A hotfix — {{param}} SQL에서 filter 컬럼 미추출 수정
+215. 2026-08-12 #168-A 개정 — frag=_source 탐색캐시·library hit·fingerprint
+214. 2026-08-12 #168-A 필드 도메인 자동 판정(schema-agnostic)·스냅샷
+213. 2026-08-12 #167 Foundry frag 원자화·파라미터화·값사전 merge
+212. 2026-08-12 Studio NL 입력창·목록 높이 +70px (embed/단독)
+211. 2026-08-12 #164 HUMAN 가이드 보강 — 배포목록·V1~V6 단계 상세
 210. 2026-08-12 #164 P0 — Foundry 슬롯 삼킴 차단(색인 오염·AND 커버리지 게이트·큐 이어달리기)
 209. 2026-08-12 #161 실측 — libs 불일치 8종을 필수 재등록 목록으로 격상
 208. 2026-08-12 #160 배포정합 진단 · twRequireLib · __v · libVersions
@@ -213,6 +219,61 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+216. 2026-08-12 #168-A hotfix — {{param}} SQL에서 filter 컬럼 미추출 수정
+Purpose: queueId=29894에서 4슬롯 모두 domain attach가 filter column missing으로 실패·frag 0건. 원인=_sqlFilterColumns 연산자 뒤 \b가 RHS 공백/리터럴에서 실패.
+Changes:
+- 기호 연산자(=,>= 등) trailing \b 제거. {{param}}→0 · 리터럴 치환 후 컬럼 추출.
+- gap verdict를 filter_column_missing / path_unresolved 로 구분.
+Verification: 로컬 샘플 4종 컬럼 추출 PASS. Foundry.js만 재배포 후 동일 NL 재실행.
+Changed files: new_ver/js/testWooFoundry.js, docs/log/log.md
+
+215. 2026-08-12 #168-A 개정 — frag=_source 탐색캐시·library hit·fingerprint
+Purpose: 탐색(Toolkit) 결과를 frag에 굳혀 2회차 툴 0회(V3). describe 절단 명시·partialScan·스키마 fingerprint/TTL·stale 매핑.
+Changes:
+- describe_schema: offset/nextOffset/coverage(M of N)/truncated 명시. 조용한 절단 금지.
+- list/search: partialScan+scanNote(캡 미상향). classify toolCalls·_source.discoveredBy/fingerprint/freshness.
+- Foundry library_cache_hit: _source 신선 시 triage/generate 스킵. stale→deprecated·orphaned→revoked(enum 부재 매핑).
+- 문서 32 개정·운영 체크리스트(namespace·캡·재설계).
+Verification: V2 grep 0. V3는 배포 후 evidence_log 1회차 N / 2회차 0. Generate 미수정.
+Changed files: new_ver/js/testWooToolkit.js, new_ver/js/testWooFoundry.js, docs/report/upgrade_plan/32_필드도메인_자동판정_168A.md, docs/log/log.md
+
+214. 2026-08-12 #168-A 필드 도메인 자동 판정(schema-agnostic)·스냅샷
+Purpose: 컬럼명 하드코딩 없이 메타데이터로 tier 판정하고 Foundry 생성 시 param_domain._source 스냅샷을 붙인다. Generate 바인딩(#168-B)은 분리.
+Changes:
+- describe_schema에 enum/userEnum/length/isLink/target/isPrimary/isAutoPk 추가.
+- classifyField(R1~R5+S1/S3)·resolveDomain·pathFromGrain·캐시·TTL. distinct는 기존 probe_values 재사용(groupBy 이중구현 금지).
+- snapshotCap=valueProbeLimitMax 재사용. domainProbeRowLimit·domainTtlDays만 신규.
+- Foundry `_attachDomainSnapshot`: 경로 미확정 시 gap skip. few-shot에서 금지 물리컬럼 리터럴 제거(V2).
+- 문서 `32_필드도메인_자동판정_168A.md`.
+Verification: V2 grep 실행경로 0건. V1/V3~V7은 배포 후 HUMAN(ACC). 배포 취합 대기.
+Changed files: new_ver/js/testWooToolkit.js, new_ver/js/testWooFoundry.js, new_ver/js/testWooEnv.js, new_ver/js/testWooConfig.js, docs/report/upgrade_plan/32_필드도메인_자동판정_168A.md, docs/report/upgrade_plan/{00_INDEX,01_진행판}.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+213. 2026-08-12 #167 Foundry frag 원자화·파라미터화·값사전 merge
+Purpose: 다축·값구이 1회용 frag를 막고, 축 양식({{param}}+param_domain)과 domain merge 재사용으로 V2(신규 0건)를 가능하게 한다.
+Changes:
+- 0단계: 원인=①프롬프트(코드 배열병합 아님). 샘플 스키마에 iAge+dBirthDate 공존→ageGroup은 iAge 범위.
+- 프롬프트/few-shot을 축·{{param}}·paramDomain 모범으로 교체. 검증만 샘플바인딩.
+- `_assertAtomicFrag`: 컬럼수·tags축·name 세그먼트(값구이) 거부. 같은 컬럼 범위 AND 허용(V5).
+- 동명 축 존재 시 INSERT 없이 param_domain merge. non_atomic은 skip+evidence.
+- 문서 `31_Foundry_원자화_파라미터화.md` 원칙 고정.
+Verification: HUMAN V1~V5(특히 V2 신규 0). 배포 취합 대기. 수동검토: woo__customer__gyeonggi__yplan_f.
+Changed files: new_ver/js/testWooFoundry.js, docs/report/upgrade_plan/31_Foundry_원자화_파라미터화.md, docs/report/upgrade_plan/{00_INDEX,01_진행판}.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+212. 2026-08-12 Studio NL 입력창·목록 높이 +70px (embed/단독)
+Purpose: 두 줄 이상 NL이 textarea에 잘려 보이던 문제 — 기본 고정 height를 70px 키우고 우측 목록·메인 테이블·폼 urlViewer도 동일하게 맞춤. Changes:
+
+- 단독: textarea 48→118 · composer 140→210 · main/list 560→630 · 목록영역 500→570
+- embed: textarea 36→106 · composer 120→190 · main/list 440→510 · 목록 390→460
+- 폼 `twStudioViewer` height 560→630 (잘림 방지)
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
+
+211. 2026-08-12 #164 HUMAN 가이드 보강 — 배포목록·V1~V6 단계 상세
+Purpose: 한 줄 배포 안내로는 운영이 어려워 `30` 문서에 콘솔 재등록 목록·본문 확인 문자열·V1~V6 절차·회신 칸을 상세화. Changes:
+
+- `30_Foundry_슬롯삼킴_P0.md` §6을 HUMAN_CONSOLE 전용으로 확장(필수 Env+Foundry, #161 B잔여, litmus 미bump 주의, V4 리트머스)
+- 코드 변경 없음
+Changed files: docs/report/upgrade_plan/30_Foundry_슬롯삼킴_P0.md, docs/log/log.md
 
 210. 2026-08-12 #164 P0 — Foundry 슬롯 삼킴 차단(색인 오염·AND 커버리지 게이트·큐 이어달리기)
 Purpose: 큐 1건당 fragment 1건만 생기던 슬롯 삼킴을 막고, 상한 도달 시 남은 슬롯을 다음 배치로 이어달린다.
