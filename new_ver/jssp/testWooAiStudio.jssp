@@ -1,22 +1,25 @@
 <%/*
- * testWooAiStudio.jssp (Studio UI shell)
- * =====================================
- * Cookie __sessiontoken → logonWithToken(tok) 바인딩 (구 logon 은 JST-310036 폐기 경고).
- * 미인증 시 하드 redirect 대신 안내 페이지(target 미동작 사례 대비).
- * 1차 셸: #twInfoBar(48px) + #twMainTable 2열(좌 AI 답변/요청 · 우 목록). table+고정 px.
- * ?workflowName= 있으면 우측 SQL 이력(섹션 7b). 없으면 더미 캠페인 목록.
- * ?embed=1 이면 콘솔 확장 폼 urlViewer 용 크롬리스 레이아웃.
- * urlViewer=MSHTML(IE): X-UA-Compatible IE=edge · StudioJs XHR/ES5 (#133).
- * #133 XHR · #135 TW-BOOT · #137 FormatDate 금지 · #141 폼 colspan 존치.
- * litmus v=153 (#147 create Match 없음 · valueContainment1).
+ * testWooAiStudio.jssp (Studio UI 셸)
+ * ==================================================
+ * Cookie __sessiontoken→logonWithToken 후 HTML 셸 렌더.
+ * embed/urlViewer(IE)용 table 레이아웃·Option 주입·litmus v=.
  *
- * [ACC encoding]
- * UI 한글은 HTML &#x…; 엔티티.
+ * [Main Functions]
+ * ===========
+ * - auth gate — 미인증 시 안내 페이지(redirect 대신)
+ * - shell layout — #twInfoBar + #twMainTable 2열(table+고정 px)
+ * - embed mode — ?embed=1 크롬리스 · ?workflowName= SQL 이력
+ * - Option inject — __TW_MATCH_ENABLED__ 등 StudioJs 전역
  *
  * [Dependencies]
  * =========
- * - /woo/testWooAiStudioJs.jssp
- * Ref: https://experienceleague.adobe.com/developer/campaign-api/api/f-logon.html
+ * - /woo/testWooAiStudioJs.jssp?v=159 — 클라이언트 IIFE
+ * - Option testWooAiMatchEnabled — 1/true만 ON
+ *
+ * [Invariants]
+ * ===========
+ * - MSHTML: fetch/Promise/flex/CSS변수 금지 · 한글 HTML 엔티티
+ * - litmus URL v=159 필수 — Foundry 후 재큐잉 차단
  */
 response.setContentType("text/html;charset=utf-8");
 try {
@@ -31,6 +34,18 @@ function _twEscJs(s) {
     .replace(/\r/g, "")
     .replace(/\n/g, "");
 }
+
+/* #152: Match UI 킬스위치. 기본 OFF — 오탐(값 무시) 차단. 1/true 만 활성. */
+function _twMatchEnabled() {
+  try {
+    var raw = String(getOption("testWooAiMatchEnabled") || "");
+    raw = raw.replace(/^\s+|\s+$/g, "").toLowerCase();
+    return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+  } catch (eOpt) {
+    return false;
+  }
+}
+var _matchEnabled = _twMatchEnabled();
 
 function _twHtmlEsc(s) {
   return String(s || "")
@@ -154,10 +169,6 @@ if (!_login) {
     .crumb-sep{margin:0 5px;color:#94a3b8;text-decoration:none;cursor:default;}
     #twNlHint{font-size:.82rem;color:#b45309;padding:0 0 4px 0;height:20px;overflow:hidden;}
     #twNlHint.hidden{display:none !important;}
-    #twIntentBar{height:28px;margin:0 0 4px 0;overflow:hidden;}
-    #twIntentBar.hidden{display:none !important;}
-    #twIntentBar .btn-intent{font:inherit;font-size:.75rem;font-weight:600;padding:3px 10px;margin-right:6px;cursor:pointer;border:1px solid #e2e8f0;border-radius:6px;background:#fff;color:#0f172a;vertical-align:top;}
-    #twIntentBar .btn-intent.on{border-color:#2563eb;background:#eff6ff;color:#2563eb;}
     .sql-item .badge-lock{display:inline-block;font-size:.68rem;font-weight:700;padding:1px 6px;margin-left:6px;border-radius:6px;background:#fffbeb;color:#b45309;border:1px solid #fcd34d;}
     .sql-item .nl-line{color:#0f172a;font-size:.78rem;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
     #twMainTable{width:100%;height:560px;border-collapse:collapse;table-layout:fixed;}
@@ -254,6 +265,7 @@ if (!_login) {
   <script type="text/javascript">
     window.__TW_LOGIN__ = '<%= _twEscJs(_login) %>';
     window.__TW_EMBED__ = <%= _embed ? "true" : "false" %>;
+    window.__TW_MATCH_ENABLED__ = <%= _matchEnabled ? "true" : "false" %>;
     /* IE onerror: (msg,url,line,col,errObj) — StudioJs 가 덮어쓰며 #twDiagLog 에도 기록 */
     window.onerror = function (msg, url, line, col, errObj) {
       try {
@@ -290,7 +302,7 @@ if (!_login) {
   <!-- 오류 시에만 표시(#136). 정상 시 숨기고 진단 패널에만 기록 -->
   <table id="twBootTable" width="100%" bgcolor="#FFFF00" border="0" cellspacing="0" cellpadding="3" class="tw-boot-show">
     <tr><td>
-      <font id="twBootFont" face="Tahoma" size="2" color="#000000">TW-BOOT v=153 | loading&#x2026;</font>
+      <font id="twBootFont" face="Tahoma" size="2" color="#000000">TW-BOOT v=159 | loading&#x2026;</font>
     </td></tr>
   </table>
   <div id="twBoot" class="tw-boot-show">Studio boot&#x2026;</div>
@@ -309,7 +321,7 @@ if (!_login) {
         r = amp < 0 ? rest : rest.substring(0, amp);
       }
     } catch (eR) {}
-    var msg = "TW-BOOT v=153 | documentMode=" + dm + " | embed=" + emb + " | _r=" + (r || "-");
+    var msg = "TW-BOOT v=159 | documentMode=" + dm + " | embed=" + emb + " | match=" + (window.__TW_MATCH_ENABLED__ ? "1" : "0") + " | _r=" + (r || "-");
     var font = document.getElementById("twBootFont");
     if (font) font.innerHTML = msg;
     var el = document.getElementById("twBoot");
@@ -361,14 +373,10 @@ if (!_login) {
             <div class="banner err hidden" id="err"></div>
           </div>
           <div class="composer">
-            <div id="twIntentBar" class="hidden">
-              <button type="button" class="btn-intent" id="btnIntentCreate">&#xC0C8; &#xC870;&#xAC74;&#xC73C;&#xB85C; &#xB9CC;&#xB4E4;&#xAE30;</button>
-              <button type="button" class="btn-intent" id="btnIntentReuse">&#xAE30;&#xC874; &#xC870;&#xAC74; &#xCC3E;&#xC544; &#xC4F0;&#xAE30;</button>
-            </div>
-            <div id="twNlHint">&#xC624;&#xB978;&#xCABD;&#xC5D0;&#xC11C; AI &#xD3F4;&#xB354;&#xB97C; &#xC120;&#xD0DD;&#xD558;&#xC138;&#xC694;</div>
-            <textarea id="nl" rows="1" disabled="disabled"></textarea>
+            <div id="twNlHint" class="hidden">&#xC870;&#xAC74;&#xC744; &#xC785;&#xB825;&#xD55C; &#xB4A4; [&#xC0DD;&#xC131;]&#xC744; &#xB204;&#xB974;&#xC138;&#xC694;</div>
+            <textarea id="nl" rows="1"></textarea>
             <div class="actions">
-              <button type="button" class="btn" id="btnGen" disabled="disabled">&#xC0DD;&#xC131;</button>
+              <button type="button" class="btn" id="btnGen">&#xC0DD;&#xC131;</button>
               <button type="button" class="btn btn-outline" id="btnReg" disabled="disabled">&#xB4F1;&#xB85D;</button>
               <button type="button" class="btn btn-outline" id="btnTwGotoWkf" disabled="disabled">WKF&#xB85C; &#xC774;&#xB3D9;</button>
             </div>
@@ -391,8 +399,8 @@ if (!_login) {
     </div>
   </div>
 
-  <!-- v=153 · 생성 후 [등록] 안내 -->
-  <script type="text/javascript" src="/woo/testWooAiStudioJs.jssp?v=153"></script>
+  <!-- v=159 · Foundry 후 재큐잉 차단 · Match OFF 유지 -->
+  <script type="text/javascript" src="/woo/testWooAiStudioJs.jssp?v=159"></script>
 </body>
 </html>
 <%

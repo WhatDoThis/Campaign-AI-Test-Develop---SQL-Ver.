@@ -1,8 +1,21 @@
 <%
 response.setContentType("application/json;charset=utf-8");
 /*
- * testWooAiGapAdmin.jssp — GapLog 대시보드 API
- * payload: { action: "list"|"update", id?, status?, note? }
+ * testWooAiGapAdmin.jssp (GapLog 관리 API)
+ * ==================================================
+ * Foundry triage 불가 시 쌓인 woo:testWooAiGapLog 목록·상태 갱신.
+ * Navtree Gap Admin 뷰가 JSON으로 소비한다.
+ *
+ * [Main Functions]
+ * ===========
+ * - list — listGapLog(limit)
+ * - update — updateGapLogStatus(id, status, note)
+ *
+ * [Dependencies]
+ * =========
+ * - woo:testWooCommon.js, testWooRepository.js
+ * - right testWooAiLibraryManage · schema woo:testWooAiGapLog
+ * - producer woo:testWooFoundry.js upsertGapLog
  */
 try {
   TW_RESPONSE = response;

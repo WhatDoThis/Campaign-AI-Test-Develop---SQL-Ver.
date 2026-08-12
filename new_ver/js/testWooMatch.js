@@ -1,36 +1,45 @@
 /*
- * testWooMatch.js (조건 매칭 · dedup=Jaccard / discover=valueContainment)
- * =====================================================================
- * FLOW-5-3: dedup 모드 Jaccard ≥ 0.9 (텍스트 유사도/임베딩 금지). MATCH_KEY=name.
- * #146/#147: discover = valueKey(name=정규화params) containment == 1.0 만 통과.
- *            name-only 폴백 금지. dedup 키·임계 불변.
+ * testWooMatch.js (조건 매칭 엔진)
+ * ==================================================
+ * dedup=Jaccard≥0.9(name 집합). discover=값복합키 SAME/CONFLICT/MISSING.
+ * UI 단정·Option ON은 Studio — 본 모듈은 판정만.
  *
  * [Main Functions]
  * ===========
- * - fragmentNameSetFromUsed / fragmentNameSetFromPlan / valueKeySetFromPlan
- * - jaccard / containment / matchByPlan
+ * - matchByPlan — plan+mode → 매칭 후보 목록
+ * - comparePlansByValue — 두 plan 값키 대조표
+ * - fragmentNameSetFromUsed — used_fragments→name Set
+ * - fragmentNameSetFromPlan — plan→name Set
+ * - valueKeySetFromPlan — plan→값복합키 Set
+ * - jaccard — 두 name Set Jaccard
+ * - containment — |Q∩X|/|Q| 비율(보조 지표)
+ * - MATCH_KEY — 집합 키 상수("name")
+ * - JACCARD_THRESHOLD — dedup 임계(0.9)
+ * - DISCOVER_TOP_N — discover Top-N(10)
  *
  * [Dependencies]
  * =========
- * - testWoo.repo.listAiSqlForMatch (@plan_json 필수 · discover)
- * - testWoo.wfClone.resolveWorkflowsByName
- * - testWoo.compiler.collectUsedFragments (선택)
- * - loadLibrary("woo:testWooMatch.js")
+ * - testWoo.repo.listAiSqlForMatch — @plan_json·@sql_query 조회
+ * - testWoo.wfClone.resolveWorkflowsByName — WKF·캠페인 메타
+ * - testWoo.compiler.collectUsedFragments — used 없을 때 plan 파생
+ * - testWoo.lifecycle.sqlContentHash — 동일 SQL 배지
  *
- * Refs: http://www.vldb.org/pvldb/vol9/p1185-zhu.pdf
- *       https://ekzhu.com/datasketch/lshensemble.html
+ * [Invariants]
+ * =========
+ * - dedup은 name-only Jaccard — 값·임베딩 미사용
+ * - discover CONFLICT 1건이면 후보 제외 · 범위·레거시(값없음) 제외
  */
 var testWoo = testWoo || {};
 testWoo.match = (function () {
   "use strict";
 
-  /** 집합 키: fragment.name (dedup 불변) */
+  /** 집합 키: fragment.name (dedup 불변 · 삭제 금지) */
   var MATCH_KEY = "name";
   /** Jaccard 임계 — dedup 전용 · 변경 금지 */
   var JACCARD_THRESHOLD = 0.9;
   var MATCH_SQL_LIMIT = 500;
-  /** discover Top-N */
-  var DISCOVER_TOP_N = 20;
+  /** discover Top-N (#154 · #147R 흡수) */
+  var DISCOVER_TOP_N = 10;
 
   function _trim(s) {
     return String(s == null ? "" : s).replace(/^\s+|\s+$/g, "");
@@ -90,13 +99,13 @@ testWoo.match = (function () {
     for (var g = 0; g < inc.length; g++) {
       var any = (inc[g] && inc[g].any) || [];
       for (var a = 0; a < any.length; a++) {
-        var fn = _trim(any[a] && any[a].name != null ? any[a].name : "");
+        var fn = _fragNameFromItem(any[a]);
         if (fn) set[fn] = true;
       }
     }
     var ex = plan.exclude || [];
     for (var e = 0; e < ex.length; e++) {
-      var en = _trim(ex[e] && ex[e].name != null ? ex[e].name : "");
+      var en = _fragNameFromItem(ex[e]);
       if (en) set[en] = true;
     }
     return set;
@@ -141,6 +150,40 @@ testWoo.match = (function () {
     return parts.join("|");
   }
 
+  function _paramsDisplay(params) {
+    if (!params || typeof params !== "object") return "";
+    var keys = [];
+    for (var k in params) {
+      if (params.hasOwnProperty(k)) keys.push(String(k));
+    }
+    keys.sort();
+    var parts = [];
+    for (var i = 0; i < keys.length; i++) {
+      var v = params[keys[i]];
+      if (_isArray(v)) parts.push(keys[i] + "=" + v.join(","));
+      else parts.push(keys[i] + "=" + String(v));
+    }
+    return parts.join(" ");
+  }
+
+  function _paramsHasRange(params) {
+    if (!params || typeof params !== "object") return false;
+    var hasMin = false;
+    var hasMax = false;
+    for (var k in params) {
+      if (!params.hasOwnProperty(k)) continue;
+      var lk = String(k).toLowerCase();
+      if (lk === "min") hasMin = true;
+      if (lk === "max") hasMax = true;
+    }
+    return hasMin && hasMax;
+  }
+
+  function _paramsHasValue(params) {
+    var n = _paramsNorm(params);
+    return n.length > 0;
+  }
+
   // discover 전용: name=정규화params
   function _compositeKey(fragName, params) {
     var n = _trim(fragName);
@@ -171,10 +214,93 @@ testWoo.match = (function () {
     _walkPlanItems(plan, function (item) {
       var n = _fragNameFromItem(item);
       if (!n) return;
+      if (!_paramsHasValue(item.params || {})) return;
       var ck = _compositeKey(n, item.params || {});
       if (ck) set[ck] = true;
     });
     return set;
+  }
+
+  /**
+   * #154: plan → { byName, hasRange, valuedCount }
+   * byName[frag] = { norm, display, label, hasRange }
+   */
+  function _fragValueMapFromPlan(plan) {
+    var byName = {};
+    var hasRange = false;
+    var valuedCount = 0;
+    _walkPlanItems(plan, function (item) {
+      var n = _fragNameFromItem(item);
+      if (!n) return;
+      var params = item.params || {};
+      if (_paramsHasRange(params)) hasRange = true;
+      if (!_paramsHasValue(params)) return;
+      byName[n] = {
+        norm: _paramsNorm(params),
+        display: _paramsDisplay(params),
+        label: _trim(item.label) || n,
+        hasRange: _paramsHasRange(params)
+      };
+      valuedCount++;
+    });
+    return { byName: byName, hasRange: hasRange, valuedCount: valuedCount };
+  }
+
+  /**
+   * #154: SAME / CONFLICT / MISSING
+   * CONFLICT≥1 → 목록 제외(호출측).
+   */
+  function comparePlansByValue(mapQ, mapX) {
+    var compare = [];
+    var same = 0;
+    var conflict = 0;
+    var missing = 0;
+    var q = (mapQ && mapQ.byName) || {};
+    var x = (mapX && mapX.byName) || {};
+    for (var qn in q) {
+      if (!q.hasOwnProperty(qn)) continue;
+      var qe = q[qn];
+      if (!x[qn]) {
+        missing++;
+        compare.push({
+          name: qn,
+          label: qe.label || qn,
+          queryValue: qe.display || "",
+          candidateValue: "",
+          status: "MISSING"
+        });
+      } else if (String(x[qn].norm) === String(qe.norm)) {
+        same++;
+        compare.push({
+          name: qn,
+          label: qe.label || qn,
+          queryValue: qe.display || "",
+          candidateValue: x[qn].display || "",
+          status: "SAME"
+        });
+      } else {
+        conflict++;
+        compare.push({
+          name: qn,
+          label: qe.label || qn,
+          queryValue: qe.display || "",
+          candidateValue: x[qn].display || "",
+          status: "CONFLICT"
+        });
+      }
+    }
+    var extra = 0;
+    for (var xn in x) {
+      if (!x.hasOwnProperty(xn)) continue;
+      if (!q[xn]) extra++;
+    }
+    return {
+      same: same,
+      conflict: conflict,
+      missing: missing,
+      extra: extra,
+      compare: compare
+    };
   }
 
   function _round4(x) {
@@ -243,12 +369,14 @@ testWoo.match = (function () {
 
   function _sortDiscover(items) {
     items.sort(function (x, y) {
-      var xv = x.valueContainment != null ? x.valueContainment : 0;
-      var yv = y.valueContainment != null ? y.valueContainment : 0;
-      if (yv !== xv) return yv - xv;
-      var xnC = x.nameContainment != null ? x.nameContainment : 0;
-      var ynC = y.nameContainment != null ? y.nameContainment : 0;
-      if (ynC !== xnC) return ynC - xnC;
+      if (x.isIdentical && !y.isIdentical) return -1;
+      if (!x.isIdentical && y.isIdentical) return 1;
+      var xs = x.sameCount != null ? x.sameCount : 0;
+      var ys = y.sameCount != null ? y.sameCount : 0;
+      if (ys !== xs) return ys - xs;
+      var xe = x.extraCount != null ? x.extraCount : 0;
+      var ye = y.extraCount != null ? y.extraCount : 0;
+      if (xe !== ye) return xe - ye;
       var xn = String(x.name || "");
       var yn = String(y.name || "");
       if (xn < yn) return -1;
@@ -292,6 +420,7 @@ testWoo.match = (function () {
         overlapCount: sc.overlapCount,
         unionCount: sc.unionCount,
         exact: !!sc.exact,
+        isIdentical: !!sc.isIdentical,
         matchLabel: sc.matchLabel || "",
         nl_request: sc.nl_request || "",
         ai_sql_id: sc.ai_sql_id || 0,
@@ -302,15 +431,23 @@ testWoo.match = (function () {
         program_name: String(meta.program_name || ""),
         program_label: String(meta.program_label || "")
       };
-      if (sc.containment != null) {
-        row.containment = sc.containment;
-        row.intersectionCount = sc.intersectionCount;
+      if (sc.compare) row.compare = sc.compare;
+      if (sc.sameCount != null) {
+        row.sameCount = sc.sameCount;
+        row.conflictCount = sc.conflictCount;
+        row.missingCount = sc.missingCount;
+        row.extraCount = sc.extraCount;
         row.queryCount = sc.queryCount;
         row.candidateCount = sc.candidateCount;
+        row.intersectionCount = sc.sameCount;
+        row.containment =
+          sc.queryCount > 0
+            ? _round4(sc.sameCount / sc.queryCount)
+            : 0;
+      }
+      if (sc.nameContainment != null) {
         row.nameContainment = sc.nameContainment;
         row.valueContainment = sc.valueContainment;
-        row.valueIntersectionCount = sc.valueIntersectionCount;
-        row.valueQueryCount = sc.valueQueryCount;
       }
       items.push(row);
     }
@@ -324,7 +461,17 @@ testWoo.match = (function () {
     return testWoo.repo.listAiSqlForMatch(MATCH_SQL_LIMIT);
   }
 
-  // 4a. dedup — 변경 전과 동일 동작 (Jaccard≥0.9)
+  function _querySqlHash(plan) {
+    if (!plan || !testWoo.compiler || !testWoo.lifecycle) return "";
+    try {
+      var compiled = testWoo.compiler.compile(plan);
+      return String(testWoo.lifecycle.sqlContentHash(compiled.sql) || "");
+    } catch (eH) {
+      return "";
+    }
+  }
+
+  // 4a. dedup — Jaccard≥0.9 유지 · #154: sqlContentHash exact를 1순위로 표기
   function _matchDedup(plan, campaignId, opts) {
     var threshold =
       opts && opts.threshold != null
@@ -334,6 +481,7 @@ testWoo.match = (function () {
 
     var setA = fragmentNameSetFromPlan(plan);
     var queryCount = _setSize(setA);
+    var sqlHashWant = _querySqlHash(plan);
     var compileHashWant = "";
     if (plan && testWoo.compiler && testWoo.lifecycle) {
       try {
@@ -356,6 +504,7 @@ testWoo.match = (function () {
         byWf[wname] = {
           names: {},
           compileExact: false,
+          sqlExact: false,
           nl_request: _trim(row.nl_request) || _trim(row.title),
           ai_sql_id: row.id
         };
@@ -374,6 +523,23 @@ testWoo.match = (function () {
           byWf[wname].ai_sql_id = row.id;
         }
       }
+      if (
+        sqlHashWant &&
+        testWoo.lifecycle &&
+        testWoo.lifecycle.sqlContentHash &&
+        row.sql_query
+      ) {
+        try {
+          var rh = testWoo.lifecycle.sqlContentHash(String(row.sql_query));
+          if (rh === sqlHashWant) {
+            byWf[wname].sqlExact = true;
+            byWf[wname].ai_sql_id = row.id;
+            if (_trim(row.nl_request)) {
+              byWf[wname].nl_request = _trim(row.nl_request);
+            }
+          }
+        } catch (eSql) {}
+      }
     }
 
     var scored = [];
@@ -385,7 +551,12 @@ testWoo.match = (function () {
         queryCount > 0 &&
         jac.overlapCount === queryCount &&
         jac.unionCount === queryCount;
-      var exact = !!(byWf[wn].compileExact || setEq);
+      /* #154: SQL 해시 일치를 exact 1순위 · Jaccard는 보조 통과 */
+      var exact = !!(
+        byWf[wn].sqlExact ||
+        byWf[wn].compileExact ||
+        setEq
+      );
       if (!exact && jac.jaccard < threshold) continue;
       scored.push({
         name: wn,
@@ -393,14 +564,16 @@ testWoo.match = (function () {
         overlapCount: jac.overlapCount,
         unionCount: jac.unionCount,
         exact: exact,
+        isIdentical: !!byWf[wn].sqlExact,
         nl_request: byWf[wn].nl_request || "",
         ai_sql_id: byWf[wn].ai_sql_id || 0,
-        matchLabel:
-          "\uC870\uAC74 " +
-          jac.unionCount +
-          "\uAC1C \uC911 " +
-          jac.overlapCount +
-          "\uAC1C \uB3D9\uC77C"
+        matchLabel: byWf[wn].sqlExact
+          ? "\uB3D9\uC77C SQL"
+          : "\uC870\uAC74 " +
+            jac.unionCount +
+            "\uAC1C \uC911 " +
+            jac.overlapCount +
+            "\uAC1C \uB3D9\uC77C(name)"
       });
     }
 
@@ -419,25 +592,28 @@ testWoo.match = (function () {
     };
   }
 
-  // 4b. discover — valueKey containment==1.0 만 (#147 · name-only 폴백 금지)
+  // 4b. discover — #154 값 복합키 · CONFLICT 배제 · Top-10
   function _matchDiscover(plan, campaignId, opts) {
+    var mapQ = _fragValueMapFromPlan(plan);
     var setQName = fragmentNameSetFromPlan(plan);
-    var setQVal = valueKeySetFromPlan(plan);
     var rows = _loadSqlRows();
     var byWf = {};
+    var sqlHashWant = _querySqlHash(plan);
 
-    if (_setSize(setQVal) < 1) {
+    /* 값 없는 질의 · 범위형 질의 → 빈 목록(오탐 방지) */
+    if (mapQ.valuedCount < 1 || mapQ.hasRange) {
       return {
         items: [],
         count: 0,
-        threshold: 1,
+        threshold: 0,
         matchKey: "value",
         queryFragmentCount: _setSize(setQName),
-        queryValueCount: 0,
+        queryValueCount: mapQ.valuedCount,
         scope: "global",
         mode: "discover",
         topN: DISCOVER_TOP_N,
-        campaign_id: _trim(campaignId)
+        campaign_id: _trim(campaignId),
+        excludedReason: mapQ.hasRange ? "range_query" : "no_values"
       };
     }
 
@@ -447,29 +623,19 @@ testWoo.match = (function () {
       if (!wname) continue;
       if (!byWf[wname]) {
         byWf[wname] = {
-          names: {},
-          values: {},
+          map: null,
           hasPlanJson: false,
+          sql_query: "",
           nl_request: _trim(row.nl_request) || _trim(row.title),
           ai_sql_id: row.id
         };
       }
-      var part = fragmentNameSetFromUsed(row.used_fragments);
-      for (var pk in part) {
-        if (part.hasOwnProperty(pk)) byWf[wname].names[pk] = true;
-      }
       var pj = _parsePlanJson(row.plan_json);
       if (pj) {
         byWf[wname].hasPlanJson = true;
-        var vset = valueKeySetFromPlan(pj);
-        for (var vk in vset) {
-          if (vset.hasOwnProperty(vk)) byWf[wname].values[vk] = true;
-        }
-        var nFromPlan = fragmentNameSetFromPlan(pj);
-        for (var nk in nFromPlan) {
-          if (nFromPlan.hasOwnProperty(nk)) byWf[wname].names[nk] = true;
-        }
+        byWf[wname].map = _fragValueMapFromPlan(pj);
       }
+      if (row.sql_query) byWf[wname].sql_query = String(row.sql_query);
       if (!byWf[wname].nl_request && _trim(row.nl_request)) {
         byWf[wname].nl_request = _trim(row.nl_request);
         byWf[wname].ai_sql_id = row.id;
@@ -479,37 +645,64 @@ testWoo.match = (function () {
     var scored = [];
     for (var wn in byWf) {
       if (!byWf.hasOwnProperty(wn)) continue;
-      /* plan_json 없거나 value 집합 비면 제외 — name-only 오매칭 방지 */
-      if (!byWf[wn].hasPlanJson || _setSize(byWf[wn].values) < 1) continue;
-      var setXName = byWf[wn].names;
-      var setXVal = byWf[wn].values;
-      var vCont = containment(setQVal, setXVal);
-      if (vCont.queryCount < 1 || vCont.containment < 1) continue;
-      var nCont = containment(setQName, setXName);
-      var jac = jaccard(setQName, setXName);
+      var bucket = byWf[wn];
+      /* 레거시: plan_json 없음 · 값 없음 → 제외 */
+      if (!bucket.hasPlanJson || !bucket.map || bucket.map.valuedCount < 1) {
+        continue;
+      }
+      /* 범위형 후보 제외 (#153 V5) */
+      if (bucket.map.hasRange) continue;
+
+      var cmp = comparePlansByValue(mapQ, bucket.map);
+      if (cmp.conflict > 0) continue;
+      if (cmp.same < 1) continue;
+
+      var isId = false;
+      if (
+        sqlHashWant &&
+        bucket.sql_query &&
+        testWoo.lifecycle &&
+        testWoo.lifecycle.sqlContentHash
+      ) {
+        try {
+          isId =
+            testWoo.lifecycle.sqlContentHash(bucket.sql_query) === sqlHashWant;
+        } catch (eId) {
+          isId = false;
+        }
+      }
+
+      var nameSetX = {};
+      for (var xn in bucket.map.byName) {
+        if (bucket.map.byName.hasOwnProperty(xn)) nameSetX[xn] = true;
+      }
+      var jac = jaccard(setQName, nameSetX);
+      var nCont = containment(setQName, nameSetX);
+      var valueCont =
+        mapQ.valuedCount > 0 ? cmp.same / mapQ.valuedCount : 0;
+
       scored.push({
         name: wn,
         jaccard: _round4(jac.jaccard),
         overlapCount: jac.overlapCount,
         unionCount: jac.unionCount,
-        exact: false,
-        /* UI 카운트 = value 기준 (#147) */
-        containment: _round4(vCont.containment),
-        intersectionCount: vCont.intersectionCount,
-        queryCount: vCont.queryCount,
-        candidateCount: vCont.candidateCount,
+        exact: isId,
+        isIdentical: isId,
+        sameCount: cmp.same,
+        conflictCount: cmp.conflict,
+        missingCount: cmp.missing,
+        extraCount: cmp.extra,
+        queryCount: mapQ.valuedCount,
+        candidateCount: bucket.map.valuedCount,
+        compare: cmp.compare,
         nameContainment: _round4(nCont.containment),
-        valueContainment: _round4(vCont.containment),
-        valueIntersectionCount: vCont.intersectionCount,
-        valueQueryCount: vCont.queryCount,
-        nl_request: byWf[wn].nl_request || "",
-        ai_sql_id: byWf[wn].ai_sql_id || 0,
-        matchLabel:
-          "\uB0B4 \uC870\uAC74 " +
-          vCont.queryCount +
-          "\uAC1C \uC911 " +
-          vCont.intersectionCount +
-          "\uAC1C \uD3EC\uD568"
+        valueContainment: _round4(valueCont),
+        nl_request: bucket.nl_request || "",
+        ai_sql_id: bucket.ai_sql_id || 0,
+        /* 단정형 "포함" 금지 — UI는 compare[] 사용 */
+        matchLabel: isId
+          ? "\uB3D9\uC77C"
+          : "\uC77C\uCE58 " + cmp.same + " / \uC5C6\uC74C " + cmp.missing
       });
     }
 
@@ -522,10 +715,10 @@ testWoo.match = (function () {
     return {
       items: items,
       count: items.length,
-      threshold: 1,
+      threshold: 0,
       matchKey: "value",
       queryFragmentCount: _setSize(setQName),
-      queryValueCount: _setSize(setQVal),
+      queryValueCount: mapQ.valuedCount,
       scope: "global",
       mode: "discover",
       topN: DISCOVER_TOP_N,
@@ -549,6 +742,7 @@ testWoo.match = (function () {
     fragmentNameSetFromUsed: fragmentNameSetFromUsed,
     fragmentNameSetFromPlan: fragmentNameSetFromPlan,
     valueKeySetFromPlan: valueKeySetFromPlan,
+    comparePlansByValue: comparePlansByValue,
     jaccard: jaccard,
     containment: containment,
     matchByPlan: matchByPlan

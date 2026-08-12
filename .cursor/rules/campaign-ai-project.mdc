@@ -28,6 +28,7 @@ LG U+ **Adobe Campaign Classic v7** — NL audience extraction via fragment libr
 
 ## Code standards
 
-- Korean module docstring at top of every code file (rule #6)
+- Module header: `.cursor/rules/module-header-docstring.mdc` (역할 / Main Functions / Dependencies · HUMAN READ)
 - ACC server JS: Rhino-safe — see `.cursor/skills/campaign-ai-studio/acc-rhino-constraints.md`
 - Minimize diff; follow existing `testWoo*.js` patterns
+- New/edited code files: refresh header in the same turn

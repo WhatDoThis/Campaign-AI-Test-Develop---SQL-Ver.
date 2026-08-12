@@ -1,18 +1,17 @@
 /*
- * testWooStudioContext.js (Studio 컨텍스트 · 폴더 목록 · server-side)
- * ================================================================
- * AI Studio 2차: @isAiFolder=1 폴더만 queryDef 조회. Write/삭제 경로 없음.
- * prefix AI_Folder* 매칭 금지 (UI-3-2).
- * 3차 WKF 클론·잠금은 testWooWorkflowClone.js (Context JSSP가 로드).
+ * testWooStudioContext.js (Studio 컨텍스트 조회)
+ * ==================================================
+ * AI Studio 2차: @isAiFolder=1 Program/폴더만 queryDef 조회.
+ * Write·삭제 없음. WKF 클론은 testWooWorkflowClone.js.
  *
  * [Main Functions]
  * ===========
- * - listAiFolders(limit) — {id,name,label}[]  (AI 프로그램/폴더)
+ * - listAiFolders — {id,name,label}[] AI 폴더 목록
  *
  * [Dependencies]
  * =========
- * - xtk.queryDef on xtk:folder (woo:folder 확장 병합 후 @isAiFolder)
- * - Rhino-safe (no map/forEach/=>)
+ * - xtk:folder — queryDef @isAiFolder=1 (woo 확장 병합 후)
+ * - testWooAiStudioJs.jssp — Studio UI에서 loadLibrary 호출
  */
 
 if (typeof testWoo === "undefined") testWoo = {};

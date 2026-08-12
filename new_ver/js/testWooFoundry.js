@@ -1,41 +1,30 @@
 /*
- * testWooFoundry.js (Fragment Foundry + Triage · server-side)
- * =============================================================
- * 슬롯별 triage → feasible만 SQL 생성. infeasible은 정상 종료(재시도 제외).
- * 진입 시 'sql' named right 프리플라이트, 배치 단위 단일 실행 가드, 스테일 큐 복구.
- *
- * WF 안에서 logError 는 스크립트 실행을 즉시 중단시키고 인스턴스를 오류 정지시킨다.
- * 따라서 건별 실패는 (1) 큐 저장 먼저 → (2) logWarning 순서로만 처리한다. 순서를
- * 뒤집으면 status/err_id/evidence_log 가 유실되고 큐가 processing 에 갇힌다.
- * Ref: https://experienceleague.adobe.com/en/docs/campaign/automation/workflows/advanced-management/javascript-scripts-and-templates
- *
- * 생성 단계 출력 계약(F-0): 프롬프트에 fragment JSON 스키마 + 게이트 규칙을 명시한다.
- * 루프 종료(F-1): requireJson 시 파싱 가능한 JSON 이 나올 때까지 턴을 이어간다.
- * 재시도(F-2/F-3): JSON 형태 실패도 게이트와 동급으로 되먹임. 미응답 tool_calls 정리.
- * C-1: attempt≥2 는 compress 후 sanitize. orphan tool 은 assistant 직후 splice(끝 push 금지).
- * E-2: processQueueItem 이 tokenBudget 초과 시 needs_human_design (dryRunSlot 제외).
- * A-1: probe_sql 자가검증(total/distinctKey/nullKey)을 프롬프트·게이트 되먹임에 명시.
- * dryRunSlot(F-5): 큐·WF 없이 생성 경로만 즉시 검증(스모크 9번).
+ * testWooFoundry.js (Fragment Foundry 배치 처리)
+ * ==================================================
+ * 큐 슬롯별 triage → feasible만 SQL 생성 → dedup → publish.
+ * WF 스크립트에서 logError 즉시 중단 — 실패는 큐 저장 후 logWarning.
  *
  * [Main Functions]
  * ===========
- * - processBatch : 프리플라이트 → 스테일 복구 → 단일 실행 가드 → queued 순차 처리
- * - processQueueItem : 슬롯별 triage → 생성(게이트·형태 자가수정) → dedup → publish
- * - generateFragmentForSlot : tool 루프 + JSON/게이트 실패 되먹임 재생성
- * - runToolLoop : LLM tool calling 루프 (requireJson · 마지막 턴 강제 · 반환 전 sanitize;
- *   none 턴에 parallel_tool_calls 미포함 — Azure Claude 400 방지)
- * - dryRunSlot : 큐 부작용 없이 triage+생성 1회 (계측기)
- * - peekQueue : 읽기 전용 큐 조회 (스모크의 getIfExists 파싱 검증 전용)
- * - isAutoApprove : Option testWooAiAutoApprove (기본 ON → status=active)
+ * - processQueueItem — 슬롯 1건 triage·생성·dedup·publish
+ * - processBatch — 프리플라이트·스테일 복구·queued 순차 처리
+ * - runToolLoop — LLM tool calling 루프(requireJson·sanitize)
+ * - generateFragmentForSlot — tool 루프 + 게이트 재시도 생성
+ * - dryRunSlot — 큐 없이 triage+생성 1회 스모크
+ * - peekQueue — 읽기 전용 큐 조회
+ * - isAutoApprove — Option testWooAiAutoApprove 판정
  *
  * [Dependencies]
  * =========
- * - testWoo.feasibility, testWoo.toolkit(setPhaseBudget), testWoo.llm, testWoo.repo
- * - testWoo.probe(preflight), testWoo.dedup, testWoo.lifecycle, testWoo.gates
- * - testWoo.fragments(publish 후 Stage A 재검색), testWoo.compiler(부분 실행 미리보기)
- * - testWoo.cfg / testWoo.env, xtk.queryDef / xtk.session#Write
- * - Option testWooAiAutoApprove (비움/1/true=ON · 0/false=OFF → verified+승인대기)
- * - loadLibrary("woo:testWooFoundry.js")
+ * - testWoo.feasibility·toolkit·llm·repo·probe·dedup·lifecycle·gates·fragments·compiler
+ * - woo:testWooAiRequestQueue — xtk.queryDef·xtk.session#Write
+ * - testWooAiAutoApprove Option — ON=active, OFF=verified+승인대기
+ *
+ * [Invariants]
+ * =========
+ * - 건별 실패: 큐 status/err_id 저장 → logWarning(순서 뒤집으면 processing 고착)
+ * - tokenBudget 초과 → needs_human_design(dryRunSlot 제외)
+ * - publish/reuse 후 Stage A가 잡도록 sample_questions·synonyms에 슬롯·NL 키워드 기록
  */
 var testWoo = testWoo || {};
 testWoo.foundry = (function () {
@@ -551,7 +540,12 @@ testWoo.foundry = (function () {
 
       var fragDoc = null;
       try {
-        fragDoc = _fragDocFromLlm(_parseFragmentJson(loop.content, loop), queueId);
+        fragDoc = _fragDocFromLlm(
+          _parseFragmentJson(loop.content, loop),
+          queueId,
+          slotText,
+          nlText
+        );
       } catch (eShape) {
         lastShapeError = String(eShape.message || eShape);
         logWarning("[testWoo.foundry] shape failed attempt=" + attempts +
@@ -616,7 +610,28 @@ testWoo.foundry = (function () {
     return list;
   }
 
-  function _fragDocFromLlm(frag, queueId) {
+  // Stage A LIKE용 — 슬롯/NL에서 한글·영문 토큰 추출 (도메인 별칭 하드코딩 없음)
+  function _stageATokens(slotText, nlText) {
+    var seen = {};
+    var out = [];
+    function push(raw) {
+      var t = String(raw || "").toLowerCase().replace(/\s+/g, "");
+      if (!t || t.length < 2) return;
+      if (t.length > 40) t = t.substring(0, 40);
+      if (seen[t]) return;
+      seen[t] = true;
+      out.push(t);
+    }
+    var blobs = [String(slotText || ""), String(nlText || "")];
+    for (var bi = 0; bi < blobs.length; bi++) {
+      var parts = blobs[bi].split(/[^0-9a-zA-Z가-힣]+/);
+      for (var pi = 0; pi < parts.length; pi++) push(parts[pi]);
+    }
+    if (out.length > 24) out = out.slice(0, 24);
+    return out;
+  }
+
+  function _fragDocFromLlm(frag, queueId, slotText, nlText) {
     if (!frag || typeof frag !== "object")
       throw new Error("[testWoo.foundry] fragment object missing");
     var missing = [];
@@ -647,20 +662,28 @@ testWoo.foundry = (function () {
     if (typeof tags === "string") tagsStr = tags;
     else if (tags && tags.length) tagsStr = tags.join(",");
 
+    var samples = [];
+    if (_trim(slotText)) samples.push(String(slotText));
+    if (_trim(nlText) && String(nlText) !== String(slotText)) samples.push(String(nlText));
+    if (_trim(frag.rationale)) samples.push(String(frag.rationale));
+    if (!samples.length) samples.push(String(frag.label || frag.name || ""));
+    var synTok = _stageATokens(slotText, nlText);
+    var synStr = synTok.length ? synTok.join(",") : "";
+
     var auto = isAutoApprove();
     return {
       name: frag.name,
       label: frag.label || frag.name,
       category: "foundry",
       tags: tagsStr,
-      synonyms: "",
+      synonyms: synStr,
       key_column: frag.keyColumn,
       scope_key: frag.scopeKey != null ? String(frag.scopeKey) : "",
       sql_text: frag.sqlText,
       params: paramsJson,
       param_domain: domainJson,
       description: frag.description || "",
-      sample_questions: JSON.stringify([frag.rationale || ""]),
+      sample_questions: JSON.stringify(samples),
       status: auto ? "active" : "verified",
       active: auto,
       approved_by: auto ? "foundry" : "",
@@ -973,8 +996,8 @@ testWoo.foundry = (function () {
           needsDedupReview: slotNeedsReview
         });
 
-        // 앞서 만든 fragment가 남은 슬롯을 커버하면 추가 생성을 건너뛴다 (Stage A 재실행)
-        if (published) {
+        // publish·dedup reuse 모두 남은 슬롯 Stage A 재검색 (reuse만 스킵하면 원자 슬롯이 재생성됨)
+        if (published || fragmentId) {
           var reuse = _resolveRemainingBySearch(pending, slotResults);
           pending = reuse.pending;
           feasibleCount += reuse.resolved;
@@ -1026,8 +1049,10 @@ testWoo.foundry = (function () {
         };
       }
 
+      /* created=0(dedup reuse만)이어도 missing을 비워야 Studio 재생성·수기 재큐잉이 안전 */
       _updateQueue(queueId, {
         status: "done",
+        missing_slots_json: "[]",
         slot_results: JSON.stringify(slotResults),
         evidence_log: JSON.stringify(allEvidence),
         tokens_used: tokensUsed

@@ -5,14 +5,24 @@
 | 파일 | 용도 |
 |---|---|
 | `00_ReportIndex.md` | 리포트 폴더 인덱스 (본 문서) |
-| `11_고도화_추적표.md` | 고도화 아이디어 전수 ID(66) · 판정 · 차수 매핑 — 유실 방지 소스 |
-| `upgrade_plan/00_INDEX.md` | 고도화 차수 문서 라우팅 (for AI) |
-| `upgrade_plan/00_고도화 개발 아이디어_관리자 작성본.md` | 관리자 원본 아이디어 (요약·삭제 금지) |
-| `upgrade_plan/01_0차_베이스라인안정화.md` ~ `11_9차_미사용코드폐기정리.md` | 차수별 AI 실행 가이드 (+ `04_3a_PoC.md`; 9차=미사용 `_폐기`·콘솔 정리) |
-| `upgrade_plan/04_3a_PoC_RESULT.md` | PoC-1~3 HUMAN 실측 절차·RESULT 기입 (new_ver 코드 변경 없음) |
-| `upgrade_plan/04_3a_PoC_Campaign.md` | PoC-C: bare Write 캠페인(위치 PASS·품질 FAIL) |
-| `upgrade_plan/04_3a_PoC_Template.md` | PoC-T: opEmptyTemplate_LLM / wfEmptyTemplate_CUSTOM 공식 API 검증 |
-| `upgrade_plan/12_PoC-M_매칭의미론.md` | PoC-M(#145): plan/params·plan-only·AiSql필드·실행메타·LIMIT·날짜·Duplicate 조사 (new_ver 변경 없음) |
+| `11_고도화_추적표.md` | 고도화 아이디어 전수 ID(66+SF) · 판정 · 구차수·**신규 차수 재배정** — 유실 방지 소스 |
+| `upgrade_plan/00_INDEX.md` | AI 라우팅 (키 → 가이드) |
+| `upgrade_plan/[별도]_고도화_개발아이디어_관리자작성본.md` | 관리자 원문 (삭제 금지) |
+| `upgrade_plan/01_진행판.md` | **진행 단일본** — 완료/진행중/잔여 한눈에 |
+| `upgrade_plan/02_`~`15_구차수_*` | 구 0~9차 (**SUPERSEDED BY 19/20/21** · `[완료]`=02~11 가이드 폐쇄) |
+| `upgrade_plan/05_`~`08_구차수_3a_*` | PoC-0/1~3·C·T 절차·RESULT |
+| `upgrade_plan/16_고도화_추적표_포인터.md` | → `11_고도화_추적표.md` |
+| `upgrade_plan/17_[완료]_PoC-M_매칭의미론.md` | #145 조사 |
+| `upgrade_plan/18_[완료]_PoC-S_SQLFirst타당성.md` | #145R 조사 |
+| `upgrade_plan/19_SQLFirst_여정정본.md` | ST0~ST6 정본 |
+| `upgrade_plan/20_전환_자산판정표.md` | 자산 판정 |
+| `upgrade_plan/21_SQLFirst_R차수_실행가이드.md` | R0~R8 실행 |
+| `upgrade_plan/22_매칭오탐_사고기록.md` | #152 P0 |
+| `upgrade_plan/23_SQLFirst_AI명령문.md` | Chat 복붙 명령 |
+| `upgrade_plan/24_[완료]_PoC-V_값인식매칭.md` | #153 조사 |
+| `upgrade_plan/25_[완료]_임베딩경로_실태점검.md` | #155 |
+| `upgrade_plan/26_Match_C1C6_HUMAN검증.md` | #154 DoD HUMAN |
+| `upgrade_plan/27_스펙드리프트.md` | D-1~ |
 | `10_Fragment_생애주기_설계.md` | Fragment 승인 모델 게이트→라벨 전환 설계 — 현행 enum 매핑 · 빈도 기반 검수 · 야간 게이트 재실행 · 킬스위치는 revoked 재사용 |
 | `09_SQL생성추가_디버깅3.md` | F-0~F-5 반영 검증 후 잔여 C-1·E-1·E-2·A-1 — sanitize/compress 순서·phase 예산 누수·tokenBudget·자격 검증·스모크 9c |
 | `08_SQL생성추가_디버깅2.md` | Foundry 생성 단계 근원 진단 F-0~F-5 — 출력 계약 부재·루프 종료 불일치·자가진단 알고리즘·dryRunSlot 계측기 |

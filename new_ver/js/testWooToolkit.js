@@ -1,45 +1,27 @@
 /*
- * testWooToolkit.js (내부 툴킷 레지스트리 · server-side)
- * ==========================================================
- * OpenRouter tools용 spec/invoke. probe_values/search_columns + evidenceLog.
- * 스키마 파싱은 정규식이 아니라 E4X (속성 순서 자유 · label 누락 대응).
- *
- * 논리명/물리명 규칙: 도구는 논리 속성명(@name)과 물리 컬럼명(@sqlname)을 항상 함께
- * 노출하고(sqlColumn), 원시 SQL 에는 물리명만 쓴다. ACC 는 sqlname 생략 시 타입
- * 접두사를 붙여 생성하므로(customer_id → sCustomer_id) 논리명은 SQL 에서 실패한다.
- *
- * 실패 가시성: invoke 실패는 사유까지 logWarning 하고, search_columns 는 미허용·조회실패
- * namespace 를 skippedNamespaces + partialScan 으로 돌려준다. 조용히 건너뛰면
- * "조사했으나 0건"으로 위장되어 Triage 가 근거 없이 no_column 을 낸다.
- * 허용 namespace 는 cfg.foundry.namespaces 이며 오류 메시지에 목록을 함께 실어
- * 모델이 다음 턴에 자체 교정하도록 한다.
- *
- * 단계 예산(F-4): setPhaseBudget("triage"|"generate") 로 단계별 카운터를 분리한다.
- * 요청 전체 상한(totalCallBudget)은 유지하되, Triage 가 생성 예산을 잠식하지 않게 한다.
- * E-1: total/probe* 기본값은 env.toolkit 과 동일(132/18/14/18). 산식은 testWooEnv.js 주석.
+ * testWooToolkit.js (LLM Tool 레지스트리)
+ * ==================================================
+ * OpenRouter tools용 spec·invoke·evidenceLog.
+ * Triage·Foundry가 schema 조사·probe_sql·search_columns 호출.
  *
  * [Main Functions]
  * ===========
- * - register / specs / invoke / env
- * - resetRequest(요청 단위 1회) / markPhase / setPhaseBudget / resetBudget(deprecated)
- * - getEvidenceLog / getEvidenceLogSince
- *
- * [Tools]
- * =========
- * - list_schemas / describe_schema : 스키마 목록·속성(name + sqlColumn + label + type)
- * - probe_sql / probe_values       : SELECT-only 실행 · 컬럼 DISTINCT 값 조사
- * - search_columns                 : 키워드로 name/label/sqlColumn 검색
+ * - register — tool name→handler 등록
+ * - specs — OpenRouter tools[] 스펙 반환
+ * - invoke — tool name+args 실행
+ * - env — 허용 namespace·예산 요약
+ * - resetRequest — 요청 단위 카운터 초기화
+ * - setPhaseBudget — triage|generate 단계 예산
+ * - markPhase — 현재 phase 표시
+ * - resetBudget — (deprecated) 전체 예산 리셋
+ * - getEvidenceLog — 누적 evidence 배열
+ * - getEvidenceLogSince — offset 이후 evidence
  *
  * [Dependencies]
  * =========
- * - testWoo.probe, testWoo.cfg, xtk.queryDef, application.getSchema
- * - loadLibrary("woo:testWooToolkit.js")
- * Ref sqlSelect(format, query): format="docName,@alias:type", 반환은 XML 객체
- *   https://experienceleague.adobe.com/developer/campaign-api/api/f-sqlSelect.html
- * Ref getSchema: 스크립트 종료까지 메모리에 유지 → namespace당 로드 상한 필요
- *   https://experienceleague.adobe.com/developer/campaign-api/api/m-Application-getSchema.html
- * Ref database-mapping(sqlname 접두사 규칙)
- *   https://experienceleague.adobe.com/en/docs/campaign-classic/using/configuring-campaign-classic/schema-reference/database-mapping
+ * - testWoo.probe — probe_sql·staticBlock
+ * - testWoo.cfg.getConfig — foundry.namespaces·toolkit 예산
+ * - xtk.queryDef·application.getSchema — describe_schema·search_columns
  */
 var testWoo = testWoo || {};
 testWoo.toolkit = (function () {

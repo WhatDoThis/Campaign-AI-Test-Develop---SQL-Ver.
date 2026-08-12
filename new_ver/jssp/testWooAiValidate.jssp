@@ -1,21 +1,24 @@
 <%
 response.setContentType("application/json;charset=utf-8");
 /*
- * testWooAiValidate.jssp (검증·카운트·카탈로그·SQL목록 통합)
- * ==========================================================
- * setContentType은 KA-14685대로 최상단.
- * 게이트: plan fragment DB active (allowedNames 폐기).
+ * testWooAiValidate.jssp (검증·카운트·SQL 이력 API)
+ * ==================================================
+ * plan gates 재실행·COUNT·fragment catalog·WKF별 SQL CRUD.
+ * setBindPick/getBindPick으로 폼 Apply용 ai_sql_id를 Option에 저장.
  *
- * [Endpoint]
- * =======================
- * POST /woo/testWooAiValidate.jssp
- *   action=validate|count|catalog|listSql|getSql|deleteSql|setBindPick|getBindPick
+ * [Main Functions]
+ * ===========
+ * - validate — compile+runAll gates 결과
+ * - count — 대상자 수 집계
+ * - catalog — active fragment 목록
+ * - listSql / getSql / deleteSql — WKF SQL 이력(CSRF: delete)
+ * - setBindPick / getBindPick — workflow별 선택 id Option
  *
  * [Dependencies]
  * =========
  * - woo:testWooCommon.js (+ Config/Fragments/Compiler/Gates/Repository by action)
- * - setBindPick: Studio SQL 클릭/등록 → Option 에 선택 id 저장 (폼 Apply 가 읽음)
- * - deleteSql: CSRF + repo.deleteAiSql (이력 행 삭제)
+ * - right testWooAiSqlGenerate · schema woo:testWooAiSql, woo:testWooAiFragment
+ * - Option testWooAiBindPick_{login}
  */
 try {
   TW_RESPONSE = response;
@@ -115,7 +118,7 @@ function _runCatalog() {
 }
 
 function _runCount(p) {
-  if (!p.plan) throw new Error("plan missing");
+  if (!p.plan) throw new Error("Validate/count: plan missing");
   loadLibrary("woo:testWooConfig.js");
   loadLibrary("woo:testWooFragments.js");
   loadLibrary("woo:testWooCompiler.js");
@@ -132,7 +135,7 @@ function _runCount(p) {
 }
 
 function _runValidate(p) {
-  if (!p.plan) throw new Error("plan missing");
+  if (!p.plan) throw new Error("Validate: plan missing");
   loadLibrary("woo:testWooConfig.js");
   loadLibrary("woo:testWooFragments.js");
   loadLibrary("woo:testWooCompiler.js");

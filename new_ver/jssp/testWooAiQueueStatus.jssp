@@ -1,8 +1,19 @@
 <%
 response.setContentType("application/json;charset=utf-8");
 /*
- * testWooAiQueueStatus.jssp — Foundry 큐 폴링 API
- * payload: { queueId } 또는 ?queueId=
+ * testWooAiQueueStatus.jssp (Foundry 큐 상태 API)
+ * ==================================================
+ * Generate가 enqueue한 request_queue 행의 진행 상태를 조회.
+ * Studio 클라이언트가 폴링하여 done/failed를 감지한다.
+ *
+ * [Main Functions]
+ * ===========
+ * - getQueueStatus — queueId→status·fragmentId·message
+ *
+ * [Dependencies]
+ * =========
+ * - woo:testWooCommon.js, testWooRepository.js
+ * - right testWooAiSqlGenerate · schema woo:testWooAiRequestQueue
  */
 try {
   TW_RESPONSE = response;

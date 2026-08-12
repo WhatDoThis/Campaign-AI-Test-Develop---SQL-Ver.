@@ -284,7 +284,7 @@ Program (@isAiFolder)  →  Campaign (nms:operation)  →  Workflow
 | 아님 | `WKF89` 등 기생성 인스턴스 | 원본 템플릿 아님 |
 
 공식: `CreateOperationFromModelId` (캠페인). WKF 추가는 Community 경로 `xtk.queryDef.CreateInstanceFromModel` 검증 중 (Spawn 금지).  
-절차: [`04_3a_PoC_Template.md`](04_3a_PoC_Template.md)
+절차: [`08_[완료]_구차수_3a_PoC_Template.md`](08_[완료]_구차수_3a_PoC_Template.md)
 
 ### PoC-T3a — CreateWorkflowFromModelId
 

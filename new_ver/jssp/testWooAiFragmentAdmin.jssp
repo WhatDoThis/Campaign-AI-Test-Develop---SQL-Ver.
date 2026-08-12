@@ -1,7 +1,22 @@
 <%
 response.setContentType("application/json;charset=utf-8");
 /*
- * testWooAiFragmentAdmin.jssp — fragment 관리 대시보드 API
+ * testWooAiFragmentAdmin.jssp (Fragment 관리 API)
+ * ==================================================
+ * woo:testWooAiFragment 현재판 목록·영향 SQL 조회·물리 삭제.
+ * LibraryManage 권한. hardDelete만 CSRF 검증.
+ *
+ * [Main Functions]
+ * ===========
+ * - list — status 필터 fragment 목록 + refSqlCount
+ * - affectedSql — impact_status=affected SQL 목록
+ * - hardDelete — lifecycle.hardDelete(CSRF)
+ *
+ * [Dependencies]
+ * =========
+ * - woo:testWooCommon.js — readPayload, jsonOut, requireStudioCsrf
+ * - woo:testWooLifecycle.js — listImpact, hardDelete
+ * - right testWooAiLibraryManage · schema woo:testWooAiFragment, woo:testWooAiSql
  */
 try {
   TW_RESPONSE = response;

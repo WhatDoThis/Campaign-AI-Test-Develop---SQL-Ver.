@@ -1,51 +1,29 @@
 /*
- * testWooLlm.js (LLM Pass0 슬롯분해 + Pass1 CNF 조합계획 · server-side)
- * =====================================================================
- * Pass0: NL → slots. Pass1: 후보만 보고 CNF plan (include[].any[] + exclude[]).
- * SQL은 쓰지 않는다. op 필드 없음(중간 include 리셋 원천 차단).
+ * testWooLlm.js (LLM Pass0·Pass1 파이프라인)
+ * ==================================================
+ * Pass0: NL→slots. Pass1: Stage A 후보만 보고 CNF plan 생성.
+ * 최종 SQL은 쓰지 않음. 동기 HttpClientRequest만 사용.
  *
  * [Main Functions]
  * ===========
- * - decomposeSlots (Pass 0)
- * - selectPlan (Pass 1 → CNF)
- * - generatePlan (Pass0→StageA→Pass1)
- * - postChat / postEmbedding — 오류에 httpStatus/isRateLimited/isOutOfCredit 부착
- * - explainDedupDiff (dedup near 판정 차이 설명 · 평문 우선 · 판정에 영향 없음)
- * - reasoningOff — reasoning 비활성 body 조각 (Triage/Foundry 공용 · 형식 단일화)
- *
- * [설계 원칙]
- * =========
- * - response_format:{type:"json_object"} 를 **사용하지 않는다.** Gemini 계열은
- *   structured output 강제 시 같은 토큰을 반복하다 max_tokens 를 소진한다.
- *   JSON 강제는 시스템 프롬프트 "OUTPUT JSON ONLY" + _parseJson 의 {…} 추출로 대체한다.
- *   Ref: https://discuss.ai.google.dev/t/gemini-2-5-flash-repeats-tokens-until-max-tokens-reached-in-structured-output/107176
- * - 출력 상한은 단계별로 분리한다 (env llm.pass0MaxTokens / pass1MaxTokens).
- *   Pass0 기본은 2048 — 슬롯 JSON 에 충분하고 반복 루프 과금을 막는다.
- * - 반복 루프 억제는 temperature 가 아니라 frequency_penalty 로만 한다.
- * - Pass0: 첫 호출 frequency_penalty=0.5 · length 시 salvage · 실패 시 0.8 재시도.
- * - OpenRouter+Claude(Azure): tool_choice:"none" 일 때 parallel_tool_calls 금지
- *   (400 tool_choice.none.disable_parallel_tool_use).
- * - 프롬프트 본문은 로그에 남기지 않는다 (응답 content 앞뒤 200자만).
+ * - decomposeSlots — Pass0 NL→slots JSON
+ * - selectPlan — Pass1 후보→CNF plan JSON
+ * - generatePlan — Pass0→StageA→Pass1 일괄
+ * - postChat — chat/completions 호출·오류 메타 부착
+ * - postEmbedding — embeddings 호출·오류 메타 부착
+ * - explainDedupDiff — dedup near 차이 설명(판정 무관)
+ * - reasoningOff — reasoning 비활성 body 조각
  *
  * [Dependencies]
  * =========
- * - HttpClientRequest + MemoryBuffer (UTF-8) — 동기 execute만
- *   ※ HttpClientRequest.wait 사용 금지 (이 ACC 빌드에서 호출 불가)
- * - testWoo.cfg / testWoo.fragments
- * - serverConf.xml urlPermission 에 LLM endpoint 호스트 허용 필요
- * - 옵션: testWooAiLlmApiKey / Model / Endpoint (필수). Provider·Proxy·Pass0는 testWooEnv.js
- * - ACC Rhino: map/forEach/filter/wait/Promise 금지 · trim은 regex
- * - loadLibrary("woo:testWooLlm.js")
- * Ref: MemoryBuffer.toString([codePage:int]) 기본=CODEPAGE_UTF8 — 문자열 "utf-8" 금지
- * Ref: MemoryBuffer.fromString(str, "utf-8") 요청 인코딩은 문자열 코드페이지명
- * Ref: execute(hasProxy) 동기
- * Ref: OpenRouter /api/v1/chat/completions, Authorization: Bearer,
- *       choices[0].message.content, finish_reason 정규화(length/error)
- * Ref: anthropic/claude-opus-5 — context 1M, max_completion_tokens 128k,
- *       reasoning default_enabled=true
- * Ref: thinking 모델(Gemini 2.5 계열)은 사고 토큰이 max_tokens 에 합산되고 예산 미지정 시
- *       dynamic(최대 8192)이 적용된다 → 끄려면 reasoning:{max_tokens:0} 이 필요하다
- *       https://openrouter.ai/blog/tutorials/gemini-25-flash-api-pricing-quickstart-provider-comparison/
+ * - testWoo.cfg.getConfig — apiKey·model·endpoint·provider
+ * - testWoo.fragments.searchSlots — generatePlan Stage A
+ * - HttpClientRequest + MemoryBuffer — serverConf urlPermission 필요
+ *
+ * [Invariants]
+ * =========
+ * - response_format json_object 미사용 — 프롬프트+_parseJson으로 JSON 강제
+ * - HttpClientRequest.wait 금지 · Rhino map/forEach/filter 금지
  */
 var testWoo = testWoo || {};
 testWoo.llm = (function () {
@@ -374,30 +352,41 @@ testWoo.llm = (function () {
   // serverConf.xml urlPermission 에 그 호스트를 별도로 추가해야 한다.
   var CHAT_PATH_RE = /\/chat\/completions\/?$/i;
 
+  // #155: 패턴 불일치 시 chat URL 폴백 금지(확정 400/404). null → embed() 가 null 폴백.
   function _embedEndpoint(chatEndpoint) {
     var url = String(chatEndpoint || "");
     if (!url)
       throw new Error("[testWoo.llm.postEmbedding] endpoint empty (option testWooAiLlmEndpoint)");
     if (CHAT_PATH_RE.test(url)) return url.replace(CHAT_PATH_RE, "/embeddings");
     logWarning("[testWoo.llm._embedEndpoint] endpoint 가 /chat/completions 형태가 아니라 " +
-      "임베딩 경로를 유도할 수 없습니다 — 그대로 사용 host=" + _hostOf(url));
-    return url;
+      "임베딩 경로를 유도할 수 없습니다 — null 반환 host=" + _hostOf(url));
+    return null;
   }
 
   function postEmbedding(cfg, inputArray) {
     if (!cfg.llm.apiKey) throw new Error("[testWoo.llm.postEmbedding] apiKey missing");
     var embedUrl = _embedEndpoint(cfg.llm.endpoint);
+    if (!embedUrl) return null;
     var body = { model: cfg.llm.embedModel, input: inputArray };
     var raw = _postJson(
       { apiKey: cfg.llm.apiKey, endpoint: embedUrl, useProxy: cfg.llm.useProxy },
       body,
       { "Authorization": "Bearer " + cfg.llm.apiKey }
     );
+    var wrap;
     try {
-      return JSON.parse(String(raw));
+      wrap = JSON.parse(String(raw));
     } catch (e) {
       throw new Error("[testWoo.llm.postEmbedding] parse failed: " + e.message);
     }
+    if (wrap && wrap.error) {
+      var em = wrap.error.message || wrap.error.code || "unknown";
+      throw _httpError(
+        "[testWoo.llm.postEmbedding] API error: " + em,
+        _numOrNull(wrap.error.code)
+      );
+    }
+    return wrap;
   }
 
   // 봉투(choices/content)에서 본문만 꺼낸다. 산문을 요구하므로 JSON 을 강제하지 않고,

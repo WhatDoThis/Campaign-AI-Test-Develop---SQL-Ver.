@@ -284,7 +284,7 @@ Duplicate 후 캠페인 재바인딩·Studio soft-lock 상호작용 — 별도 H
 
 ## 변경 파일 (본 PoC)
 
-- `docs/report/upgrade_plan/12_PoC-M_매칭의미론.md` (본 문서)
+- `docs/report/upgrade_plan/17_[완료]_PoC-M_매칭의미론.md` (본 문서)
 - `docs/report/00_ReportIndex.md`
 - `docs/log/log.md`  
 `new_ver/` **변경 없음** (#145 시점).

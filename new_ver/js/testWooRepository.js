@@ -1,20 +1,33 @@
 /*
- * testWooRepository.js (이력·큐·GapLog·fragment CRUD · server-side)
- * ==================================================================
- * woo:testWooAiSql / testWooAiRequestQueue / testWooAiGapLog.
+ * testWooRepository.js (AI SQL·큐·GapLog 저장소)
+ * ==================================================
+ * woo:testWooAiSql·testWooAiRequestQueue·testWooAiGapLog CRUD.
+ * Register·Foundry·Match·Studio가 xtk.session#Write·queryDef 경유.
  *
  * [Main Functions]
  * ===========
- * - saveAiSql / enqueueRequest / getQueueStatus / upsertGapLog / listGapLog
- * - listAiSqlByWorkflow / getAiSqlById / deleteAiSql — WF별 SQL 목록·불러오기·삭제 (섹션 7b)
- * - listAiSqlForMatch / findAiSqlBySqlHash — 5차 매칭·Register 중복 스킵 (#146 plan_json)
- * - approveFragment : 민감/킬스위치 OFF 잔여 verified → active (4차 일반 경로는 Foundry 자동)
+ * - saveAiSql — ai_sql 이력 Insert
+ * - updateAiSqlStatus — ai_sql status 갱신
+ * - bumpFragmentUsage — used_fragments usage_count 증가
+ * - enqueueRequest — Foundry 큐 Insert
+ * - getQueueStatus — 큐 건 status 조회
+ * - upsertGapLog — GapLog Insert/Update
+ * - listGapLog — GapLog 목록
+ * - updateGapLogStatus — GapLog status 갱신
+ * - approveFragment — verified→active 승인
+ * - rejectFragment — fragment 거절
+ * - completeQueue — 큐 완료 status 기록
+ * - listAiSqlByWorkflow — WF별 SQL 목록
+ * - listAiSqlForMatch — 매칭용 plan_json·sql_query 목록
+ * - findAiSqlBySqlHash — sqlContentHash 중복 조회
+ * - deleteAiSql — ai_sql 삭제
+ * - getAiSqlById — id 단건 조회
  *
  * [Dependencies]
  * =========
- * - xtk.session.Write / GetNewIds / queryDef
- * - testWoo.lifecycle.sqlContentHash (findAiSqlBySqlHash)
- * - loadLibrary("woo:testWooRepository.js")
+ * - woo:testWooAiSql·testWooAiRequestQueue·testWooAiGapLog·testWooAiFragment — schema
+ * - testWoo.lifecycle.sqlContentHash — findAiSqlBySqlHash
+ * - xtk.session#Write·GetNewIds·queryDef
  */
 var testWoo = testWoo || {};
 testWoo.repo = (function () {
@@ -348,7 +361,7 @@ testWoo.repo = (function () {
     return true;
   }
 
-  // 5a. 매칭용 등록 SQL (used_fragments·compile_hash·nl · sql 본문 제외)
+  // 5a. 매칭용 등록 SQL (#154: sql_query 포함 — 동일 배지용 sqlContentHash)
   function listAiSqlForMatch(limit) {
     var lim = limit != null ? Number(limit) : 500;
     if (isNaN(lim) || lim < 1) lim = 500;
@@ -359,7 +372,7 @@ testWoo.repo = (function () {
           <node expr="@id"/><node expr="@workflow_name"/>
           <node expr="@used_fragments"/><node expr="@compile_hash"/>
           <node expr="@nl_request"/><node expr="@title"/>
-          <node expr="@plan_json"/>
+          <node expr="@plan_json"/><node expr="@sql_query"/>
           <node expr="@status"/><node expr="@creation_date"/>
         </select>
         <where>
@@ -380,6 +393,7 @@ testWoo.repo = (function () {
         nl_request: String(r.@nl_request || ""),
         title: String(r.@title || ""),
         plan_json: String(r.@plan_json || ""),
+        sql_query: String(r.@sql_query || ""),
         status: String(r.@status || ""),
         creation_date: String(r.@creation_date || "")
       });

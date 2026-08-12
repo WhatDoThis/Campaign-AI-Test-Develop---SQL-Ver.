@@ -1,32 +1,28 @@
 /*
- * testWooCommon.js (JSSP 공통 헬퍼 · server-side)
- * =================================================
- * 모든 Test Woo AI 엔드포인트의 응답·입력·인증 헬퍼.
- * JSSP 상단에서 바인드 후 로드:
- *   response.setContentType("application/json;charset=utf-8"); // KA-14685 최상단
- *   TW_RESPONSE = response; TW_REQUEST = request; TW_DOCUMENT = document;
- *   loadLibrary("woo:testWooCommon.js");
+ * testWooCommon.js (JSSP 공통 헬퍼)
+ * ==================================================
+ * Studio·Foundry JSSP API의 JSON 응답·요청 파싱·인증·권한 검사.
+ * TW_* 바인드 후 loadLibrary로 로드한다.
  *
  * [Main Functions]
  * ===========
- * - jsonOut / errOut / handleApiError : JSON 응답·에러(클라이언트 요약 + errId)
- * - readPayload                       : getUTF8Parameter("payload") + body fallback
- * - twSessionTokenFromRequest / twLogonWithToken / twBindOperator
- *                                     : Cookie 헤더 → logonWithToken() (logon 폴백)
- * - twCheckRemoteAddr                 : Env security.allowedCidr (비우면 통과)
- * - currentLogin / requireRight       : named right (fail-closed)
- * - requireStudioCsrf(optPayload)    : X-Requested-With 또는 payload.csrf=TestWooStudio
- *                                     + Origin/Referer host 일치
- *                                     (둘 다 없으면 payload.pageHost===Host — urlViewer 폴백)
+ * - jsonOut — 성공 JSON 응답 기록
+ * - errOut — 오류 JSON 응답 기록
+ * - handleApiError — 예외를 errOut으로 변환
+ * - readPayload — payload 파라미터·body JSON 파싱
+ * - twSessionTokenFromRequest — Cookie에서 세션 토큰 추출
+ * - twLogonWithToken — logonWithToken으로 오퍼레이터 바인드
+ * - twBindOperator — 세션 토큰 또는 logon 폴백 바인드
+ * - twCheckRemoteAddr — allowedCidr IP 게이트
+ * - currentLogin — 현재 로그인 ID 반환
+ * - requireRight — named right 검사(fail-closed)
+ * - requireStudioCsrf — CSRF·Origin·pageHost 검증
+ * - twTrim — Rhino-safe 문자열 trim
  *
  * [Dependencies]
  * =========
- * - JSSP bind: TW_RESPONSE / TW_REQUEST / TW_DOCUMENT
- * - testWooEnv.js security.allowedCidr (선택)
- * Ref: https://experienceleague.adobe.com/developer/campaign-api/api/f-logon.html
- *      (logon(sessionToken)은 JST-310036 로 폐기 경고 — logonWithToken 사용)
- * Ref: https://experienceleague.adobe.com/developer/campaign-api/api/m-HttpServletRequest-getUTF8Parameter.html
- * Ref: KA-14685 (setContentType charset)
+ * - JSSP — TW_RESPONSE/TW_REQUEST/TW_DOCUMENT 바인드 후 loadLibrary
+ * - testWooEnv.js — security.allowedCidr(선택 preload)
  */
 
 var TW_TITLE_MAX = 200; // woo:testWooAiSql @title length

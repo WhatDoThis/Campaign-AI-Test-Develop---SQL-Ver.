@@ -1,14 +1,24 @@
 <%
 response.setContentType("application/json;charset=utf-8");
 /*
- * testWooAiFragmentReview.jssp — verified fragment 승인/반려 API (민감·킬스위치용)
- * ==============================================================================
- * 4차: 일반 Foundry 경로는 status=active 자동. list(verified)는 비는 것이 정상.
- * Option testWooAiAutoApprove=0 이거나 구 verified 잔여분만 여기로 온다.
- * payload action: list | detail | approve | reject | revoke | listImpact
+ * testWooAiFragmentReview.jssp (Fragment 승인·반려 API)
+ * ==================================================
+ * status=verified 승인 대기 큐. autoApprove ON이면 목록 비는 것이 정상.
+ * dedupVerdict=near 항목은 needsDedupReview·dedupWarning을 동반한다.
  *
- * dedupVerdict === "near" 인 항목은 needsDedupReview=true + dedupWarning.
- * (HTML 승인 화면은 미구현 — Explorer + 본 JSON API)
+ * [Main Functions]
+ * ===========
+ * - list — verified 목록 + autoApprove 상태
+ * - detail — fragment 상세·near 유사 fragment 비교
+ * - approve / reject — active·rejected 전환(CSRF)
+ * - revoke — lifecycle.revoke + 영향 SQL(CSRF)
+ * - listImpact — fragmentName 기준 affected SQL
+ *
+ * [Dependencies]
+ * =========
+ * - woo:testWooCommon.js, testWooRepository.js, testWooLifecycle.js
+ * - right testWooAiLibraryManage · Option testWooAiAutoApprove
+ * - schema woo:testWooAiFragment
  */
 try {
   TW_RESPONSE = response;

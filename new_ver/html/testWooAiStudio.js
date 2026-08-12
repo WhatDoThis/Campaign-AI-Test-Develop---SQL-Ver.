@@ -2,18 +2,13 @@
  * testWooAiStudio.js (Test Woo AI Studio 클라이언트)
  * ==================================================
  * HTML ↔ 서버 JSSP. LLM/SQL은 서버만. CNF plan 기반 UI.
- * 등록 = 이력 저장(ai_sql_id). chips는 서버 응답만.
- * 인증은 Cookie + 서버 logonWithToken() — X-Security-Token 헤더 미사용(ACC 미해석).
- * ACC urlViewer = MSHTML(IE) — fetch/Promise/finally/classList/confirm 금지 (#133).
- * #134: 진단 패널은 details 대신 div 토글 (IE details 미지원).
- * #135: TW-BOOT. 2차: ctx 상태머신 · listAiFolders · 입력 게이트.
- * 5차 v=151: matchShown(Generate 후만) · 뒤로/초기화 시 compose 클리어 · Max 안내 분기.
- * #147 v=153: create=Match 없음 · reuse=plan_only+valueContainment1 · breadcrumb.
+ * SQL-First ctx.phase ST0~ST6 · Foundry 후 after_foundry 재큐잉 차단.
  *
  * [Main Functions]
  * ===========
  * - generate / discoverFind / validate / register / runMatch
- * - setIntent / _syncIntentUi / renderBreadcrumb
+ * - putDraft / _cacheListDrafts — R2 미반영 SQL 캐시
+ * - renderBreadcrumb / _matchDisabledMsg
  * - loadAiFolders / selectFolder / loadCampaigns / selectCampaign / createCampaign
  * - createWkf / selectWkf / showOpenHint
  * - goBack / resetCtx / renderListPane / setInputEnabled
@@ -23,10 +18,15 @@
  * =========
  * - /woo/testWooAiGenerate|Validate|Register|Match|StudioContext.jssp
  * - Cookie credentials + X-Requested-With / payload.csrf + pageHost
- * - Served as /woo/testWooAiStudioJs.jssp?v=153 (keep in sync with html/)
+ * - window.__TW_MATCH_ENABLED__ (Studio.jssp Option 주입 · 기본 false)
+ * - Mirror of /woo/testWooAiStudioJs.jssp?v=159
  * - ES5 only: no fetch/Promise/classList/forEach/URLSearchParams/const/let/=>
- */
-(function () {
+ *
+ * [Invariants]
+ * ===========
+ * - ST0 NL 즉시 활성 · Foundry done 자동재시도는 after_foundry(재큐잉 금지)
+ * - MATCH_ENABLED 기본 false
+ */(function () {
   "use strict";
 
   var TITLE_MAX = 200; // schema woo:testWooAiSql @title length
@@ -59,6 +59,235 @@
 
   var WORKFLOW_NAME = _qs("workflowName") || "";
   var EMBED = _qs("embed") === "1" || window.__TW_EMBED__ === true;
+  /* #152: Option testWooAiMatchEnabled — 미주입·false 이면 유사 목록 완전 차단 */
+  var MATCH_ENABLED = window.__TW_MATCH_ENABLED__ === true;
+
+  var MATCH_DISABLED_MSG =
+    "\uC870\uAC74 \uB9E4\uCE6D \uAE30\uB2A5\uC740 \uC815\uD655\uB3C4 \uAC1C\uC120 \uC911\uC785\uB2C8\uB2E4. \uC0C8 \uC870\uAC74\uC73C\uB85C \uC0DD\uC131\uD574 \uC8FC\uC138\uC694.";
+
+  function _matchDisabledMsg() {
+    return MATCH_DISABLED_MSG;
+  }
+
+  /* #148R R2: draft SQL cache — runtime sessionStorage probe, memory fallback */
+  var CACHE_STORE_KEY = "twStudioCache";
+  var CACHE_SCHEMA_V = 1;
+  var CACHE_MEM_WARN =
+    "\uC0C8\uB85C\uACE0\uCE68 \uC2DC \uC784\uC2DC SQL\uC774 \uC0AC\uB77C\uC9C8 \uC218 \uC788\uC2B5\uB2C8\uB2E4.";
+  var _cacheBackend = "memory";
+  var _cacheMemRoot = null;
+
+  function _probeCacheBackend() {
+    try {
+      if (typeof sessionStorage !== "undefined" && sessionStorage) {
+        var pk = "_twProbe_" + String(new Date().getTime());
+        sessionStorage.setItem(pk, "1");
+        var gv = sessionStorage.getItem(pk);
+        sessionStorage.removeItem(pk);
+        if (gv === "1") return "session";
+      }
+    } catch (eProbe) {}
+    return "memory";
+  }
+
+  function _cacheEmptyRoot() {
+    return { v: CACHE_SCHEMA_V, drafts: [] };
+  }
+
+  function _cacheReadRoot() {
+    if (_cacheBackend === "session") {
+      try {
+        var raw = sessionStorage.getItem(CACHE_STORE_KEY);
+        if (!raw) return _cacheEmptyRoot();
+        var obj = JSON.parse(raw);
+        if (!obj || obj.v !== CACHE_SCHEMA_V || !obj.drafts) return _cacheEmptyRoot();
+        return obj;
+      } catch (eR) {
+        return _cacheEmptyRoot();
+      }
+    }
+    if (!_cacheMemRoot) _cacheMemRoot = _cacheEmptyRoot();
+    return _cacheMemRoot;
+  }
+
+  function _cacheWriteRoot(root) {
+    if (!root || root.v !== CACHE_SCHEMA_V) root = _cacheEmptyRoot();
+    if (_cacheBackend === "session") {
+      try {
+        sessionStorage.setItem(CACHE_STORE_KEY, JSON.stringify(root));
+      } catch (eW) {}
+      return;
+    }
+    _cacheMemRoot = root;
+  }
+
+  function _cacheListDrafts() {
+    var root = _cacheReadRoot();
+    var list = root.drafts || [];
+    var out = [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].status === "draft") out.push(list[i]);
+    }
+    out.sort(function (a, b) {
+      return (b.createdAt || 0) - (a.createdAt || 0);
+    });
+    return out;
+  }
+
+  function _cacheUpsertDraft(rec) {
+    if (!rec || !rec.cacheId) return;
+    var root = _cacheReadRoot();
+    var drafts = root.drafts || [];
+    var found = -1;
+    for (var i = 0; i < drafts.length; i++) {
+      if (drafts[i] && drafts[i].cacheId === rec.cacheId) {
+        found = i;
+        break;
+      }
+    }
+    if (found >= 0) drafts[found] = rec;
+    else drafts.push(rec);
+    root.drafts = drafts;
+    _cacheWriteRoot(root);
+  }
+
+  function _cacheRemoveDraft(cacheId) {
+    if (!cacheId) return;
+    var root = _cacheReadRoot();
+    var drafts = root.drafts || [];
+    var next = [];
+    for (var i = 0; i < drafts.length; i++) {
+      if (!drafts[i] || drafts[i].cacheId !== cacheId) next.push(drafts[i]);
+    }
+    root.drafts = next;
+    _cacheWriteRoot(root);
+  }
+
+  function _cacheClearAll() {
+    _cacheWriteRoot(_cacheEmptyRoot());
+  }
+
+  function _djb2Hex(str) {
+    var h = 5381;
+    var s = String(str || "");
+    for (var i = 0; i < s.length; i++) {
+      h = ((h << 5) + h) + s.charCodeAt(i);
+      h = h & 0xffffffff;
+    }
+    var hex = (h >>> 0).toString(16);
+    while (hex.length < 8) hex = "0" + hex;
+    return hex;
+  }
+
+  function _genCacheId() {
+    return "twc_" + String(new Date().getTime()) + "_" +
+      String(Math.floor(Math.random() * 100000));
+  }
+
+  function _extractUsedFragments(plan) {
+    var out = [];
+    var seen = {};
+    function addItem(item) {
+      if (!item || !item.fragment) return;
+      var name = String(item.fragment);
+      if (seen[name]) return;
+      seen[name] = true;
+      out.push({ name: name, version: item.version || 1, fragmentId: item.fragmentId || 0 });
+    }
+    var inc = (plan && plan.include) || [];
+    for (var i = 0; i < inc.length; i++) {
+      var any = (inc[i] && inc[i].any) || [];
+      for (var j = 0; j < any.length; j++) addItem(any[j]);
+    }
+    var ex = (plan && plan.exclude) || [];
+    for (var k = 0; k < ex.length; k++) addItem(ex[k]);
+    return out;
+  }
+
+  function _ensureCacheWarnEl() {
+    if (_cacheBackend !== "memory") return;
+    try {
+      var bar = $("twInfoBar");
+      if (!bar) return;
+      var w = $("twCacheWarn");
+      if (!w) {
+        w = document.createElement("span");
+        w.id = "twCacheWarn";
+        bar.appendChild(w);
+      }
+      w.className = "cache-warn";
+      w.textContent = " | " + CACHE_MEM_WARN;
+    } catch (eW) {}
+  }
+
+  function putDraft() {
+    if (!state.passed || !_trim(state.sql)) return;
+    if (!state.plan) return;
+    var cid = state.cacheId || _genCacheId();
+    var rec = {
+      cacheId: cid,
+      createdAt: new Date().getTime(),
+      nl_request: state.nl || "",
+      plan: state.plan,
+      sql: state.sql,
+      usedFragments: _extractUsedFragments(state.plan),
+      sqlHash: _djb2Hex(state.sql),
+      status: "draft"
+    };
+    state.cacheId = cid;
+    _cacheUpsertDraft(rec);
+    _diag("putDraft cacheId=" + cid);
+    if (SHELL_MODE && ctx.listMode === "WKF" && !ctx.workflow) renderListPane();
+  }
+
+  function _restoreDraft(draft) {
+    if (!draft) return;
+    state.cacheId = draft.cacheId;
+    state.nl = draft.nl_request || "";
+    state.plan = draft.plan || null;
+    state.sql = draft.sql || "";
+    state.summary = "";
+    state.passed = !!(_trim(state.sql) && state.plan);
+    state.aiSqlId = null;
+    try {
+      var nlEl = $("nl");
+      if (nlEl) nlEl.value = state.nl;
+    } catch (eNl) {}
+    if (state.plan) {
+      _rmCls($("cardCode"), "hidden");
+      renderSql(state.sql);
+      _addCls($("cardChips"), "hidden");
+      _addCls($("cardGates"), "hidden");
+      _addCls($("cardFunnel"), "hidden");
+      _addCls($("cardSlotResults"), "hidden");
+    }
+    $("btnReg").disabled = !state.passed;
+    clearErr();
+    renderSummaryHint(
+      "\uC784\uC2DC SQL \uBCF5\uC6D0 \u2014 " + String(draft.cacheId || ""),
+      state.passed
+    );
+  }
+
+  function _renderDraftRows(box) {
+    var drafts = _cacheListDrafts();
+    for (var d = 0; d < drafts.length; d++) {
+      (function (draft) {
+        var el = document.createElement("div");
+        el.className = "shell-item draft-cache";
+        var label = _trim(draft.nl_request || draft.cacheId || "");
+        if (label.length > 48) label = label.substring(0, 45) + "...";
+        el.appendChild(document.createTextNode(
+          label + " [\uBBF8\uBC18\uC601(\uC784\uC2DC)]"
+        ));
+        el.onclick = function () {
+          _restoreDraft(draft);
+          return false;
+        };
+        box.appendChild(el);
+      })(drafts[d]);
+    }
+  }
 
   var state = {
     plan: null,
@@ -67,13 +296,14 @@
     passed: false,
     nl: "",
     aiSqlId: null,
+    cacheId: null,
     queuePoll: null,
     foundryDoneQid: null
   };
   var _delPending = { id: null, timer: null, btn: null };
-  /* Program(folder) → Campaign → WKF */
+  /* SQL-First: phase=ST0~ST6 · listMode=FOLDER|CAMPAIGN|WKF (셸 패널은 R4) */
   var ctx = {
-    phase: "NONE",
+    phase: "ST0",
     listMode: "FOLDER",
     folder: null,
     folders: [],
@@ -86,7 +316,6 @@
     openHint: "",
     matchShown: false,
     matchMode: "",
-    intent: "",
     stack: []
   };
   var SHELL_MODE = !(WORKFLOW_NAME && EMBED);
@@ -321,7 +550,8 @@
               state.foundryDoneQid = qidDone;
               setTimeout(function () {
                 try {
-                  generate();
+                  /* 재큐잉 금지 — Stage A 미매칭 시 안내만 */
+                  generate({ afterFoundry: true });
                 } catch (eAuto) {
                   _diag("auto generate after foundry: " + eAuto);
                 }
@@ -398,43 +628,56 @@
     return (inc.length + exc.length) > 0;
   }
 
-  function generate() {
-    if (SHELL_MODE && (!ctx.campaign || !ctx.campaign.id)) {
-      showErr("\uCEA0\uD398\uC778\uC744 \uBA3C\uC800 \uC120\uD0DD\uD558\uC138\uC694.");
-      return;
-    }
-    if (SHELL_MODE && !ctx.intent) {
-      showErr("\uC704\uC5D0\uC11C \uC791\uC5C5 \uBC29\uC2DD\uC744 \uC120\uD0DD\uD558\uC138\uC694.");
-      return;
-    }
-    if (SHELL_MODE && ctx.intent === "reuse") {
-      discoverFind();
-      return;
-    }
+  function generate(opt) {
+    var afterFoundry = !!(opt && opt.afterFoundry);
     var nl = _trim($("nl").value);
     if (!nl) return;
     state.nl = nl; clearErr(); setBusy(true);
-    _diag("generate start");
-    post("testWooAiGenerate.jssp", {
+    _diag("generate start phase=" + ctx.phase + " afterFoundry=" + (afterFoundry ? "1" : "0"));
+    var genPayload = {
       nl_request: nl,
       workflow_name: _activeWorkflowName()
-    }, function (res) {
+    };
+    if (afterFoundry) genPayload.after_foundry = true;
+    post("testWooAiGenerate.jssp", genPayload, function (res) {
       try {
         if (res.status === "queued" && res.queueId) {
+          if (afterFoundry) {
+            showErr(
+              "Foundry \uC644\uB8CC \uD6C4\uC5D0\uB3C4 \uB2E4\uC2DC \uD050\uC5D0 \uB4E4\uC5B4\uAC14\uC2B5\uB2C8\uB2E4. " +
+                "Stage A/\uB77C\uC774\uBE0C\uB7EC\uB9AC\uB97C \uD655\uC778\uD55C \uB4A4 [\uC0DD\uC131]\uC744 \uB204\uB974\uC138\uC694."
+            );
+            return;
+          }
           hideResultCards();
           pollQueue(res.queueId, res.reviewUrl);
           return;
         }
         if (!res.ok) {
+          _diag(
+            "generate !ok error=" +
+              String(res.error || "") +
+              " errId=" +
+              String(res.errId || "") +
+              " detail=" +
+              String(res.detail || "").substring(0, 180)
+          );
           if (res.unmatched && res.unmatched.length) {
             $("hint").className = "banner warn";
             // unmatched = Stage A \uD504\uB798\uADF8\uBA3C\uD2B8 \uBBF8\uBC1C\uACAC (\uCC3D\uC791 SQL/\uC870\uAC74 \uAE08\uC9C0)
-            $("hint").textContent =
-              "\uB9E4\uCE6D \uC2E4\uD328(\uCC3D\uC791 \uC5C6\uC74C): \uB77C\uC774\uBE0C\uB7EC\uB9AC\uC5D0 \uD574\uB2F9 fragment\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. " +
-              "\uC2AC\uB86F: " + res.unmatched.join(" | ");
+            if (afterFoundry || res.afterFoundry) {
+              $("hint").textContent =
+                "Foundry fragment\uB294 \uC788\uC73C\uB098 Stage A\uAC00 \uC544\uC9C1 \uC5F0\uACB0\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. " +
+                "\uC2AC\uB86F: " + res.unmatched.join(" | ") +
+                " \u2014 JS(testWooFragments) \uBC30\uD3EC \uD6C4 [\uC0DD\uC131] \uC7AC\uC2DC\uB3C4.";
+            } else {
+              $("hint").textContent =
+                "\uB9E4\uCE6D \uC2E4\uD328(\uCC3D\uC791 \uC5C6\uC74C): \uB77C\uC774\uBE0C\uB7EC\uB9AC\uC5D0 \uD574\uB2F9 fragment\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. " +
+                "\uC2AC\uB86F: " + res.unmatched.join(" | ");
+            }
             hideResultCards();
           } else {
-            showErr(_errText(res));
+            showErr("Generate: " + _errText(res));
             if (res.results) renderGates(res.results);
           }
           return;
@@ -443,6 +686,10 @@
         state.sql = res.sql || "";
         state.summary = res.summary || "";
         state.passed = !!res.passed;
+        /* ST0 제출 성공 → ST1 · SQL 확정(passed)이면 ST2 (목록 UI는 R4) */
+        if (SHELL_MODE) {
+          ctx.phase = state.passed && _trim(state.sql) ? "ST2" : "ST1";
+        }
         renderChips(res.chips);
         renderSql(state.sql);
         renderGates(res.results || []);
@@ -453,8 +700,8 @@
         } else {
           renderSummaryHint(res.summary, true);
         }
+        if (state.passed && _trim(state.sql)) putDraft();
         hideFunnel();
-        /* create: 유사/포함 WKF 목록 금지 — 새 WKF 후 [등록]만 (#147) */
         if (SHELL_MODE && !ctx.workflow) {
           ctx.wkfs = [];
           ctx.matchShown = false;
@@ -473,6 +720,14 @@
 
   /* #147 reuse: plan_only Generate → Match discover (SQL/Register/Foundry \uC5C6\uC74C) */
   function discoverFind() {
+    if (!MATCH_ENABLED) {
+      showErr(_matchDisabledMsg());
+      ctx.wkfs = [];
+      ctx.matchShown = false;
+      ctx.matchMode = "";
+      if (!ctx.workflow) renderListPane();
+      return;
+    }
     if (SHELL_MODE && (!ctx.campaign || !ctx.campaign.id)) {
       showErr("\uCEA0\uD398\uC778\uC744 \uBA3C\uC800 \uC120\uD0DD\uD558\uC138\uC694.");
       return;
@@ -534,7 +789,7 @@
             clearErr();
             $("hint").className = "banner ok";
             $("hint").textContent =
-              "\uC870\uAC74 \uACC4\uD68D \uC644\uB8CC \u2014 \uD3EC\uD568 WKF\uB97C \uCC3E\uB294 \uC911\u2026";
+              "\uC870\uAC74 \uACC4\uD68D \uC644\uB8CC \u2014 \uAC12 \uB300\uC870 WKF\uB97C \uCC3E\uB294 \uC911\u2026";
           }
           hideFunnel();
           runMatch(null, "discover");
@@ -564,6 +819,7 @@
       renderGates(v.results);
       $("btnReg").disabled = !v.passed;
       renderSummaryHint(v.summary || state.summary, !!v.passed);
+      if (state.passed && _trim(state.sql)) putDraft();
     }, function (e) {
       showErr(String(e && e.message ? e.message : e));
     });
@@ -596,6 +852,11 @@
         }
         state.aiSqlId = r.ai_sql_id;
         if (r.sql) state.sql = r.sql;
+        if (state.cacheId) {
+          _cacheRemoveDraft(state.cacheId);
+          state.cacheId = null;
+        }
+        if (SHELL_MODE) ctx.phase = "ST6";
         setInfoBar(_folderInfoText());
         if (r.created === false) {
           $("hint").className = "banner warn";
@@ -627,12 +888,23 @@
 
   // 5차/#146: plan → Match (mode: dedup|discover)
   function runMatch(done, mode) {
+    if (!MATCH_ENABLED) {
+      ctx.wkfs = [];
+      ctx.matchShown = false;
+      ctx.matchMode = "";
+      if (!ctx.workflow) {
+        _showSqlSide(false);
+        renderListPane();
+      }
+      showErr(_matchDisabledMsg());
+      if (done) done(false);
+      return;
+    }
     if (!SHELL_MODE || !ctx.campaign || !ctx.campaign.id || !state.plan) {
       if (done) done(false);
       return;
     }
-    var m = mode || (ctx.intent === "reuse" ? "discover" : "dedup");
-    if (m !== "discover") m = "dedup";
+    var m = mode === "discover" ? "discover" : "dedup";
     ctx.matchMode = m;
     _diag("runMatch start mode=" + m);
     post(
@@ -666,9 +938,9 @@
           if (h && m === "discover") {
             h.className = "banner ok";
             h.textContent =
-              "\uC870\uAC74\uC744 \uD3EC\uD568\uD55C WKF " +
+              "\uAC12 \uB300\uC870 \uD6C4\uBCF4 WKF " +
               n +
-              "\uAC74. \uC120\uD0DD \uC2DC Program/\uCEA0\uD398\uC778\uC774 \uC790\uB3D9 \uBC18\uC601\uB429\uB2C8\uB2E4.";
+              "\uAC74. \uC120\uD0DD \uC2DC Program/\uCEA0\uD398\uC778\uC774 \uC790\uB3D9 \uBC18\uC601\uB429\uB2C8\uB2E4. (\uBD88\uC77C\uCE58 \uAC12\uC740 \uC81C\uC678)";
           } else if (h && state.passed) {
             h.className = "banner ok";
             h.textContent =
@@ -701,6 +973,7 @@
     state.passed = false;
     state.nl = "";
     state.aiSqlId = null;
+    state.cacheId = null;
     state.foundryDoneQid = null;
     ctx.wkfs = [];
     ctx.matchShown = false;
@@ -716,55 +989,6 @@
       var sqlBox = $("sql");
       if (sqlBox) sqlBox.textContent = "";
     } catch (eS) {}
-  }
-
-  function setIntent(mode) {
-    var m = mode === "reuse" ? "reuse" : mode === "create" ? "create" : "";
-    if (!m) return;
-    if (ctx.intent && ctx.intent !== m) _clearComposeState();
-    ctx.intent = m;
-    _syncIntentUi();
-    setInputEnabled(true);
-    clearErr();
-    var h = $("hint");
-    if (h) {
-      h.className = "banner warn";
-      if (m === "reuse") {
-        h.textContent =
-          "\uAE30\uC874 \uC870\uAC74 \uCC3E\uAE30: \uC870\uAC74\uC744 \uC785\uB825\uD55C \uB4A4 [\uCC3E\uAE30]\uB97C \uB204\uB974\uC138\uC694. (SQL \uC0DD\uC131/\uB4F1\uB85D \uC5C6\uC74C)";
-      } else {
-        h.textContent =
-          "\uC0C8 \uC870\uAC74 \uB9CC\uB4E4\uAE30: \uC870\uAC74\uC744 \uC785\uB825\uD55C \uB4A4 [\uC0DD\uC131]\uC744 \uB204\uB974\uC138\uC694.";
-      }
-    }
-    if (!ctx.workflow) renderListPane();
-  }
-
-  function _syncIntentUi() {
-    var bar = $("twIntentBar");
-    var btnC = $("btnIntentCreate");
-    var btnR = $("btnIntentReuse");
-    var btnG = $("btnGen");
-    var showBar =
-      SHELL_MODE &&
-      !!(ctx.campaign && ctx.campaign.id) &&
-      !ctx.workflow &&
-      ctx.listMode === "WKF";
-    if (bar) {
-      if (showBar) _rmCls(bar, "hidden");
-      else _addCls(bar, "hidden");
-    }
-    if (btnC) {
-      if (ctx.intent === "create") _addCls(btnC, "on");
-      else _rmCls(btnC, "on");
-    }
-    if (btnR) {
-      if (ctx.intent === "reuse") _addCls(btnR, "on");
-      else _rmCls(btnR, "on");
-    }
-    if (btnG) {
-      btnG.textContent = ctx.intent === "reuse" ? "\uCC3E\uAE30" : "\uC0DD\uC131";
-    }
   }
 
   function setBindPick(aiSqlId) {
@@ -849,7 +1073,6 @@
   function navToProgram() {
     if (!SHELL_MODE) return;
     _releaseCurrentLock(function () {
-      ctx.intent = "";
       _clearComposeState();
       ctx.workflow = null;
       ctx.openHint = "";
@@ -859,9 +1082,8 @@
       if (!EMBED) WORKFLOW_NAME = "";
       _showSqlSide(false);
       ctx.listMode = "FOLDER";
-      ctx.phase = "FOLDER_LIST";
-      setInputEnabled(false);
-      _syncIntentUi();
+      ctx.phase = "ST3";
+      setInputEnabled(true);
       _refreshOpenButtons();
       renderBreadcrumb();
       loadAiFolders();
@@ -874,7 +1096,6 @@
       return;
     }
     _releaseCurrentLock(function () {
-      ctx.intent = "";
       _clearComposeState();
       ctx.workflow = null;
       ctx.openHint = "";
@@ -882,10 +1103,9 @@
       if (!EMBED) WORKFLOW_NAME = "";
       _showSqlSide(false);
       ctx.listMode = "CAMPAIGN";
-      ctx.phase = "PROGRAM_SELECTED";
+      ctx.phase = "ST4";
       ctx.stack = [];
-      setInputEnabled(false);
-      _syncIntentUi();
+      setInputEnabled(true);
       _refreshOpenButtons();
       renderBreadcrumb();
       loadCampaigns();
@@ -925,26 +1145,16 @@
     var btn = $("btnGen");
     var hint = $("twNlHint");
     var allow = !!on;
-    if (SHELL_MODE) {
-      if (!ctx.campaign || !ctx.campaign.id) allow = false;
-      else if (!ctx.intent) allow = false;
-    }
     if (nl) nl.disabled = !allow;
     if (btn) btn.disabled = !allow;
     if (hint) {
       if (allow) _addCls(hint, "hidden");
       else {
         _rmCls(hint, "hidden");
-        if (SHELL_MODE && ctx.campaign && ctx.campaign.id && !ctx.intent) {
-          hint.textContent =
-            "\uC704\uC5D0\uC11C \uC791\uC5C5 \uBC29\uC2DD\uC744 \uC120\uD0DD\uD558\uC138\uC694";
-        } else {
-          hint.textContent =
-            "\uC624\uB978\uCABD\uC5D0\uC11C Program\uC744 \uACE0\uB978 \uB4A4 \uCEA0\uD398\uC778\uC744 \uC120\uD0DD\uD558\uC138\uC694";
-        }
+        hint.textContent =
+          "\uC870\uAC74\uC744 \uC785\uB825\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. (\uCC98\uB9AC \uC911)";
       }
     }
-    _syncIntentUi();
   }
 
   function _folderInfoText() {
@@ -1104,10 +1314,10 @@
     }
 
     if (ctx.listMode === "WKF") {
-      var isDiscover = ctx.matchMode === "discover" || ctx.intent === "reuse";
+      var isDiscover = MATCH_ENABLED && ctx.matchMode === "discover";
       if (title) {
         if (ctx.matchShown && isDiscover) {
-          title.textContent = "\uC870\uAC74 \uD3EC\uD568 WKF";
+          title.textContent = "\uAC12 \uB300\uC870 WKF";
         } else {
           title.textContent = "WKF";
         }
@@ -1140,27 +1350,37 @@
       }
       box.appendChild(createRow);
 
+      _renderDraftRows(box);
+
+      /* #152: Match OFF — 유사 목록 자리 안내만 (오탐 카드 금지) · draft는 위에 표시 */
+      if (!MATCH_ENABLED) {
+        ctx.wkfs = [];
+        ctx.matchShown = false;
+        var offMsg = document.createElement("div");
+        offMsg.className = "side-empty";
+        offMsg.appendChild(document.createTextNode(_matchDisabledMsg()));
+        box.appendChild(offMsg);
+        return;
+      }
+
       if (!ctx.wkfs.length) {
         var emptyW = document.createElement("div");
         emptyW.className = "side-empty";
         var emptyMsg = "";
         if (!ctx.matchShown) {
-          if (!ctx.intent) {
+          if (isDiscover) {
             emptyMsg =
-              "\uC67C\uCABD\uC5D0\uC11C \uC791\uC5C5 \uBC29\uC2DD\uC744 \uC120\uD0DD\uD55C \uB4A4 \uC870\uAC74\uC744 \uC785\uB825\uD558\uC138\uC694. \uB610\uB294 \uC704\uC5D0\uC11C \uC0C8 WKF\uB97C \uB9CC\uB4DC\uC138\uC694.";
-          } else if (isDiscover) {
-            emptyMsg =
-              "\uC870\uAC74\uC744 \uC785\uB825\uD55C \uB4A4 [\uCC3E\uAE30]\uB97C \uB204\uB974\uC138\uC694. (\uB0B4 \uC870\uAC74\uC774 \uBAA8\uB450 \uD3EC\uD568\uB41C WKF\uB9CC \uD45C\uC2DC)";
+              "\uC870\uAC74\uC744 \uC785\uB825\uD55C \uB4A4 [\uC0DD\uC131]\uC744 \uB204\uB974\uC138\uC694. (\uAC12\uC774 \uC77C\uCE58\uD558\uB294 \uD6C4\uBCF4\uB9CC \uD45C\uC2DC \u00B7 CONFLICT \uC81C\uC678)";
           } else {
             emptyMsg = ctx.canCreateWkf
-              ? "WKF\uB97C \uB9CC\uB4E0 \uB4A4 [\uB4F1\uB85D]\uD558\uC138\uC694. \uC720\uC0AC \uC870\uAC74 \uD0D0\uC0C9\uC740 \u300E\uAE30\uC874 \uC870\uAC74 \uCC3E\uC544 \uC4F0\uAE30\u300F"
+              ? "\uC67C\uCABD\uC5D0\uC11C \uC870\uAC74\uC744 [\uC0DD\uC131]\uD55C \uB4A4 WKF\uB97C \uB9CC\uB4E0 \uB4A4 [\uB4F1\uB85D]\uD558\uC138\uC694."
               : "\uC870\uAC74 [\uC0DD\uC131] \uD6C4 WKF\uAC00 \uD544\uC694\uD569\uB2C8\uB2E4. (\uC774 \uCEA0\uD398\uC778\uC740 WKF Max " +
                 ctx.wkfMax +
-                " \u2014 \uC0C8 WKF \uBD88\uAC00. \uD0D0\uC0C9\uC740 \u300E\uAE30\uC874 \uC870\uAC74 \uCC3E\uC544 \uC4F0\uAE30\u300F)";
+                " \u2014 \uC0C8 WKF \uBD88\uAC00)";
           }
         } else if (isDiscover) {
           emptyMsg =
-            "\uB0B4 \uC870\uAC74\uC774 \uBAA8\uB450 \uD3EC\uD568\uB41C WKF\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. \uC0C8 WKF\uB97C \uC0DD\uC131\uD558\uAC70\uB098 \uC870\uAC74\uC744 \uBC14\uAFB8\uC138\uC694.";
+            "\uAC12\uC774 \uC77C\uCE58\uD558\uB294 \uD6C4\uBCF4 WKF\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. \uC0C8 WKF\uB97C \uC0DD\uC131\uD558\uAC70\uB098 \uC870\uAC74\uC744 \uBC14\uAFB8\uC138\uC694.";
         } else {
           emptyMsg =
             "WKF\uB97C \uB9CC\uB4E0 \uB4A4 [\uB4F1\uB85D]\uD558\uC138\uC694.";
@@ -1189,21 +1409,56 @@
             d1.title = nlTxt + " | " + wfLabel + " / " + wfName;
             el.appendChild(d1);
 
-            var d2 = document.createElement("div");
-            d2.className = "sid";
-            d2.textContent =
-              row.matchLabel ||
-              ("\uB0B4 \uC870\uAC74 " +
-                (row.queryCount != null ? row.queryCount : "?") +
-                "\uAC1C \uC911 " +
-                (row.intersectionCount != null ? row.intersectionCount : "?") +
-                "\uAC1C \uD3EC\uD568");
-            el.appendChild(d2);
-
-            var extra = 0;
-            if (row.candidateCount != null && row.intersectionCount != null) {
-              extra = row.candidateCount - row.intersectionCount;
+            if (row.isIdentical) {
+              var sameBadge = document.createElement("div");
+              sameBadge.className = "sid";
+              sameBadge.textContent = "\uB3D9\uC77C";
+              el.appendChild(sameBadge);
             }
+
+            /* #154: 단정형 "포함" 금지 — 조건별 대조표 */
+            var cmp = row.compare;
+            if (cmp && cmp.length) {
+              for (var ci = 0; ci < cmp.length; ci++) {
+                var line = cmp[ci];
+                var dCmp = document.createElement("div");
+                dCmp.className = "meta";
+                var st = String(line.status || "");
+                var lab = line.label || line.name || "";
+                var qv = line.queryValue || "";
+                var cv = line.candidateValue || "";
+                var tip = "";
+                if (st === "SAME") {
+                  tip = lab + "  " + qv + "  =  " + cv + "  (\uC77C\uCE58)";
+                } else if (st === "MISSING") {
+                  tip =
+                    lab +
+                    "  " +
+                    qv +
+                    "  =  (\uC5C6\uC74C)  (\uC774 \uC870\uAC74\uC740 \uD6C4\uBCF4\uC5D0 \uC5C6\uC74C)";
+                } else if (st === "CONFLICT") {
+                  tip =
+                    lab +
+                    "  " +
+                    qv +
+                    "  vs  " +
+                    cv +
+                    "  (\uBD88\uC77C\uCE58)";
+                } else {
+                  tip = lab + "  " + qv;
+                }
+                dCmp.textContent = tip;
+                dCmp.title = tip;
+                el.appendChild(dCmp);
+              }
+            } else {
+              var d2 = document.createElement("div");
+              d2.className = "sid";
+              d2.textContent = row.matchLabel || "\uAC12 \uB300\uC870 \uC815\uBCF4 \uC5C6\uC74C";
+              el.appendChild(d2);
+            }
+
+            var extra = row.extraCount != null ? row.extraCount : 0;
             if (extra > 0) {
               var d3 = document.createElement("div");
               d3.className = "meta";
@@ -1291,10 +1546,10 @@
     ctx.workflow = null;
     ctx.openHint = "";
     ctx.wkfs = [];
-    ctx.phase = "PROGRAM_SELECTED";
+    ctx.phase = "ST4";
     ctx.listMode = "CAMPAIGN";
     setInfoBar(_folderInfoText());
-    setInputEnabled(false);
+    setInputEnabled(true);
     _refreshOpenButtons();
     renderListPane();
     loadCampaigns();
@@ -1373,14 +1628,12 @@
     ctx.wkfs = [];
     ctx.canCreateWkf = row.canCreateWkf !== false;
     if (row.wkfMax != null) ctx.wkfMax = row.wkfMax;
-    ctx.phase = "CAMPAIGN_SELECTED";
+    ctx.phase = "ST5";
     ctx.listMode = "WKF";
     /* 매칭은 Generate 성공 후에만. 재진입 시 이전 plan으로 자동 Match 금지 */
-    ctx.intent = "";
     _clearComposeState();
     setInfoBar(_folderInfoText());
-    setInputEnabled(false);
-    _syncIntentUi();
+    setInputEnabled(true);
     _refreshOpenButtons();
     renderListPane();
   }
@@ -1427,8 +1680,8 @@
         if (!EMBED) WORKFLOW_NAME = String(res.workflow.name || "");
         ctx.openHint = String(res.open_hint || "");
         state.aiSqlId = null;
+        ctx.phase = "ST5";
         setInfoBar(_folderInfoText());
-        _syncIntentUi();
         _refreshOpenButtons();
         loadSqlList();
         showOpenHint();
@@ -1441,9 +1694,9 @@
     );
   }
 
-  /* reuse만 Match 재조회 · create는 목록 비움 */
+  /* discover 모드만 Match 재조회 · #152 Match OFF 시 항상 비움 */
   function _refreshMatchOrList() {
-    if (ctx.intent === "reuse" && state.plan) {
+    if (MATCH_ENABLED && ctx.matchMode === "discover" && state.plan) {
       runMatch(null, "discover");
       return;
     }
@@ -1503,8 +1756,8 @@
         if (!EMBED) WORKFLOW_NAME = String(row.name || "");
         ctx.openHint = String(res.open_hint || "");
         state.aiSqlId = null;
+        ctx.phase = "ST5";
         setInfoBar(_folderInfoText());
-        _syncIntentUi();
         _refreshOpenButtons();
         if (res.lock_warning) {
           $("hint").className = "banner warn";
@@ -1541,34 +1794,29 @@
       ctx.workflow = null;
       /* WKF 뎁스를 벗어나면 이전 조건·매칭 폐기 (재진입 시 잔상 방지) */
       if (ctx.listMode !== "WKF") {
-        ctx.intent = "";
         _clearComposeState();
       }
       if (ctx.listMode === "WKF" && ctx.campaign) {
-        ctx.intent = "";
         _clearComposeState();
+        if (ctx.phase !== "ST5") ctx.phase = "ST5";
         setInfoBar(_folderInfoText());
-        setInputEnabled(false);
-        _syncIntentUi();
+        setInputEnabled(true);
         renderListPane();
       } else if (ctx.listMode === "CAMPAIGN" && ctx.folder) {
         ctx.campaign = null;
-        ctx.intent = "";
+        if (ctx.phase !== "ST4") ctx.phase = "ST4";
         setInfoBar(_folderInfoText());
-        setInputEnabled(false);
-        _syncIntentUi();
+        setInputEnabled(true);
         loadCampaigns();
       } else if (ctx.folder) {
-        ctx.intent = "";
+        if (ctx.phase !== "ST3") ctx.phase = "ST3";
         setInfoBar(_folderInfoText());
-        setInputEnabled(false);
-        _syncIntentUi();
+        setInputEnabled(true);
         renderListPane();
       } else {
-        ctx.intent = "";
+        ctx.phase = "ST0";
         setInfoBar("Program: (\uBBF8\uC120\uD0DD)");
-        setInputEnabled(false);
-        _syncIntentUi();
+        setInputEnabled(true);
         renderListPane();
       }
     });
@@ -1577,7 +1825,7 @@
   function resetCtx() {
     if (!SHELL_MODE) return;
     _releaseCurrentLock(function () {
-      ctx.phase = "NONE";
+      ctx.phase = "ST0";
       ctx.listMode = "FOLDER";
       ctx.folder = null;
       ctx.campaigns = [];
@@ -1587,18 +1835,18 @@
       ctx.openHint = "";
       ctx.matchShown = false;
       ctx.matchMode = "";
-      ctx.intent = "";
       ctx.stack = [];
+      _cacheClearAll();
+      state.cacheId = null;
       _clearComposeState();
       setInfoBar("Program: (\uBBF8\uC120\uD0DD)");
-      setInputEnabled(false);
-      _syncIntentUi();
+      setInputEnabled(true);
       _refreshOpenButtons();
       var hintR = $("hint");
       if (hintR) {
         hintR.className = "banner warn";
         hintR.textContent =
-          "Program \u2192 \uCEA0\uD398\uC778 \uC120\uD0DD/\uC0DD\uC131 \uD6C4 \uC791\uC5C5 \uBC29\uC2DD\uC744 \uACE0\uB974\uC138\uC694. (\uCEA0\uD398\uC778\uB2F9 WKF Max 15)";
+          "\uC870\uAC74\uC744 \uC785\uB825\uD55C \uB4A4 [\uC0DD\uC131]\uC744 \uB204\uB974\uC138\uC694. (\uD504\uB85C\uADF8\uB7A8/\uCEA0\uD398\uC778/\uC6CC\uD06C\uD50C\uB85C\uC6B0\uB294 SQL \uD6C4\uC5D0 \uC120\uD0DD \u00B7 WKF Max 15)";
       }
       loadAiFolders();
     });
@@ -1606,7 +1854,10 @@
 
   function loadAiFolders() {
     if (!SHELL_MODE) return;
-    ctx.phase = "FOLDER_LIST";
+    /* ST0 부트는 phase 유지 · 브레드크럼 프로그램 선택만 ST3 */
+    if (ctx.phase !== "ST0" && ctx.phase !== "ST1" && ctx.phase !== "ST2") {
+      ctx.phase = "ST3";
+    }
     ctx.listMode = "FOLDER";
     post("testWooAiStudioContext.jssp", {
       action: "listAiFolders",
@@ -1981,21 +2232,11 @@
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
   function setBusy(b) {
-    var btnC = $("btnIntentCreate");
-    var btnR = $("btnIntentReuse");
     if (b) {
       $("btnGen").disabled = true;
       $("nl").disabled = true;
-      if (btnC) btnC.disabled = true;
-      if (btnR) btnR.disabled = true;
     } else {
-      if (btnC) btnC.disabled = false;
-      if (btnR) btnR.disabled = false;
-      if (SHELL_MODE) {
-        setInputEnabled(!!(ctx.campaign && ctx.campaign.id && ctx.intent));
-      } else {
-        setInputEnabled(true);
-      }
+      setInputEnabled(true);
     }
   }
 
@@ -2014,11 +2255,14 @@
 
   function init() {
     _installOnError();
+    _cacheBackend = _probeCacheBackend();
+    _diag("cacheBackend=" + _cacheBackend);
+    _ensureCacheWarnEl();
     try {
       _wireDiagToggle();
       try {
         var dm0 = (typeof document.documentMode !== "undefined") ? String(document.documentMode) : "n/a(non-IE)";
-          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | v=153";
+          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | match=" + (MATCH_ENABLED ? "1" : "0") + " | phase=" + ctx.phase + " | v=159";
         var bootReached = !!(window.__TW_BOOT_MSG__);
         if (bootReached) _diag(String(window.__TW_BOOT_MSG__));
         _diag(okMsg);
@@ -2058,23 +2302,9 @@
       _refreshOpenButtons();
       var btnGen = $("btnGen");
       var btnReg = $("btnReg");
-      var btnIntentCreate = $("btnIntentCreate");
-      var btnIntentReuse = $("btnIntentReuse");
       var nl = $("nl");
       if (btnGen) btnGen.onclick = function () { generate(); };
       if (btnReg) btnReg.onclick = function () { register(); };
-      if (btnIntentCreate) {
-        btnIntentCreate.onclick = function () {
-          setIntent("create");
-          return false;
-        };
-      }
-      if (btnIntentReuse) {
-        btnIntentReuse.onclick = function () {
-          setIntent("reuse");
-          return false;
-        };
-      }
       if (nl) {
         nl.onkeydown = function (e) {
           e = e || window.event;
@@ -2087,13 +2317,13 @@
         };
       }
       if (SHELL_MODE) {
-        setInputEnabled(false);
-        _syncIntentUi();
+        ctx.phase = "ST0";
+        setInputEnabled(true);
         var hint0 = $("hint");
         if (hint0) {
           hint0.className = "banner warn";
           hint0.textContent =
-            "Program \u2192 \uCEA0\uD398\uC778 \uC120\uD0DD/\uC0DD\uC131 \uD6C4 \uC791\uC5C5 \uBC29\uC2DD\uC744 \uACE0\uB974\uC138\uC694. (\uCEA0\uD398\uC778\uB2F9 WKF Max 15)";
+            "\uC870\uAC74\uC744 \uC785\uB825\uD55C \uB4A4 [\uC0DD\uC131]\uC744 \uB204\uB974\uC138\uC694. (\uD504\uB85C\uADF8\uB7A8/\uCEA0\uD398\uC778/\uC6CC\uD06C\uD50C\uB85C\uC6B0\uB294 SQL \uD6C4\uC5D0 \uC120\uD0DD \u00B7 WKF Max 15)";
         }
         setTimeout(function () {
           try { loadAiFolders(); }

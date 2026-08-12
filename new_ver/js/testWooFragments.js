@@ -1,27 +1,27 @@
 /*
- * testWooFragments.js (fragment Stage A · queryDef 가드레일 · server-side)
- * ========================================================================
- * 슬롯별 후보 검색. 전체 카탈로그/sql_text 일괄 로드 금지.
- * 도메인 동의어/슬랭 하드코딩 금지 → Pass0 searchKeywords + fragment 메타.
- * DB LIKE는 label/tags/synonyms/sample_questions만 (description 제외, 스코어는 유지).
- * queryDef는 lineCount 페이지(기본·상한 5000) + orderBy + startLine.
+ * testWooFragments.js (Fragment Stage A 검색)
+ * ==================================================
+ * 슬롯별 후보 fragment 메타 검색. 전체 카탈로그·sql_text 일괄 로드 금지.
+ * queryDef 페이지네이션(lineCount·startLine)으로 가드레일 유지.
  *
  * [Main Functions]
  * ===========
- * - getByName : name 단건 (sql_text 포함, lineCount=1)
- * - searchBySlot / searchSlots : Stage A (메타만, 페이지 스캔)
- *   3번째 인자 statuses 기본 ["active"] (4차 자동승인 정합)
- *   Foundry 킬스위치 OFF 재사용만 verified 포함 가능
- *   ACC Rhino 호환: Array.map/forEach 미사용 (for 루프)
- * - listCategories : Catalog용 (sql_text 없이 페이지)
- * - toCard / clearCache
+ * - getByName — name 단건 조회(sql_text 포함)
+ * - toCard — fragment → UI 카드 객체
+ * - searchBySlot — 슬롯 1건 Stage A 후보 검색
+ * - searchSlots — Pass0 slots[] 일괄 Stage A
+ * - listCategories — Catalog용 category 목록
+ * - clearCache — getByName 캐시 비우기
  *
  * [Dependencies]
  * =========
- * - testWoo.cfg
- * - Schema: woo:testWooAiFragment
- * - Adobe KCS: queryDef 미지정 시 ~10000행 제한 / 대량은 페이지네이션
- * - loadLibrary("woo:testWooFragments.js")
+ * - woo:testWooAiFragment — xtk.queryDef select
+ * - testWoo.cfg.getConfig — guard.STAGE_A_TOP_N·QUERY_PAGE_SIZE
+ *
+ * [Invariants]
+ * ===========
+ * - Stage A LIKE: label/tags/synonyms/sample_questions/name/description
+ *   (Foundry description-only 메타도 후보로 잡혀야 함)
  */
 var testWoo = testWoo || {};
 testWoo.fragments = (function () {
@@ -204,11 +204,13 @@ testWoo.fragments = (function () {
     for (var i = 0; i < tokens.length; i++) {
       var t = _escLike(tokens[i]);
       if (!t) continue;
-      // description은 DB LIKE에서 제외(memo 풀스캔 비용). 스코어 메모리 채점만 유지.
+      // Foundry compound frag는 description·name에만 한글/영문 단서가 있는 경우가 많음
       orParts.push("@label LIKE '%" + t + "%'");
       orParts.push("@tags LIKE '%" + t + "%'");
       orParts.push("@synonyms LIKE '%" + t + "%'");
       orParts.push("@sample_questions LIKE '%" + t + "%'");
+      orParts.push("@name LIKE '%" + t + "%'");
+      orParts.push("@description LIKE '%" + t + "%'");
     }
     if (orParts.length) {
       parts.push("<condition boolOperator=\"AND\" expr=\"(" + orParts.join(" OR ") + ")\"/>");

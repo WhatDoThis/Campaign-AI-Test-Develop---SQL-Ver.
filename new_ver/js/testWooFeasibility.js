@@ -1,29 +1,21 @@
 /*
- * testWooFeasibility.js (실현가능성 Triage · server-side)
- * =======================================================
- * Foundry SQL 생성 전 슬롯별 feasible 여부 판정. 증거 없으면 ambiguous 강등.
- *
- * 강등 근거는 LLM 자기신고(evidence)가 아니라 toolkit 실호출 로그(toolLog)만 신뢰한다.
- *
- * 툴 루프는 triage.maxTurns 턴이며 마지막 턴은 tool_choice:"none" + 최종 지시로
- * 판정 JSON 을 강제한다. 강제 턴이 없으면 모델이 턴 전부를 툴 호출로 소진해
- * "tool loop exceeded" 로 끝난다. none 턴에는 parallel_tool_calls 를 넣지 않는다
- * (OpenRouter→Azure Claude 400). 허용 namespace 는 toolkit.env() 로 프롬프트에
- * 명시한다 — 알려주지 않으면 미허용 ns 를 찍어보며 턴을 낭비한다.
- *
- * no_column 오탐 방지: describe_schema 없이 no_column 을 내면 루프에서 재지시하고,
- * 강등 규칙은 ambiguous 로 내린다(값 키워드만 검색해 region 컬럼을 놓치는 실측 대응).
+ * testWooFeasibility.js (슬롯 실현가능성 Triage)
+ * ==================================================
+ * Foundry SQL 생성 전 슬롯별 feasible 여부 판정.
+ * toolkit 실호출 로그만 근거로 쓰며, 마지막 턴은 JSON 판정 강제.
  *
  * [Main Functions]
  * ===========
- * - triage(slot, cfg, nlContext)
- * - applyDemotionRules(raw, toolLog) / meetsConfidence
+ * - triage — slot+cfg → {verdict, confidence, reason, evidence}
+ * - applyDemotionRules — LLM raw + toolLog → 강등·교정
+ * - meetsConfidence — verdict·confidence 임계 충족 여부
  *
  * [Dependencies]
  * =========
- * - testWoo.toolkit(env/specs/invoke/markPhase/getEvidenceLogSince), testWoo.llm, testWoo.cfg
- * - testWoo.env(llm.triageMaxTokens), cfg.triage.maxTurns
- * - loadLibrary("woo:testWooFeasibility.js")
+ * - testWoo.toolkit — specs/invoke/markPhase/getEvidenceLogSince
+ * - testWoo.llm.postChat — tool calling 루프
+ * - testWoo.cfg.getConfig — triage.maxTurns
+ * - testWoo.env — llm.triageMaxTokens
  */
 var testWoo = testWoo || {};
 testWoo.feasibility = (function () {

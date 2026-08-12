@@ -1,16 +1,17 @@
 /*
- * testWooConfig.js (런타임 옵션 3개 + Env 병합 · server-side)
- * ============================================================
- * XtkOption 필수: testWooAiLlmApiKey, testWooAiLlmModel, testWooAiLlmEndpoint 만.
- * 그 외 튜닝·보안·프로바이더: testWooEnv.js
+ * testWooConfig.js (런타임 설정 병합)
+ * ==================================================
+ * XtkOption 시크릿 3개와 testWooEnv 상수를 합쳐 파이프라인 cfg 객체 반환.
+ * LLM·Foundry·Match 모듈이 공통으로 getConfig() 호출.
  *
  * [Main Functions]
  * ===========
- * - getConfig
+ * - getConfig — Env + Option 병합 cfg 객체 반환
  *
  * [Dependencies]
  * =========
- * - loadLibrary("woo:testWooEnv.js") 먼저
+ * - loadLibrary("woo:testWooEnv.js") — 헤더 직후 선로드
+ * - XtkOption — testWooAiLlmApiKey/Model/Endpoint
  */
 try { loadLibrary("woo:testWooEnv.js"); } catch (eEnvLoad) {
   logWarning("[testWoo.cfg] testWooEnv.js preload failed: " + eEnvLoad.message);

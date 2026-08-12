@@ -1,19 +1,23 @@
 /*
- * testWooDedup.js (4단 유사도 dedup · server-side)
+ * testWooDedup.js (Fragment 중복 판정)
  * ==================================================
- * L0 contentHash → L1 jaccard → L2 embedding rerank → L3 set equivalence → L4 LLM 설명(near만).
- * near 판정 비율의 분모는 모집단 COUNT(cfg.foundry.populationCountSql), 후보 결과 건수가 아니다.
+ * Foundry publish 전 후보 SQL을 기존 fragment와 L0~L4 단계로 비교.
+ * near 비율 분모는 모집단 COUNT, 후보 row 수가 아니다.
  *
  * [Main Functions]
  * ===========
- * - check(candidate) → {verdict, matches, scores, symmetricDiff, delegateHuman, reuse}
- * - tokensOf / jaccard
+ * - check — 후보 → {verdict, matches, scores, symmetricDiff, delegateHuman, reuse}
+ * - tokensOf — SQL 정규화 토큰 집합
+ * - jaccard — 두 토큰 집합 Jaccard 유사도
  *
  * [Dependencies]
  * =========
- * - testWoo.lifecycle, testWoo.probe, testWoo.embedding, testWoo.llm, testWoo.cfg
- * - sqlGetInt (모집단 COUNT)
- * - loadLibrary("woo:testWooDedup.js")
+ * - testWoo.lifecycle — normalizeSql·contentHash
+ * - testWoo.probe — L3 set equivalence 실행
+ * - testWoo.embedding — L2 rerank(embedEnabled 시)
+ * - testWoo.llm — L4 near 차이 설명
+ * - testWoo.cfg — foundry.dedup 임계·populationCountSql
+ * - sqlGetInt — 모집단 COUNT
  */
 var testWoo = testWoo || {};
 testWoo.dedup = (function () {

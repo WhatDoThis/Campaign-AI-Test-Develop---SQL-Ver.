@@ -19,3 +19,6 @@ alwaysApply: true
 - Commit: do not mix form XML + JSSP layout changes in one commit without deploy note
 - Deploy order: schema → js library → form/navtree → JSSP
 - Cache litmus: Studio URL must show `v=<n>`; missing `v=` = stale client
+- TBD design items: never implement with a silent default — stop and ask the user (`07_5차` name vs key_column → #152 match false-positive incident)
+- Match/similarity UI copy: never assert “포함/일치” without showing compared values (name-only sets are forbidden for user-facing match claims)
+- Option `testWooAiMatchEnabled`: default OFF until value-aware match (#154) passes C1–C6; AI must not flip ON without user approval

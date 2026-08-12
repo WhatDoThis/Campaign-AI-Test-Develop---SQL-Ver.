@@ -1,6 +1,22 @@
 # Log
 
 ## Log Index
+207. 2026-08-12 개발가이드 AuthDebug 잔여 참조 제거 (#197 정합)
+206. 2026-08-12 Foundry→SQL Stage A 미매칭·재큐잉 루프 수정 · v=159
+205. 2026-08-12 R3 후속 — plan missing API 구분 · Match OFF 가드 · v=158
+204. 2026-08-12 #149R R3 ST0~ST6 · intent 폐기 · v=157
+203. 2026-08-12 upgrade_plan 연속번호 · `[완료]` 중위 표기
+202. 2026-08-12 upgrade_plan 문서번호 재배치 · 진행판 통합
+201. 2026-08-12 #148R R2 draft cache v=156
+200. 2026-08-12 new_ver/jssp module header HUMAN READ 보강
+199. 2026-08-12 new_ver/js module header HUMAN READ 보강
+198. 2026-08-12 #155 임베딩 OFF·영속화 · C1~C6 HUMAN가이드
+197. 2026-08-12 #154 값인식 매칭 · AuthDebug 폐기 · GapAdmin KEEP
+196. 2026-08-12 개편 진행 체크리스트 — R1스킵·#154다음·폐기1차
+195. 2026-08-12 #153 PoC-V — 값 인식 매칭 타당성 조사 (코드변경없음)
+194. 2026-08-12 #152 P0 — 매칭 오탐 긴급 차단 (Match OFF · v=154)
+193. 2026-08-12 #146R — SQL-First 로드맵 재설계 (13/14/15·SUPERSEDED·추적표·98)
+192. 2026-08-12 #145R PoC-S — SQL-First 타당성 조사 (코드변경없음)
 191. 2026-08-12 #147 교정 — create Match 제거 · discover valueContainment=1 (v=153)
 190. 2026-08-12 #147 — intent·plan-only discover·breadcrumb (v=152)
 189. 2026-08-11 #146 — Match 이원화 (dedup=Jaccard / discover=containment)
@@ -195,6 +211,136 @@
 
 ## Log Body
 
+207. 2026-08-12 개발가이드 AuthDebug 잔여 참조 제거 (#197 정합)
+Purpose: AuthDebug.jssp 폐기 후에도 가이드 표·스모크에 남아 있던 경로를 정리. Changes:
+
+- JSSP 표에서 AuthDebug 행 제거 → 배포하지 않음(폐기)으로 이동
+- Studio 접속 URL·스모크 AuthDebug 체크 항목 삭제
+Changed files: docs/report/01_개발가이드.md, docs/log/log.md
+
+206. 2026-08-12 Foundry→SQL Stage A 미매칭·재큐잉 루프 수정 · v=159
+Purpose: Foundry 완료 후 Studio가 SQL로 못 가고 대기로 되돌아가던 루프 차단. Changes:
+
+- Stage A LIKE에 @name·@description 추가(기존 Foundry frag 즉시 검색 가능)
+- Foundry: sample_questions·synonyms에 슬롯/NL 토큰 · dedup reuse 후에도 잔여 슬롯 resolve · done 시 missing 비움
+- Generate after_foundry/no_enqueue — 재큐잉 금지
+- StudioJs: done 후 generate({afterFoundry:true}) · litmus v=159
+Changed files: new_ver/js/testWooFragments.js, new_ver/js/testWooFoundry.js, new_ver/jssp/testWooAiGenerate.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
+
+205. 2026-08-12 R3 후속 — plan missing API 구분 · Match OFF 가드 · v=158
+Purpose: ST0 [생성] 시 `plan missing [TW…]` 원인 분리. Match OFF인데 plan 검사로 실패하던 경로 차단. Changes:
+
+- Match.jssp: Option OFF면 plan 검사 전에 disabled 빈 목록 반환
+- Validate/Register/Match/Generate: 오류 메시지에 API 접두 (`Validate:` / `Match:` / `Register:` / `[Generate]`)
+- StudioJs: Generate 실패 시 `Generate:` 접두 + diag에 error/errId · litmus v=158
+Changed files: new_ver/jssp/testWooAi{Match,Validate,Register,Generate,Studio,StudioJs}.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
+
+204. 2026-08-12 #149R R3 ST0~ST6 · intent 폐기 · v=157
+Purpose: SQL-First 상태머신 반전 — ST0 즉시 입력 · phase ST0~ST6 · create/reuse intent UI 제거. 셸 패널은 R4. Changes:
+
+- ctx.phase ST0~ST6 · generate→ST1/ST2 · folder/campaign/wkf→ST3~ST5 · register→ST6 · reset→ST0
+- 폴더·intent generate/NL 게이트 제거 · setIntent/_syncIntentUi·twIntentBar 삭제
+- goBack/resetCtx 스택 유지 · NL 상시 활성(busy 제외) · embed 경로 유지
+- litmus v=157 (Studio · StudioJs · html 미러 · TW-BOOT)
+- 진행판/INDEX/21/23 갱신 · 다음=R4
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/{00_INDEX,01_진행판,21_SQLFirst_R차수_실행가이드,23_SQLFirst_AI명령문}.md, docs/log/log.md
+
+203. 2026-08-12 upgrade_plan 연속번호 · `[완료]` 중위 표기
+Purpose: 파일명 앞 번호를 00→27 연속으로 맞추고, 완료 표기를 접미 `_완료`에서 `NN_[완료]_이름`으로 이동. Changes:
+
+- 완료 문서: `02~11_[완료]_구차수_*` · `17/18/24/25_[완료]_*`
+- 현행: `12~16` 구잔여/포인터 · `19~23` SQL-First/사고/명령 · `26` C1C6 · `27` 드리프트 · `[별도]_관리자원본`
+- `01_진행판` 카탈로그·`00_INDEX`·`00_ReportIndex`·교차참조(23/21/16) 정합
+Changed files: docs/report/upgrade_plan/* (rename+INDEX+진행판), docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+202. 2026-08-12 upgrade_plan 문서번호 재배치 · 진행판 통합
+Purpose: 번호 중복 해소 · `_완료` 표시 · 분산 체크리스트를 `01_진행판`으로 통합. 본문 삭제 없음(중복 체크리스트만 병합 삭제). Changes:
+
+- 번호 대역: 00~01 진입 · 10~24 구차수 · 30~39 조사/사고 · 32~36·40 SQL-First 정본
+- `17_개편진행_체크리스트` → `01_진행판.md` 통합 후 제거
+- `_완료` 접미: 구0~5·PoC조사·임베딩실태 등 역할 종료 문서
+- `00_INDEX`·`00_ReportIndex` 경로 전면 갱신
+Changed files: docs/report/upgrade_plan/* (rename+01_진행판+00_INDEX), docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md(경로), docs/log/log.md
+
+201. 2026-08-12 #148R R2 draft cache v=156
+Purpose: Studio 클라이언트 미반영 SQL 임시 캐시(twStudioCache). Register만 DB. S8 runtime probe — HUMAN PASS 미주장. Changes:
+
+- twStudioCache v:1 · cacheId twc_* · sessionStorage probe / memory fallback · localStorage 금지
+- putDraft on generate/validate passed · renderListPane draft rows [미반영(임시)] · Match OFF에도 표시
+- resetCtx clears cache · register removes cacheId · state.cacheId · memory backend 상시 경고
+- litmus v=156 (TW-BOOT · StudioJs src · okMsg)
+- docs: 12 S8 probe note · 13 §7 R8 defer · 16/17 R2 [x] repo
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md, docs/report/upgrade_plan/{12_PoC-S_SQLFirst타당성,13_SQLFirst_여정정본,16_SQLFirst_AI명령문,17_개편진행_체크리스트}.md
+(선행 #200: jssp module headers HUMAN READ)
+
+200. 2026-08-12 new_ver/jssp module header HUMAN READ 보강
+Purpose: new_ver/jssp 11개 JSSP 헤더를 module-header-docstring 형식으로 통일. Changes:
+
+- 역할·Main Functions(endpoint action)·Dependencies 재작성 · changelog 제거
+- Studio/StudioJs/Generate/Register/Match에 [Invariants] 선택 추가
+Changed files: new_ver/jssp/testWooAi{FragmentAdmin,FragmentReview,GapAdmin,Generate,Match,QueueStatus,Register,Studio,StudioContext,StudioJs,Validate}.jssp, docs/log/log.md
+
+199. 2026-08-12 new_ver/js module header HUMAN READ 보강
+Purpose: new_ver/js 19개 헤더 통일 + 이후 파일에도 동일 형식이 적용되도록 Rule/Skill 고정. Changes:
+
+- 역할·Main Functions(공개 API)·Dependencies 재작성 · 고중요도만 [Options]/[Invariants]
+- 신규 rule `module-header-docstring.mdc` · campaign-ai-project / SKILL / AGENTS 연동
+Changed files: new_ver/js/testWoo*.js (19), .cursor/rules/{module-header-docstring.mdc,campaign-ai-project.mdc}, .cursor/skills/campaign-ai-studio/SKILL.md, AGENTS.md, docs/log/log.md
+
+198. 2026-08-12 #155 임베딩 OFF·영속화 · C1~C6 HUMAN가이드
+Purpose: dedup L2 무효 과금 차단 + emb_* publish 영속화. Match와 무관. C1~C6 절차 명문화. Changes:
+
+- Task1: testWooEnv embedEnabled=false(+사유 주석)
+- Task2: 25_[완료]_임베딩경로_실태점검.md (F-1~F-10)
+- Task3: lifecycle.publish emb_* · ensureEmbedding emb_updated_at · postEmbedding wrap.error · _embedEndpoint null
+- 26_Match_C1C6_HUMAN검증.md · INDEX/체크리스트 갱신 · embedEnabled true 복구는 스모크+승인만
+Changed files: new_ver/js/{testWooEnv,testWooEmbedding,testWooLifecycle,testWooLlm}.js, docs/report/upgrade_plan/{17_임베딩경로,18_Match_C1C6,17_체크리스트,16_AI명령문,00_INDEX,15_매칭오탐}.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+197. 2026-08-12 #154 값인식 매칭 · AuthDebug 폐기 · GapAdmin KEEP
+Purpose: P0 오탐 원인(값 미비교·“포함” 단정)을 discover에서 제거하고 AuthDebug repo 정리. Option ON은 하지 않음. Changes:
+
+- AuthDebug.jssp: repo 삭제(콘솔 기삭제) · GapAdmin KEEP(Foundry upsertGapLog 소비자)
+- Match: SAME/CONFLICT/MISSING · CONFLICT 제외 · Top-10 · 범위/레거시 제외 · sqlContentHash 동일 배지
+- Repository listAiSqlForMatch `@sql_query` · Studio/html 대조표 UI · litmus v=155
+- 사고기록·17체크·07 dedup 주석 · Option 기본 OFF 유지
+Changed files: new_ver/js/{testWooMatch,testWooRepository}.js, new_ver/jssp/{testWooAiMatch,testWooAiStudio,testWooAiStudioJs,testWooAiGapAdmin}.jssp, new_ver/html/testWooAiStudio.js, (deleted) testWooAiAuthDebug.jssp, docs/report/upgrade_plan/{07,15_매칭오탐,16_AI명령문,17,00_INDEX}.md, docs/log/log.md
+
+196. 2026-08-12 개편 진행 체크리스트 — R1스킵·#154다음·폐기1차
+Purpose: R1 미실시 상태로 넘어가면 안 됨을 확정하고 #* 체크·폐기1차 정리. Changes:
+
+- 17_개편진행_체크리스트: [x]/[S]/누락흡수 · 다음키=#154 · AuthDebug 등 폐기1차
+- 16 AI명령문·15 R1 행·INDEX 별칭 정합
+Changed files: docs/report/upgrade_plan/{17_개편진행_체크리스트,16_SQLFirst_AI명령문,15_SQLFirst_R차수,00_INDEX}.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+195. 2026-08-12 #153 PoC-V — 값 인식 매칭 타당성 조사 (코드변경없음)
+Purpose: 복합키 매칭 전 값 저장·정규화·범위·레거시 사실 확정. Changes:
+
+- V1~V7 파일:라인 · 결론 (a)가능 (b)plan_json만 (c)domain정규화불가 (d)범위exact만 (e)레거시제외·건수HUMAN
+- #154 착수 가능(단 c 한계·범위제외·Option ON 승인 필수)
+Changed files: docs/report/upgrade_plan/24_[완료]_PoC-V_값인식매칭.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+194. 2026-08-12 #152 P0 — 매칭 오탐 긴급 차단 (Match OFF · v=154)
+Purpose: 서울≠인천을 “포함”으로 단정하던 유사목록 즉시 차단. matchByPlan 미삭제. Changes:
+
+- Option testWooAiMatchEnabled 기본 OFF · Studio/Match API 가드 · reuse 숨김 · litmus v=154
+- 사고기록·98 D-4·07 TBD 사고표기 · 가드레일 TBD/단정문구 금지
+Changed files: new_ver/jssp/testWooAiStudio.jssp, testWooAiStudioJs.jssp, testWooAiMatch.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/{15_매칭오탐,07_5차,98,00_INDEX}.md, .cursor/rules/00-acc-guardrails.mdc, docs/report/00_ReportIndex.md, docs/log/log.md
+
+193. 2026-08-12 #146R — SQL-First 로드맵 재설계 (13/14/15·SUPERSEDED·추적표·98)
+Purpose: 여정 반전 정본화 · 구 0~9차 SUPERSEDED · AI가 R0~R8로 재작업 가능하도록 라우팅. Changes:
+
+- 13 여정정본(ST0~ST6) · 14 자산판정 · 15 R차수 실행가이드 · 16 AI명령문 · 98 스펙드리프트 D-1~D-3
+- 01~11 구 가이드 SUPERSEDED 배너 · INDEX 라우팅 R0~R8 우선
+- 추적표 v1.1: 신규 차수 재배정 열 + SF-1~SF-12 (기존 ID 삭제·재번호 없음)
+Changed files: docs/report/upgrade_plan/{00_INDEX,01~11배너,11_포인터,13,14,15,16,98}.md, docs/report/11_고도화_추적표.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+192. 2026-08-12 #145R PoC-S — SQL-First 타당성 조사 (코드변경없음)
+Purpose: 조건선입력·plan-only·캐시·큐·락·복제 API를 파일:라인으로 확정. new_ver 미수정. Changes:
+
+- S1~S12 사실·미확인·HUMAN_CONSOLE 분리 · 결론 (a)~(f) 단정
+- (a)(b) 가능 · (c) DB미기록 가능/저장처 HUMAN · (d) WKF별 신규행 · (e) 큐정리 필요 · (f) 상대시점 미사용
+Changed files: docs/report/upgrade_plan/18_[완료]_PoC-S_SQLFirst타당성.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
 191. 2026-08-12 #147 교정 — create Match 제거 · discover valueContainment=1 (v=153)
 Purpose: create 전역 유사목록·reuse name-only 오매칭(서울≠인천) 수정. Changes:
 
@@ -216,14 +362,14 @@ Purpose: 탐색용 containment Top-N과 중복판정 Jaccard 0.9를 모드 분�
 - containment() 추가 · mode=dedup|discover (기본 dedup=기존 동일)
 - discover: intersection≥1 · Top20 · name/valueContainment (plan_json)
 - Match.jssp mode 통과 · listAiSqlForMatch에 plan_json
-Changed files: new_ver/js/testWooMatch.js, new_ver/jssp/testWooAiMatch.jssp, new_ver/js/testWooRepository.js, docs/report/upgrade_plan/12_PoC-M_매칭의미론.md, docs/log/log.md
+Changed files: new_ver/js/testWooMatch.js, new_ver/jssp/testWooAiMatch.jssp, new_ver/js/testWooRepository.js, docs/report/upgrade_plan/17_[완료]_PoC-M_매칭의미론.md, docs/log/log.md
 
 188. 2026-08-11 PoC-M(#145) — 매칭의미론·복제가능성 조사 (코드변경없음)
 Purpose: 탐색 매칭·복제·시점정합 설계용 사실 확인. new_ver 미수정. Changes:
 
 - M1~M8 파일:라인·Adobe URL 근거 기입 · 결론 (a)(b)(c)(d) 단정
 - #146/#147 착수 게이트: M1·M3 확인 · plan-only 분리 가능
-Changed files: docs/report/upgrade_plan/12_PoC-M_매칭의미론.md, docs/report/00_ReportIndex.md, docs/log/log.md
+Changed files: docs/report/upgrade_plan/17_[완료]_PoC-M_매칭의미론.md, docs/report/00_ReportIndex.md, docs/log/log.md
 
 187. 2026-08-11 5차 — 매칭잔상/Max안내 분기 (matchShown · v=151)
 Purpose: 뒤로/초기화 후 캠페인 재진입 시 이전 plan 매칭·Max 모순 안내 제거. Changes:
@@ -281,7 +427,7 @@ Changed files: new_ver/js/testWooFoundry.js, new_ver/js/testWooLifecycle.js, new
 Purpose: HUMAN — litmus v=146 · 작업영역 고정 UI 원하는 대로. 생성/Max15는 v=144에서 PASS. Changes:
 
 - RESULT/plan 3차 UI+기능 PASS · 다음 TG-D 잔여 또는 4차
-Changed files: docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/plan/3차_plan.md, docs/log/log.md
+Changed files: docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/plan/3차_plan.md, docs/log/log.md
 
 179. 2026-08-11 v=146 — Studio 작업영역 560px 고정 (목록 길이 무관)
 Purpose: HUMAN UI — 목록 max 시 composer 부유·min 시 버튼 잘림. 작업영역 고정 px. Changes:
@@ -296,7 +442,7 @@ Purpose: HUMAN 기능 PASS. 진단 v=143 잔존·15건 목록 UI 깨짐 수정. 
 - StudioJs/html litmus v=145 · ListPane max-height 420px overflow
 - ExtendWorkflow embed URL v=145
 - RESULT에 HUMAN PASS · BindPick 삭제 가이드 · Integer Option OK
-Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/input_form/testWooExtendWorkflow.xml, docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/log/log.md
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/input_form/testWooExtendWorkflow.xml, docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/log/log.md
 
 177. 2026-08-11 v=144 — createCampaign=T2 · createWkf=T3b 템플릿 API
 Purpose: PoC-T2/T3b 확정 API를 Studio 생성 경로에 반영. bare Write·WKF89 클론 제거. Changes:
@@ -305,43 +451,43 @@ Purpose: PoC-T2/T3b 확정 API를 Studio 생성 경로에 반영. bare Write·WK
 - createWkfFromTemplate: CreateInstanceFromModel(17234)
 - Options 기본: CampaignTemplateId=10002 · WkfTemplateId=17234 · Name=wfEmptyTemplate_CUSTOM
 - Studio litmus v=144
-Changed files: new_ver/js/testWooWorkflowClone.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/html/testWooAiStudio.js, docs/plan/3차_plan.md, docs/report/upgrade_plan/04_3a_PoC_Template.md, docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/log/log.md
+Changed files: new_ver/js/testWooWorkflowClone.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/html/testWooAiStudio.js, docs/plan/3차_plan.md, docs/report/upgrade_plan/08_[완료]_구차수_3a_PoC_Template.md, docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/log/log.md
 
 176. 2026-08-11 PoC-T3b PASS — WKF102/op-id=23000 · CreateInstanceFromModel 확정
 Purpose: HUMAN UI — OP48 Targeting에 PoC-T3b WKF(WKF102) · Being edited · operation-id=23000 · LLM 그래프. Changes:
 
 - RESULT/Template/plan T3b PASS · v=144 구현 준비
-Changed files: docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/report/upgrade_plan/04_3a_PoC_Template.md, docs/plan/3차_plan.md, docs/log/log.md
+Changed files: docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/report/upgrade_plan/08_[완료]_구차수_3a_PoC_Template.md, docs/plan/3차_plan.md, docs/log/log.md
 
 175. 2026-08-11 PoC-T3b 생성 OK id=29320 · 검증 쿼리 @operation-id 수정
 Purpose: CreateInstanceFromModel 성공(29320). 검증 ExecuteQuery만 XTK-170036. Changes:
 
 - Template/RESULT에 T3b 실측 · [@operation-id] · T3b-check 스크립트
-Changed files: docs/report/upgrade_plan/04_3a_PoC_Template.md, docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/log/log.md
+Changed files: docs/report/upgrade_plan/08_[완료]_구차수_3a_PoC_Template.md, docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/log/log.md
 
 174. 2026-08-11 PoC-T3a FAIL — CreateWorkflowFromModelId returns 0 · T3b로 전환
 Purpose: HUMAN 실측 workflowId=0(무생성). Community soft-fail과 동일 → CreateInstanceFromModel로 전환. Changes:
 
 - Template/RESULT/plan에 T3a FAIL · T3b 스크립트 기입
-Changed files: docs/report/upgrade_plan/04_3a_PoC_Template.md, docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/plan/3차_plan.md, docs/log/log.md
+Changed files: docs/report/upgrade_plan/08_[완료]_구차수_3a_PoC_Template.md, docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/plan/3차_plan.md, docs/log/log.md
 
 173. 2026-08-11 PoC-T2 PASS — CreateOperationFromModelId+program-id · OP48/WKF101
 Purpose: HUMAN 실측 — 템플릿 10002 생성 후 program-id=29110 연결. 캠페인+WKF(customActivity) 동반. Changes:
 
 - RESULT/PoC_Template/plan에 T2 PASS · 확정 2단계 절차 기입
-Changed files: docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/report/upgrade_plan/04_3a_PoC_Template.md, docs/plan/3차_plan.md, docs/log/log.md
+Changed files: docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/report/upgrade_plan/08_[완료]_구차수_3a_PoC_Template.md, docs/plan/3차_plan.md, docs/log/log.md
 
 172. 2026-08-11 PoC-T1 — opEmptyTemplate_LLM id=10002 확정
 Purpose: HUMAN 제공 — 캠페인 템플릿 id=10002. PoC-T2 CreateOperationFromModelId에 사용. Changes:
 
 - PoC_Template / RESULT / 3차_plan에 id=10002 기입
-Changed files: docs/report/upgrade_plan/04_3a_PoC_Template.md, docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/plan/3차_plan.md, docs/log/log.md
+Changed files: docs/report/upgrade_plan/08_[완료]_구차수_3a_PoC_Template.md, docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/plan/3차_plan.md, docs/log/log.md
 
 171. 2026-08-11 PoC-T — 캠페인/WKF는 템플릿 API · 구현 보류
 Purpose: HUMAN — bare Write 캠페인은 껍데기. 새 캠페인=opEmptyTemplate_LLM, WKF추가=wfEmptyTemplate_CUSTOM(17234). 공식 Create*FromModelId 조사. 코드 미변경. Changes:
 
-- 04_3a_PoC_Template.md · RESULT/plan 템플릿 정정 · ReportIndex
-Changed files: docs/report/upgrade_plan/04_3a_PoC_Template.md, docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/plan/3차_plan.md, docs/report/00_ReportIndex.md, docs/log/log.md
+- 08_[완료]_구차수_3a_PoC_Template.md · RESULT/plan 템플릿 정정 · ReportIndex
+Changed files: docs/report/upgrade_plan/08_[완료]_구차수_3a_PoC_Template.md, docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/plan/3차_plan.md, docs/report/00_ReportIndex.md, docs/log/log.md
 
 170. 2026-08-11 3차 정정 — Program→Campaign→WKF · Max15 · PoC-C PASS · v=143
 Purpose: PoC-C PASS(OP_testWooPoCC_001/20000). 계층 정정 — Campaign 생성·목록·WKF는 operation-id=캠페인. Max15. Changes:
@@ -349,20 +495,20 @@ Purpose: PoC-C PASS(OP_testWooPoCC_001/20000). 계층 정정 — Campaign 생성
 - wfClone: list/createCampaign · list/createWkf(campaign) · Max15
 - Context API listCampaigns/createCampaign · listWkfs campaign_id 필수
 - Studio UI CAMPAIGN 모드 · litmus v=143
-Changed files: new_ver/js/testWooWorkflowClone.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/input_form/testWooExtendWorkflow.xml, docs/plan/3차_plan.md, docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/log/log.md
+Changed files: new_ver/js/testWooWorkflowClone.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/input_form/testWooExtendWorkflow.xml, docs/plan/3차_plan.md, docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/log/log.md
 
 169. 2026-08-11 PoC-C 스크립트 — Program id→fullName 조회 후 Campaign Write
 Purpose: fullName 수기 입력 제거. xtk:folder @id로 @fullName 조회 후 operation Write. Changes:
 
-- 04_3a_PoC_Campaign.md 스크립트 보완
-Changed files: docs/report/upgrade_plan/04_3a_PoC_Campaign.md, docs/log/log.md
+- 07_[완료]_구차수_3a_PoC_Campaign.md 스크립트 보완
+Changed files: docs/report/upgrade_plan/07_[완료]_구차수_3a_PoC_Campaign.md, docs/log/log.md
 
 168. 2026-08-11 계층 정정 — Program→Campaign→WKF · PoC-C · Max15
 Purpose: HUMAN 정정 — 2차 AI폴더는 Program. 그 안 Campaign(nms:operation) 생성/선택 후 WKF. v=142는 Program에 WKF를 붙인 오해 구현. Changes:
 
 - RESULT·3차_plan 계층 정정 · 캠페인당 WKF Max=15
 - PoC-C 절차 문서 신설 (캠페인 Write 가능 여부)
-Changed files: docs/plan/3차_plan.md, docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/report/upgrade_plan/04_3a_PoC_Campaign.md, docs/report/00_ReportIndex.md, docs/log/log.md
+Changed files: docs/plan/3차_plan.md, docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/report/upgrade_plan/07_[완료]_구차수_3a_PoC_Campaign.md, docs/report/00_ReportIndex.md, docs/log/log.md
 
 167. 2026-08-11 3차 WKF 라이프사이클 — Write클론·soft-lock·open폴백 v=142
 Purpose: PoC RESULT 반영 — 템플릿 WKF89 클론, operation-id=AI프로그램, soft-lock, xtk://open 폴백. Spawn 금지. Changes:
@@ -371,45 +517,45 @@ Purpose: PoC RESULT 반영 — 템플릿 WKF89 클론, operation-id=AI프로그�
 - Context API listWkfs/createWkf/selectWkf/releaseLock
 - Studio UI 새 WKF 생성·잠금·열기안내 · litmus v=142 (JSSP+embed form)
 - plan: docs/plan/3차_plan.md · 템플릿 WKF89(26021) RESULT 정리(#166)
-Changed files: new_ver/schema/testWooAiWkfLock.xml, new_ver/js/testWooWorkflowClone.js, new_ver/js/testWooStudioContext.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/input_form/testWooExtendWorkflow.xml, docs/plan/3차_plan.md, docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/log/log.md
+Changed files: new_ver/schema/testWooAiWkfLock.xml, new_ver/js/testWooWorkflowClone.js, new_ver/js/testWooStudioContext.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/input_form/testWooExtendWorkflow.xml, docs/plan/3차_plan.md, docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/log/log.md
 
 166. 2026-08-11 3차 템플릿 확정 — WKF89(id=26021) · PoC RESULT 정리
 Purpose: 운영자 확정 — 클론 소스는 WKF89(26021). PoC-2의 WKF94는 검증용. Changes:
 
 - RESULT 3차 전제에 템플릿 WKF89/26021 · Option명 권장 기입
-Changed files: docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/log/log.md
+Changed files: docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/log/log.md
 
 165. 2026-08-11 PoC-2 보완 — WKF는 program 연결 필수(folder만으론 AI UI 미표시)
 Purpose: HUMAN 실측 — 클론 WKF가 Campaign workflows(1104)에는 보이나 operation/program-id=0이라 isAi 프로그램(TEST1/2)에 안 보임. 3차 Write에 program 링크 필수. Changes:
 
 - RESULT 3차 전제에 프로그램 단위 관리·DoD 보강 기입
-Changed files: docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/report/upgrade_plan/04_3a_PoC.md, docs/log/log.md
+Changed files: docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/report/upgrade_plan/05_[완료]_구차수_3a_PoC절차.md, docs/log/log.md
 
 164. 2026-08-11 PoC-1~3 종료 — PoC-3 스킵→soft-lock · 3차 가능
 Purpose: PoC-3 workflow @lockedBy DB확장은 필수 아님. 운영자 요청으로 미실시=FAIL(폴백). 3차 잠금은 soft-lock 테이블. Changes:
 
 - RESULT: PoC-1 FAIL · PoC-2 PASS · PoC-3 FAIL(스킵) · 3차 전제표 확정
-Changed files: docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/report/upgrade_plan/04_3a_PoC.md, docs/log/log.md
+Changed files: docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/report/upgrade_plan/05_[완료]_구차수_3a_PoC절차.md, docs/log/log.md
 
 163. 2026-08-11 PoC-2 PASS — Write 클론 WKF_testWooPoC2_001 (state=0)
 Purpose: HUMAN 실측 — queryDef+Write로 중지 상태 WKF 복제 성공. Spawn 미사용. Changes:
 
 - RESULT·04_3a_PoC에 PoC-2 PASS 기입 (id=29140, src=26800/WKF94)
-Changed files: docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/report/upgrade_plan/04_3a_PoC.md, docs/log/log.md
+Changed files: docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/report/upgrade_plan/05_[완료]_구차수_3a_PoC절차.md, docs/log/log.md
 
 162. 2026-08-11 PoC-1 FAIL — xtk://open 미동작 · PoC-2 진행
 Purpose: HUMAN 실측 — 외부 HTML `xtk://open` 클릭으로 Explorer WKF 미오픈. 3차는 폴백 경로 확정. Changes:
 
 - RESULT·04_3a_PoC RESULT표에 PoC-1 FAIL(pk=26800) 기입
-Changed files: docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/report/upgrade_plan/04_3a_PoC.md, docs/log/log.md
+Changed files: docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/report/upgrade_plan/05_[완료]_구차수_3a_PoC절차.md, docs/log/log.md
 
 161. 2026-08-11 PoC-1~3 HUMAN 실측 절차 — RESULT 대기 (코드 변경 없음)
 Purpose: 3차 선행 PoC-1(open)·PoC-2(Write clone)·PoC-3(lockedBy) 콘솔 실측 가이드 배포. Agent 자체 PASS 금지. Changes:
 
-- `04_3a_PoC_RESULT.md` 신설 — 검증 절차·기입란·회신 형식
-- `04_3a_PoC.md` RESULT를 WAITING + RESULT.md 링크로 갱신
+- `06_[완료]_구차수_3a_PoC_RESULT.md` 신설 — 검증 절차·기입란·회신 형식
+- `05_[완료]_구차수_3a_PoC절차.md` RESULT를 WAITING + RESULT.md 링크로 갱신
 - ReportIndex에 RESULT 파일 등록
-Changed files: docs/report/upgrade_plan/04_3a_PoC_RESULT.md, docs/report/upgrade_plan/04_3a_PoC.md, docs/report/00_ReportIndex.md, docs/log/log.md
+Changed files: docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/report/upgrade_plan/05_[완료]_구차수_3a_PoC절차.md, docs/report/00_ReportIndex.md, docs/log/log.md
 
 160. 2026-08-11 isAiFolder 폼 colspan=2 — Advanced colcount=2 정렬
 Purpose: Advanced parameters(colcount=2)에서 체크박스가 한 칸만 차지해 라벨 열이 비는 현상 수정. Changes:
@@ -449,7 +595,7 @@ Purpose: PoC-0 PASS 후 Tools 진입(rights)과 IE-safe 3분할 셸 골격(데�
 
 - PoC-0 RESULT PASS 기입 · 분기 A(view 유지+rights)
 - Studio 셸 #twInfoBar/#twMainTable · 더미 3행 · v=140 · html 동기 · 폼 URL v 동기
-Changed files: new_ver/navtree/testWooAiNavtree.xml, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/input_form/testWooExtendWorkflow.xml, docs/report/upgrade_plan/04_3a_PoC.md, docs/plan/1차_plan.md, docs/log/log.md
+Changed files: new_ver/navtree/testWooAiNavtree.xml, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/input_form/testWooExtendWorkflow.xml, docs/report/upgrade_plan/05_[완료]_구차수_3a_PoC절차.md, docs/plan/1차_plan.md, docs/log/log.md
 
 154. 2026-08-11 INDEX §3.0 — 운영자 응답=배포·HUMAN·다음키만 · PoC-0 HUMAN 대기
 Purpose: 운영자는 코드 리뷰 없이 콘솔 배포·테스트만 수행. Agent 자체검증 후 배포목록·TG·다음 라우팅키만 전달하도록 INDEX에 고정. PoC-0은 RESULT HUMAN 대기. Changes:
@@ -488,9 +634,9 @@ Changed files: docs/report/upgrade_plan/00_INDEX.md, docs/log/log.md
 149. 2026-08-11 9차 가이드 — 미사용 코드 `_폐기` 개명·콘솔 삭제 정리
 Purpose: 고도화 마지막 차수(8차) 이후 디버깅 안정화 뒤 new_ver 미사용 자산과 Campaign 등록 객체를 깔끔히 제거하는 절차를 로드맵에 추가. Changes:
 
-- `11_9차_미사용코드폐기정리.md` — CLEAN-9-1~5, `_폐기` 파일명 규칙, 콘솔 삭제 순서, 시드 후보·폐기목록 템플릿
+- `15_구차수_9차_미사용코드폐기정리.md` — CLEAN-9-1~5, `_폐기` 파일명 규칙, 콘솔 삭제 순서, 시드 후보·폐기목록 템플릿
 - INDEX/추적표/8차 후속/ReportIndex/가드레일 연결
-Changed files: docs/report/upgrade_plan/11_9차_미사용코드폐기정리.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/10_8차_확장폼폐기.md, docs/report/11_고도화_추적표.md, docs/report/00_ReportIndex.md, .cursor/rules/00-acc-guardrails.mdc, docs/log/log.md
+Changed files: docs/report/upgrade_plan/15_구차수_9차_미사용코드폐기정리.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/14_구차수_8차_확장폼폐기.md, docs/report/11_고도화_추적표.md, docs/report/00_ReportIndex.md, .cursor/rules/00-acc-guardrails.mdc, docs/log/log.md
 
 148. 2026-08-11 로드맵 문서 P0-2·P1 수정 — PoC-0·INJ-8-2 본문승인·가드레일
 Purpose: 검수 P0-2/P1 반영. navtree view 비문서화 리스크를 PoC-0으로 막고, INJ-8-2 본문 반영을 운영자 승인으로 확정. Changes:

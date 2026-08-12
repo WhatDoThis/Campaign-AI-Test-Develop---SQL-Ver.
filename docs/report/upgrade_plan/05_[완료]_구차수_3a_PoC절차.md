@@ -1,13 +1,13 @@
 # 3a · PoC 선행 검증 (for AI + HUMAN)
 
-> **코드 변경 금지.** 결과만 `docs/report/upgrade_plan/04_3a_PoC_RESULT.md`로 기록(또는 본 파일 하단 RESULT 채움).  
+> **코드 변경 금지.** 결과만 `docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md`로 기록(또는 본 파일 하단 RESULT 채움).  
 > **PoC-0은 1차 착수 전 필수.** PoC-1~3은 3차 착수 전(요청문: 30일 전 권장).
 
 ## 0. 실행 프롬프트
 
 ```
 [PoC · 선행 검증 — PoC-0 필수 / PoC-1~3는 3차 전]
-첨부: docs/report/upgrade_plan/04_3a_PoC.md
+첨부: docs/report/upgrade_plan/05_[완료]_구차수_3a_PoC절차.md
 규칙: new_ver 코드 수정 금지. 검증방법/성공기준/폴백/소요만.
 산출: 각 PoC PASS|FAIL + 증거(스크린샷 설명/로그)를 RESULT 섹션에 기입.
 PoC-0 FAIL 이면 1차 착수 금지(폴백 경로로 1차 설계만 허용).
@@ -42,7 +42,7 @@ PoC-0 FAIL 이면 1차 착수 금지(폴백 경로로 1차 설계만 허용).
 
 | 경로 | 구분 | 요지 |
 |---|---|---|
-| 본 파일 RESULT 섹션 또는 `04_3a_PoC_RESULT.md` | 신규/수정 | 실측 기록 |
+| 본 파일 RESULT 섹션 또는 `06_[완료]_구차수_3a_PoC_RESULT.md` | 신규/수정 | 실측 기록 |
 | `docs/log/log.md` | 수정 | PoC 완료 로그(선택) |
 
 **new_ver 코드 변경 = FAIL 조건** (PoC-0 폴백용 런처 폼은 **1차 구현 시** 작성 — PoC 단계에서는 만들지 않음)
@@ -126,7 +126,7 @@ PoC-0 FAIL 이면 1차 착수 금지(폴백 경로로 1차 설계만 허용).
 
 ## RESULT (채워 넣을 것)
 
-상세 절차·기입란: [`04_3a_PoC_RESULT.md`](04_3a_PoC_RESULT.md) (HUMAN 대기 — Agent 자체 PASS 금지)
+상세 절차·기입란: [`06_[완료]_구차수_3a_PoC_RESULT.md`](06_[완료]_구차수_3a_PoC_RESULT.md) (HUMAN 대기 — Agent 자체 PASS 금지)
 
 | PoC | 판정 | 증거 | 결정된 폴백 | 일자 |
 |---|---|---|---|---|

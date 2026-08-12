@@ -1,17 +1,22 @@
 /*
- * testWooEnv.js (내장 튜닝·가드레일 상수 · server-side)
- * =====================================================
- * Git 버전관리 대상. 배포 후 값 변경 시 JS 라이브러리만 재등록하면 된다.
- * XtkOption은 시크릿 3개만: testWooAiLlmApiKey / Model / Endpoint
- * toolkit.totalCallBudget=132 (E-1: 3슬롯×36 + margin24). foundry.dailyBudget 미구현.
+ * testWooEnv.js (내장 튜닝·가드레일 상수)
+ * ==================================================
+ * Git 관리 상수. 배포 후 JS 라이브러리만 재등록하면 튜닝 반영.
+ * 시크릿은 XtkOption 3개만 — 나머지는 ENV 객체.
  *
  * [Main Functions]
  * ===========
- * - getEnv — ENV 상수 객체 반환 (런타임 변경 없음)
+ * - getEnv — ENV 상수 객체 반환(런타임 변경 없음)
+ * - ENV — guard·llm·toolkit·foundry·triage 등 내장 상수
  *
  * [Dependencies]
  * =========
- * - loadLibrary("woo:testWooEnv.js") — testWooConfig.js보다 먼저
+ * - loadLibrary("woo:testWooEnv.js") — testWooConfig.js보다 선로드
+ *
+ * [Options]
+ * =========
+ * - 시크릿 3개는 testWooConfig.js가 XtkOption에서 읽음(apiKey/model/endpoint)
+ * - llm.embedEnabled 기본 false — 스모크·승인 전 임베딩 과금 차단
  */
 var testWoo = testWoo || {};
 testWoo.env = (function () {
@@ -68,7 +73,10 @@ testWoo.env = (function () {
       useProxy: false,
       pass0Examples: "",
       embedModel: "openai/text-embedding-3-small",
-      embedEnabled: true,
+      // 임베딩은 dedup L2 rerank 정렬에만 쓰이고 최종 verdict 에 영향이 없다(L0 해시/L3 대칭차집합이 결정).
+      // 게다가 publish 가 emb_* 를 저장하지 않아 캐시가 100% 미스이며 check() 마다 최대 9건을 재임베딩한다.
+      // 영속화(#155 Task 3) 코드는 반영됨. true 복구는 HUMAN 스모크+사용자 승인 후에만.
+      embedEnabled: false,
       pass0MaxTokens: 2048,
       pass1MaxTokens: 8192,
       triageMaxTokens: 4096,

@@ -60,7 +60,8 @@ When changing server JS or JSSP:
 - [ ] `HttpClientRequest.execute()` sync only — never reference `.wait`
 - [ ] `MemoryBuffer`: request `fromString(s,"utf-8")`; response `toString()` (int CODEPAGE)
 - [ ] queryDef: `lineCount` ≤ 5000; Stage A excludes `sql_text` bulk load
-- [ ] Module docstring (Korean) at file top per project rule #6
+- [ ] Module header per `.cursor/rules/module-header-docstring.mdc`  
+      (역할 한 줄 + 짧은 역할 블록 · `[Main Functions]` 공개 API만 · `[Dependencies]` 연결 방식 · 서술형 최소화)
 - [ ] **Data access**: no sqlExec; no SQL INSERT for seed/metadata — see [acc-data-access.md](acc-data-access.md)
 
 ## Subagent hints

@@ -1,27 +1,30 @@
 /*
- * testWooWorkflowClone.js (Campaign·WKF 템플릿 생성·soft-lock · server-side)
- * ================================================================
- * 3차 v=144: Program(@isAiFolder) → Campaign(nms:operation) → WKF.
- * 캠페인: CreateOperationFromModelId + program-id Write (PoC-T2).
- * WKF 추가: CreateInstanceFromModel (PoC-T3b). Spawn/Start 금지. soft-lock.
- * operation-id = 캠페인 id. 캠페인당 WKF Max=15.
+ * testWooWorkflowClone.js (Campaign·WKF 템플릿·잠금)
+ * ==================================================
+ * Program(@isAiFolder)→Campaign→WKF 계층 생성·목록·soft-lock.
+ * Spawn/Start 금지. 캠페인당 WKF Max=15.
  *
  * [Main Functions]
  * ===========
- * 1. getTemplateName / getCampaignTemplateId / getWkfTemplateId / getMaxWkfPerCampaign
- * 2. getProgramFullName / listCampaignsByProgram / createCampaign
- * 3. listWkfsByCampaign / createWkfFromTemplate
- * 4. acquireLock / releaseLock / getLock
- * 5. resolveWorkflowsByName — 5차 전역 매칭용 WKF·캠페인·Program 메타
+ * - getTemplateName — WKF 템플릿 표시명
+ * - getCampaignTemplateId — 캠페인 템플릿 id
+ * - getWkfTemplateId — WKF 템플릿 id
+ * - getMaxWkfPerCampaign — 캠페인당 WKF 상한
+ * - getProgramFullName — Program id→fullName
+ * - listCampaignsByProgram — Program 하위 Campaign 목록
+ * - createCampaign — CreateOperationFromModelId+Write
+ * - listWkfsByCampaign — Campaign 하위 WKF 목록
+ * - listWkfsByProgram — Program 하위 WKF 목록
+ * - createWkfFromTemplate — CreateInstanceFromModel
+ * - resolveWorkflowsByName — 전역 WKF·캠페인·Program 메타
+ * - acquireLock — WKF soft-lock 획득
+ * - releaseLock — soft-lock 해제
+ * - getLock — 현재 lock 조회
  *
  * [Dependencies]
  * =========
- * - Option testWooAiCampaignTemplateId (기본 10002 = opEmptyTemplate_LLM)
- * - Option testWooAiWkfTemplateId (기본 17234 = wfEmptyTemplate_CUSTOM)
- * - Option testWooAiWkfTemplateName (기본 wfEmptyTemplate_CUSTOM · 조회/표시)
- * - Option testWooAiWkfMaxPerCampaign (기본 15, ACC상한 20 미만)
- * - nms.operation.CreateOperationFromModelId · xtk.queryDef.CreateInstanceFromModel
- * - woo:testWooAiWkfLock · xtk.session.Write
+ * - nms:operation·xtk:workflow·woo:testWooAiWkfLock — schema·Write
+ * - testWooAiCampaignTemplateId·testWooAiWkfTemplateId·testWooAiWkfTemplateName·testWooAiWkfMaxPerCampaign Option
  */
 
 if (typeof testWoo === "undefined") testWoo = {};

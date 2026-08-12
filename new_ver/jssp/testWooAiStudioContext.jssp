@@ -3,19 +3,20 @@ response.setContentType("application/json;charset=utf-8");
 /*
  * testWooAiStudioContext.jssp (Studio 컨텍스트 API)
  * ==================================================
- * 2차: listAiFolders.
- * 3차 v=144: listCampaigns / createCampaign(T2) / listWkfs / createWkf(T3b) /
- * selectWkf / releaseLock. 계층: Program → Campaign → WKF.
+ * Program→Campaign→WKF 계층 탐색·생성·soft-lock.
+ * Shell 모드 상태머신과 embed WKF 선택이 공통 소비한다.
  *
- * [Endpoint]
- * =======================
- * POST /woo/testWooAiStudioContext.jssp
+ * [Main Functions]
+ * ===========
+ * - listAiFolders — @isAiFolder Program 목록
+ * - listCampaigns / createCampaign — Program 하위 Campaign
+ * - listWkfs / createWkf — Campaign 하위 WKF(Max 15)
+ * - selectWkf / releaseLock — soft-lock 획득·해제(CSRF)
  *
  * [Dependencies]
  * =========
- * - woo:testWooCommon.js
- * - woo:testWooStudioContext.js
- * - woo:testWooWorkflowClone.js
+ * - woo:testWooCommon.js, testWooStudioContext.js, testWooWorkflowClone.js
+ * - right testWooAiSqlGenerate · schema nms:program, nms:operation, xtk:workflow
  */
 try {
   TW_RESPONSE = response;

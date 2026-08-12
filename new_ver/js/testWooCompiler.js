@@ -1,21 +1,21 @@
 /*
- * testWooCompiler.js (CNF 조합계획 → SQL 결정론적 컴파일러 · server-side)
- * ========================================================================
- * plan = include[](그룹 AND) × any[](그룹 내 OR) + exclude[](EXCEPT|MINUS UNION).
- * LLM이 최종 SQL을 쓰지 않는다. summary·chips는 compile 결과에서만 생성.
- * fragment 래핑 시 grain IS NOT NULL — EXCEPT NULL 동등성 함정 차단.
- * Oracle은 EXCEPT→MINUS (application.getDBMSType).
+ * testWooCompiler.js (CNF plan → SQL 컴파일러)
+ * ==================================================
+ * LLM이 낸 CNF plan을 fragment sql_text로 조합해 최종 audience SQL 생성.
+ * summary·chips는 compile 결과에서만 만든다. Oracle은 EXCEPT→MINUS.
  *
  * [Main Functions]
  * ===========
- * - compile → { sql, keyColumn, summary, plan }
- * - chipsFromPlan → UI 칩 (서버 단일 소스)
+ * - compile — plan → {sql, keyColumn, summary, plan}
+ * - chipsFromPlan — plan에서 UI 칩 배열 생성
+ * - collectUsedFragments — plan에 쓰인 fragment 메타 수집
  *
  * [Dependencies]
  * =========
- * - testWoo.fragments (getByName cache)
- * - testWoo.gates.fragmentSqlContract (로드된 경우)
- * - loadLibrary("woo:testWooCompiler.js")
+ * - testWoo.fragments.getByName — fragment sql_text 로드
+ * - testWoo.gates — fragmentSqlContract·checkScopePlan(로드 시)
+ * - testWoo.cfg.getConfig — search.maxSlots 상한
+ * - loadLibrary("woo:testWooCompiler.js") — Generate·Register JSSP
  */
 var testWoo = testWoo || {};
 testWoo.compiler = (function () {

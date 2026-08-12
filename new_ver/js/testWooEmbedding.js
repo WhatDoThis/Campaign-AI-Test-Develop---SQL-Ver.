@@ -1,17 +1,22 @@
 /*
- * testWooEmbedding.js (OpenRouter 임베딩 · server-side)
- * ======================================================
- * embedTextOf / ensureEmbedding / cosine. sqlText는 임베딩하지 않음.
+ * testWooEmbedding.js (Fragment 임베딩)
+ * ==================================================
+ * fragment 메타(label·description·tags)를 벡터화. sql_text는 임베딩하지 않음.
+ * embedEnabled=false면 embed()→null. 영속화는 lifecycle.publish가 담당.
  *
  * [Main Functions]
  * ===========
- * - embed / normalize / cosine / embedTextOf / ensureEmbedding / sourceHash
+ * - embed — 텍스트 배열 → 벡터 배열(OpenRouter)
+ * - normalize — L2 정규화
+ * - cosine — 두 벡터 코사인 유사도
+ * - embedTextOf — fragment → 임베딩 입력 문자열
+ * - ensureEmbedding — fragment에 emb_vector·updated_at 세팅
+ * - sourceHash — embedTextOf 해시
  *
  * [Dependencies]
  * =========
- * - testWoo.llm.postEmbedding (또는 내부 _postJson)
- * - testWoo.cfg — 활성 플래그·모델은 cfg.llm.embedEnabled / cfg.llm.embedModel
- * - loadLibrary("woo:testWooEmbedding.js")
+ * - testWoo.llm.postEmbedding — HTTP 임베딩 API
+ * - testWoo.cfg.getConfig — llm.embedEnabled·embedModel
  */
 var testWoo = testWoo || {};
 testWoo.embedding = (function () {
@@ -117,6 +122,11 @@ testWoo.embedding = (function () {
     frag.emb_source_hash = hash;
     frag.emb_model = testWoo.cfg.getConfig().llm.embedModel;
     frag.emb_dim = vecs[0].length;
+    /* #155: publish()가 emb_updated_at 을 DB에 기록. 캐시 히트 경로도 시각 갱신하지 않음 */
+    frag.emb_updated_at = formatDate(
+      new Date(),
+      "%4Y/%2M/%2D %02H:%02N:%02S"
+    );
     return vecs[0];
   }
 

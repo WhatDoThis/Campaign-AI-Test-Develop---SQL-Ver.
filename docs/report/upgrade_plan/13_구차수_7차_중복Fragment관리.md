@@ -1,5 +1,7 @@
 # 7차 · 중복 Fragment 관리 (for AI)
 
+> **[SUPERSEDED BY 19/20/21]** SQL-First 전환(2026-08-12). 실행 라우팅은 `00_INDEX.md` 키 `R0`~`R8` / 가이드 `21_SQLFirst_R차수_실행가이드.md`. 본 문서는 삭제하지 않으며 역사·자산 근거로만 참조한다. 정본 여정: `19_SQLFirst_여정정본.md`.
+
 > **AGENT_MODE**. **신규 JSSP 제작 금지.**  
 > navtree `nodeModel` + 기존 스키마 list 뷰만.  
 > 5~6차와 병렬 가능. 선행: 4차.
@@ -8,7 +10,7 @@
 
 ```
 [#150 · 7차 중복Fragment관리]
-첨부: docs/report/upgrade_plan/09_7차_중복Fragment관리.md
+첨부: docs/report/upgrade_plan/13_구차수_7차_중복Fragment관리.md
 선행: 4차 PASS
 고유: JSSP 신규 금지. navtree nodeModel + 기존 schema list. 삭제가 주 기능.
 종료: acc-id-tracer + acc-verifier.

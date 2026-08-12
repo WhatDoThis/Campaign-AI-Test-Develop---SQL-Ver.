@@ -1,5 +1,7 @@
 # 4차 · Fragment 자동승인 (for AI)
 
+> **[SUPERSEDED BY 19/20/21]** SQL-First 전환(2026-08-12). 실행 라우팅은 `00_INDEX.md` 키 `R0`~`R8` / 가이드 `21_SQLFirst_R차수_실행가이드.md`. 본 문서는 삭제하지 않으며 역사·자산 근거로만 참조한다. 정본 여정: `19_SQLFirst_여정정본.md`.
+
 > **AGENT_MODE**. **UI 파일 일절 미변경** (`jssp/testWooAiStudio*`, `html/`, `input_form/` 금지).  
 > 1~3차와 **병렬 브랜치** 가능.
 
@@ -7,7 +9,7 @@
 
 ```
 [#147 · 4차 Fragment자동승인]
-첨부: docs/report/upgrade_plan/06_4차_Fragment자동승인.md
+첨부: docs/report/upgrade_plan/10_[완료]_구차수_4차_Fragment자동승인.md
 선행: 0차 PASS (UI 선행 불필요)
 고유: UI 파일 미변경. Foundry publish → active 자동. near dedup은 승인대기 제거.
 참고: docs/report/10_Fragment_생애주기_설계.md

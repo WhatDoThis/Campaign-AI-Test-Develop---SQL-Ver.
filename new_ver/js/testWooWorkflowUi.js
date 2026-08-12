@@ -1,21 +1,20 @@
 /*
- * testWooWorkflowUi.js (WF 캔버스 ↔ Studio SOAP · server-side)
- * ============================================================
- * woo:testWooAiWorkflowUi — ShellProbe / ShellPick / ShellBind 만 사용.
- * 구 InspectAiTarget·BindAiSqlId·GetBindPick·ListAiActivities 는 제거
- * (콘솔에 남은 구 시그니처와 충돌 → SOP-330003 / Too many arguments).
+ * testWooWorkflowUi.js (WF 캔버스 ↔ Studio SOAP)
+ * ==================================================
+ * woo:testWooAiWorkflowUi SOAP — ShellProbe/Pick/Bind만 노출.
+ * WF 폼 iframe에서 AI 액티비티 탐지·ai-sql-id 바인드.
  *
  * [Main Functions]
  * ===========
- * - woo_testWooAiWorkflowUi_ShellProbe — has / message / first @name (out×3)
- * - woo_testWooAiWorkflowUi_ShellPick — bind-pick + tick(캐시버스트, 폼 FormatDate 금지)
+ * - woo_testWooAiWorkflowUi_ShellProbe — AI 액티비티 존재·첫 @name
+ * - woo_testWooAiWorkflowUi_ShellPick — bind-pick + tick 캐시버스트
  * - woo_testWooAiWorkflowUi_ShellBind — 첫 AI 액티비티에 ai-sql-id
- * - _twWfSetAiSqlId — 중복 ai-sql-id 정리
  *
  * [Dependencies]
  * =========
- * - 계약: ibankSqlDM (+ legacy customActivity) / ai-sql-id
- * Ref: https://experienceleague.adobe.com/en/docs/campaign-classic/using/configuring-campaign-classic/api/implementing-soap-methods
+ * - testWooExtendWorkflow.xml — iframe·SOAP soapCall
+ * - ibankSqlDM·customActivity — AI 액티비티 요소명
+ * - ai-sql-id — 바인드 대상 속성
  */
 
 var TESTWOO_AI_ACTIVITY_EL = "ibankSqlDM";

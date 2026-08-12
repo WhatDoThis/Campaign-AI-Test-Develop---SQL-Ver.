@@ -1,18 +1,21 @@
 /*
- * testWooGates.js (최소 검증 · server-side)
- * ========================================
- * CNF plan + G1 구문 + param_domain + DB active fragment.
- * Stage A 후보 밖 거절은 LLM Pass1 전용.
- * fragmentSqlContract: sql_text가 grain 단일 SELECT인지 (등록·컴파일 전 계약).
+ * testWooGates.js (Plan·Fragment 검증 게이트)
+ * ==================================================
+ * CNF plan·fragment sql_text·param_domain 최소 검증.
+ * Stage A 후보 밖 fragment 거절은 LLM Pass1 전용.
  *
  * [Main Functions]
  * ===========
- * - g1Syntax / validatePlan / runAll / fragmentSqlContract / validateFragment / checkScopePlan
+ * - g1Syntax — SELECT-only·금지 구문 정적 검사
+ * - validatePlan — plan 구조·active fragment·SCOPE
+ * - runAll — plan+compile 전체 게이트 일괄 실행
+ * - fragmentSqlContract — sql_text grain 단일 SELECT 계약
+ * - validateFragment — fragment 등록 필드 검증
+ * - checkScopePlan — plan scope_key 일관성
  *
  * [Dependencies]
  * =========
- * - testWoo.fragments.getByName
- * - loadLibrary("woo:testWooGates.js")
+ * - testWoo.fragments.getByName — active fragment 존재 확인
  */
 var testWoo = testWoo || {};
 testWoo.gates = (function () {

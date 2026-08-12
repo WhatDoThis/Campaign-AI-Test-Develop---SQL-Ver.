@@ -1,22 +1,29 @@
 /*
- * testWooLifecycle.js (fragment 생애주기 · server-side)
- * =======================================================
- * contentHash, 버전 발행, revoke, hardDelete, impact 조회.
- * publish는 dedup 판정(dedup_verdict/dedup_match_id/dedup_diff_count)도 함께 기록한다.
- * 4차: Foundry가 status=active·active=true·approved_by=foundry 로 넘기면 그대로 저장.
- *      fragDoc.status 없으면 기본 active (구 verified 기본값에서 변경).
- * 5차: sqlContentHash — 정규화 SQL만 해시(Register 중복 스킵 J-9-3-4).
+ * testWooLifecycle.js (Fragment·SQL 생애주기)
+ * ==================================================
+ * fragment contentHash·버전 발행·revoke·impact 조회.
+ * publish 시 dedup 판정·emb_* 벡터를 함께 기록.
  *
  * [Main Functions]
  * ===========
- * - normalizeSql / contentHash / sqlContentHash / nextVersion
- * - publish / revoke / hardDelete / listImpact / compileHash
+ * - normalizeSql — SQL 정규화(해시·비교용)
+ * - contentHash — fragment 본문 해시
+ * - sqlContentHash — 정규화 SQL만 해시(Register dedup)
+ * - nextVersion — name 기준 다음 version 번호
+ * - publish — fragment Write(active/verified·dedup·emb_*)
+ * - revoke — is_current=0·revoked_reason 기록
+ * - hardDelete — fragment 물리 삭제
+ * - listImpact — fragment 사용 중 ai_sql 목록
+ * - compileHash — compile 결과 해시
  *
  * [Dependencies]
  * =========
- * - xtk.session.Write
- * - Schema: woo:testWooAiFragment, woo:testWooAiSql
- * - loadLibrary("woo:testWooLifecycle.js")
+ * - woo:testWooAiFragment·woo:testWooAiSql — xtk.session#Write·queryDef
+ *
+ * [Invariants]
+ * =========
+ * - LLM이 SQL을 쓰지 않음 — publish는 Foundry·수동 승인 경로만
+ * - emb_* 필드는 값 있을 때만 세팅(빈 문자열 덮어쓰기 금지)
  */
 var testWoo = testWoo || {};
 testWoo.lifecycle = (function () {
@@ -164,6 +171,22 @@ testWoo.lifecycle = (function () {
     doc.@dedup_diff_count = fragDoc.dedup_diff_count != null ?
       Number(fragDoc.dedup_diff_count) : -1;
     if (fragDoc.supersedes_id) doc.@supersedes_id = fragDoc.supersedes_id;
+    /* #155: emb_* — 있을 때만 Write (빈값 덮어쓰기 금지) */
+    if (fragDoc.emb_vector) {
+      doc.@emb_vector = String(fragDoc.emb_vector);
+      if (fragDoc.emb_model) doc.@emb_model = String(fragDoc.emb_model);
+      var embDim = Number(fragDoc.emb_dim);
+      if (!isNaN(embDim) && embDim > 0 && embDim <= 32767) {
+        doc.@emb_dim = embDim;
+      }
+      if (fragDoc.emb_source_hash) {
+        doc.@emb_source_hash = String(fragDoc.emb_source_hash);
+      }
+      doc.@emb_updated_at =
+        fragDoc.emb_updated_at && String(fragDoc.emb_updated_at)
+          ? String(fragDoc.emb_updated_at)
+          : nowStr();
+    }
     xtk.session.Write(doc);
     if (testWoo.fragments && testWoo.fragments.clearCache) testWoo.fragments.clearCache();
     return newId;

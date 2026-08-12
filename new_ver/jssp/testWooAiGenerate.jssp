@@ -1,9 +1,29 @@
 <%
 response.setContentType("application/json;charset=utf-8");
 /*
- * testWooAiGenerate.jssp (Pass0→StageA→Pass1 → SQL / Foundry 큐 분기)
- * #147: plan_only=true 이면 compile·gates·Foundry 큐 없이 plan만 반환 (탐색용).
- * queued 안내 message 유니코드: 질문=\uC9C8\uBB38, 재시도=\uC7AC\uC2DC\uB3C4 (#127)
+ * testWooAiGenerate.jssp (NL→plan→SQL 생성 API)
+ * ==================================================
+ * Pass0→StageA→Pass1로 CNF plan 생성 후 compile·gates 실행.
+ * unmatched 시 Foundry 큐 또는 plan_only 탐색 응답으로 분기한다.
+ *
+ * [Main Functions]
+ * ===========
+ * - generatePlan — nl_request→plan·matchedSlots·unmatched
+ * - compile+runAll — gates 통과 시 sql·chips·summary 반환
+ * - enqueueRequest — unmatched+Foundry ON 시 queued 상태
+ * - plan_only — compile·큐 없이 plan/chips만 반환
+ *
+ * [Dependencies]
+ * =========
+ * - woo:testWooCommon.js, Config, Fragments, Llm, Compiler, Gates, Repository
+ * - right testWooAiSqlGenerate · Option testWooAiFoundryEnabled
+ *
+ * [Invariants]
+ * ===========
+ * - LLM은 plan_json만 — 최종 SQL은 compiler가 결정
+ * - unmatched+Foundry OFF → passed:false, 큐 없음
+ * - after_foundry/no_enqueue → 재큐잉 금지(대기 UI 루프 방지)
+ * - catch 메시지에 [Generate] 접두(타 API plan missing와 구분)
  */
 try {
   TW_RESPONSE = response;
@@ -28,8 +48,20 @@ try {
     p.plan_only === "true" ||
     p.planOnly === true
   );
+  /* Foundry done 후 Studio 자동 재시도 — 또 enqueue하면 대기 UI 루프 */
+  var noEnqueue = !!(
+    p.no_enqueue === true ||
+    p.no_enqueue === 1 ||
+    p.no_enqueue === "1" ||
+    p.no_enqueue === "true" ||
+    p.after_foundry === true ||
+    p.after_foundry === 1 ||
+    p.after_foundry === "1" ||
+    p.after_foundry === "true"
+  );
 
   var plan = testWoo.llm.generatePlan(p.nl_request);
+  if (!plan) throw new Error("[Generate] generatePlan returned empty");
   var unmatched = plan.unmatched || [];
 
   var clientPlan = {
@@ -51,7 +83,7 @@ try {
         plan: clientPlan,
         error: "unmatched slots — plan only"
       });
-    } else if (cfg.foundry.enabled) {
+    } else if (cfg.foundry.enabled && !noEnqueue) {
       var queueId = testWoo.repo.enqueueRequest({
         nl_text: p.nl_request,
         slots_json: JSON.stringify(plan._meta ? plan._meta.slots : []),
@@ -76,7 +108,13 @@ try {
         passed: false,
         unmatched: unmatched,
         matchedSlots: plan.matchedSlots || [],
-        plan: clientPlan
+        plan: clientPlan,
+        afterFoundry: !!noEnqueue,
+        error: noEnqueue
+          ? ("Foundry \uC644\uB8CC \uD6C4\uC5D0\uB3C4 Stage A\uAC00 \uC870\uAC74\uC744 \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: " +
+            unmatched.join(" | ") +
+            " \u2014 fragment label/sample_questions/\uC2DC\uB178\uB2D8\uC744 \uD655\uC778\uD558\uAC70\uB098 [\uC0DD\uC131]\uC744 \uB2E4\uC2DC \uB204\uB974\uC138\uC694.")
+          : ("unmatched slots: " + unmatched.join(" | "))
       });
     }
   } else if (planOnly) {
@@ -110,6 +148,11 @@ try {
     });
   }
 } catch (e) {
-  handleApiError(e);
+  var _genMsg = (e && e.message != null) ? String(e.message) : String(e);
+  if (_genMsg.indexOf("[Generate]") !== 0 && _genMsg.indexOf("[testWoo.") !== 0) {
+    handleApiError(new Error("[Generate] " + _genMsg));
+  } else {
+    handleApiError(e);
+  }
 }
 %>
