@@ -1,6 +1,7 @@
 /*
  * testWooProbe.js (읽기 전용 SQL 프로브)
  * ==================================================
+ * litmus 동기 __v=159 (#160 배포정합).
  * Foundry·게이트·dedup L3용 SELECT-only 실행. sqlExec 금지.
  * 방언별 LIMIT/TOP/FETCH 래핑은 limitSelect 단일 지점.
  *
@@ -234,3 +235,4 @@ testWoo.probe = (function () {
     validKeyColumn: _validKeyColumn
   };
 })();
+testWoo.probe.__v = "159";

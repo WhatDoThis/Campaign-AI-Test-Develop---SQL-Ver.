@@ -1,6 +1,8 @@
 # Log
 
 ## Log Index
+209. 2026-08-12 #161 실측 — libs 불일치 8종을 필수 재등록 목록으로 격상
+208. 2026-08-12 #160 배포정합 진단 · twRequireLib · __v · libVersions
 207. 2026-08-12 개발가이드 AuthDebug 잔여 참조 제거 (#197 정합)
 206. 2026-08-12 Foundry→SQL Stage A 미매칭·재큐잉 루프 수정 · v=159
 205. 2026-08-12 R3 후속 — plan missing API 구분 · Match OFF 가드 · v=158
@@ -210,6 +212,22 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+209. 2026-08-12 #161 실측 — libs 불일치 8종을 필수 재등록 목록으로 격상
+Purpose: Studio 진입 시 배너에 match/probe/dedup/toolkit/feasibility/studioContext/wfClone/workflowUi 불일치가 남음 — 코어만 올린 상태. Changes:
+
+- `28_배포정합_진단.md` #161: 위 8종을 “권장”→**필수 B그룹**으로 명시
+- 코드 변경 없음(진단 정상 동작)
+Changed files: docs/report/upgrade_plan/28_배포정합_진단.md, docs/log/log.md
+
+208. 2026-08-12 #160 배포정합 진단 · twRequireLib · __v · libVersions
+Purpose: `testWoo.repo is undefined`를 배포 누락으로 즉시 가시화하고 JS lib 버전을 litmus와 분리 증명. Changes:
+
+- `28_배포정합_진단.md` 배포 대조표 + #161 HUMAN 체크리스트
+- `twRequireLib` + handleApiError code=LIB · Generate/Register/Validate/Match/StudioContext 가드
+- 전 JS 모듈 `testWoo.*.__v="159"` · StudioContext `action=libVersions` · StudioJs 부팅 diag `libs:`
+- INDEX/진행판/ReportIndex — 다음=#161 HUMAN (R4/#162는 PASS 후)
+Changed files: docs/report/upgrade_plan/28_배포정합_진단.md, docs/report/upgrade_plan/{00_INDEX,01_진행판}.md, docs/report/00_ReportIndex.md, new_ver/js/testWoo*.js (19), new_ver/jssp/testWooAi{Generate,Register,Validate,Match,StudioContext,StudioJs}.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
 
 207. 2026-08-12 개발가이드 AuthDebug 잔여 참조 제거 (#197 정합)
 Purpose: AuthDebug.jssp 폐기 후에도 가이드 표·스모크에 남아 있던 경로를 정리. Changes:

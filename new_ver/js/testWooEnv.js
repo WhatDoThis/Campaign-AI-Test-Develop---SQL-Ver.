@@ -1,6 +1,7 @@
 /*
  * testWooEnv.js (내장 튜닝·가드레일 상수)
  * ==================================================
+ * litmus 동기 __v=159 (#160 배포정합).
  * Git 관리 상수. 배포 후 JS 라이브러리만 재등록하면 튜닝 반영.
  * 시크릿은 XtkOption 3개만 — 나머지는 ENV 객체.
  *
@@ -194,3 +195,4 @@ testWoo.env = (function () {
 
   return { getEnv: getEnv, ENV: ENV };
 })();
+testWoo.env.__v = "159";

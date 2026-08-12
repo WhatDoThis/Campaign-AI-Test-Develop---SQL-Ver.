@@ -451,6 +451,60 @@
     _xhrPost(endpoint, payload, onOk, onErr);
   }
 
+  /* #160 — JS 라이브러리 __v 1회 진단 (litmus v= 와 별개) */
+  var _libVersionsFetched = false;
+  function _fetchLibVersionsOnce() {
+    if (_libVersionsFetched) return;
+    _libVersionsFetched = true;
+    post(
+      "testWooAiStudioContext.jssp",
+      { action: "libVersions" },
+      function (res) {
+        try {
+          if (!res || !res.ok) {
+            _diag("libs: fetch failed " + _errText(res));
+            return;
+          }
+          var libs = res.libs || {};
+          var parts = [];
+          var keys = [
+            "repo", "fragments", "foundry", "common", "env", "cfg", "llm",
+            "compiler", "gates", "lifecycle", "embedding", "match",
+            "studioContext", "wfClone"
+          ];
+          var ki;
+          for (ki = 0; ki < keys.length; ki++) {
+            var k = keys[ki];
+            parts.push(k + "=" + (libs[k] != null ? libs[k] : "?"));
+          }
+          _diag("libs: " + parts.join(" "));
+          var mm = res.mismatch || [];
+          if (mm.length || res.allMatch === false) {
+            var warn =
+              "JS \uB77C\uC774\uBE0C\uB7EC\uB9AC \uBC84\uC804 \uBD88\uC77C\uCE58: " +
+              mm.join(",") +
+              " (expected " +
+              String(res.expected || "159") +
+              ") \u2014 ACC \uCF58\uC194 JavaScript codes \uC7AC\uB4F1\uB85D \uD544\uC694. TW-BOOT v= \uB9CC\uC73C\uB85C\uB294 \uBCF4\uC99D\uB418\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.";
+            var hint = $("hint");
+            if (hint) {
+              hint.className = "banner warn";
+              hint.innerHTML = "<strong>[LIB]</strong> " + esc(warn);
+            }
+            _diag("libs MISMATCH: " + mm.join(","));
+          } else {
+            _diag("libs: allMatch expected=" + String(res.expected || "159"));
+          }
+        } catch (eLib) {
+          _diag("libs: parse err " + String(eLib && eLib.message ? eLib.message : eLib));
+        }
+      },
+      function (err) {
+        _diag("libs: XHR err " + String(err && err.message ? err.message : err));
+      }
+    );
+  }
+
   function showErr(msg) {
     var e = $("err");
     if (!e) return;
@@ -2268,7 +2322,7 @@
         _diag(okMsg);
         _diag("TW-BOOT reached=" + (bootReached ? "yes" : "no"));
         _diag("location.href=" + String(location.href || ""));
-        /* 정상 시 부트 바 숨김 */
+        /* 정상 시 부트 바 숨김 — libVersions 불일치 시 배너로 대체 경고 */
         var boot = $("twBoot");
         var tbl = $("twBootTable");
         if (boot) {
@@ -2279,6 +2333,7 @@
           tbl.className = "";
           tbl.style.display = "none";
         }
+        _fetchLibVersionsOnce();
       } catch (eBoot) {}
       _diag("UA=" + String(navigator.userAgent || ""));
       _diag("documentMode=" + (typeof document.documentMode !== "undefined" ? String(document.documentMode) : "n/a(non-IE)"));

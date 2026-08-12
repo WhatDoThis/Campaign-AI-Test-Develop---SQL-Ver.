@@ -1,6 +1,7 @@
 /*
  * testWooGates.js (Plan·Fragment 검증 게이트)
  * ==================================================
+ * litmus 동기 __v=159 (#160 배포정합).
  * CNF plan·fragment sql_text·param_domain 최소 검증.
  * Stage A 후보 밖 fragment 거절은 LLM Pass1 전용.
  *
@@ -369,3 +370,4 @@ testWoo.gates = (function () {
     checkScopePlan: checkScopePlan
   };
 })();
+testWoo.gates.__v = "159";

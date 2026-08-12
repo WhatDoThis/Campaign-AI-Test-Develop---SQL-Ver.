@@ -1,6 +1,7 @@
 /*
  * testWooWorkflowUi.js (WF 캔버스 ↔ Studio SOAP)
  * ==================================================
+ * litmus 동기 __v=159 (#160 배포정합).
  * woo:testWooAiWorkflowUi SOAP — ShellProbe/Pick/Bind만 노출.
  * WF 폼 iframe에서 AI 액티비티 탐지·ai-sql-id 바인드.
  *
@@ -15,7 +16,12 @@
  * - testWooExtendWorkflow.xml — iframe·SOAP soapCall
  * - ibankSqlDM·customActivity — AI 액티비티 요소명
  * - ai-sql-id — 바인드 대상 속성
+ * - testWoo.workflowUi.__v — litmus 동기 버전표식(159)
  */
+
+if (typeof testWoo === "undefined") testWoo = {};
+if (!testWoo.workflowUi) testWoo.workflowUi = {};
+testWoo.workflowUi.__v = "159";
 
 var TESTWOO_AI_ACTIVITY_EL = "ibankSqlDM";
 var TESTWOO_AI_ACTIVITY_EL_LEGACY = "customActivity";

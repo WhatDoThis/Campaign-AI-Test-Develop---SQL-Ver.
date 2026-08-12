@@ -1,6 +1,7 @@
 /*
  * testWooWorkflowClone.js (Campaign·WKF 템플릿·잠금)
  * ==================================================
+ * litmus 동기 __v=159 (#160 배포정합).
  * Program(@isAiFolder)→Campaign→WKF 계층 생성·목록·soft-lock.
  * Spawn/Start 금지. 캠페인당 WKF Max=15.
  *
@@ -756,3 +757,4 @@ testWoo.wfClone = (function () {
     getLock: getLock
   };
 })();
+testWoo.wfClone.__v = "159";

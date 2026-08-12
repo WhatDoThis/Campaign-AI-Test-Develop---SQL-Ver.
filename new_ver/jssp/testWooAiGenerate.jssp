@@ -24,6 +24,7 @@ response.setContentType("application/json;charset=utf-8");
  * - unmatched+Foundry OFF → passed:false, 큐 없음
  * - after_foundry/no_enqueue → 재큐잉 금지(대기 UI 루프 방지)
  * - catch 메시지에 [Generate] 접두(타 API plan missing와 구분)
+ * - loadLibrary 직후 twRequireLib — repo/fragments/llm/compiler/gates (#160)
  */
 try {
   TW_RESPONSE = response;
@@ -36,6 +37,11 @@ try {
   loadLibrary("woo:testWooCompiler.js");
   loadLibrary("woo:testWooGates.js");
   loadLibrary("woo:testWooRepository.js");
+  twRequireLib("woo:testWooRepository.js", (typeof testWoo !== "undefined") && testWoo.repo);
+  twRequireLib("woo:testWooFragments.js", (typeof testWoo !== "undefined") && testWoo.fragments);
+  twRequireLib("woo:testWooLlm.js", (typeof testWoo !== "undefined") && testWoo.llm);
+  twRequireLib("woo:testWooCompiler.js", (typeof testWoo !== "undefined") && testWoo.compiler);
+  twRequireLib("woo:testWooGates.js", (typeof testWoo !== "undefined") && testWoo.gates);
   requireRight("testWooAiSqlGenerate");
 
   var p = readPayload();
@@ -149,7 +155,10 @@ try {
   }
 } catch (e) {
   var _genMsg = (e && e.message != null) ? String(e.message) : String(e);
-  if (_genMsg.indexOf("[Generate]") !== 0 && _genMsg.indexOf("[testWoo.") !== 0) {
+  /* LIB 배포 누락은 code/메시지 유지 — [Generate] 래핑으로 500 요약 방지 */
+  if (e && e.code === "LIB") {
+    handleApiError(e);
+  } else if (_genMsg.indexOf("[Generate]") !== 0 && _genMsg.indexOf("[testWoo.") !== 0) {
     handleApiError(new Error("[Generate] " + _genMsg));
   } else {
     handleApiError(e);

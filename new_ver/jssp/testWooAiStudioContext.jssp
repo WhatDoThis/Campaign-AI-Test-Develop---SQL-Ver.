@@ -12,11 +12,13 @@ response.setContentType("application/json;charset=utf-8");
  * - listCampaigns / createCampaign — Program 하위 Campaign
  * - listWkfs / createWkf — Campaign 하위 WKF(Max 15)
  * - selectWkf / releaseLock — soft-lock 획득·해제(CSRF)
+ * - libVersions — 로드된 testWoo.* 모듈 __v JSON (#160)
  *
  * [Dependencies]
  * =========
  * - woo:testWooCommon.js, testWooStudioContext.js, testWooWorkflowClone.js
  * - right testWooAiSqlGenerate · schema nms:program, nms:operation, xtk:workflow
+ * - libVersions — 진단용으로 pipeline/Foundry JS 추가 loadLibrary
  */
 try {
   TW_RESPONSE = response;
@@ -26,13 +28,74 @@ try {
   requireRight("testWooAiSqlGenerate");
   loadLibrary("woo:testWooStudioContext.js");
   loadLibrary("woo:testWooWorkflowClone.js");
+  twRequireLib("woo:testWooStudioContext.js", (typeof testWoo !== "undefined") && testWoo.studioContext);
+  twRequireLib("woo:testWooWorkflowClone.js", (typeof testWoo !== "undefined") && testWoo.wfClone);
 
   var p = readPayload();
   var action = String(
     p.action || TW_REQUEST.getParameter("action") || ""
   ).toLowerCase();
 
-  if (action === "listaifolders") {
+  if (action === "libversions") {
+    loadLibrary("woo:testWooConfig.js");
+    loadLibrary("woo:testWooEnv.js");
+    loadLibrary("woo:testWooFragments.js");
+    loadLibrary("woo:testWooLlm.js");
+    loadLibrary("woo:testWooCompiler.js");
+    loadLibrary("woo:testWooGates.js");
+    loadLibrary("woo:testWooRepository.js");
+    loadLibrary("woo:testWooLifecycle.js");
+    loadLibrary("woo:testWooEmbedding.js");
+    loadLibrary("woo:testWooFoundry.js");
+    loadLibrary("woo:testWooMatch.js");
+    loadLibrary("woo:testWooProbe.js");
+    loadLibrary("woo:testWooDedup.js");
+    loadLibrary("woo:testWooToolkit.js");
+    loadLibrary("woo:testWooFeasibility.js");
+    loadLibrary("woo:testWooWorkflowUi.js");
+    var expected = "159";
+    function _twLibV(mod) {
+      try {
+        if (typeof testWoo === "undefined" || !testWoo[mod]) return null;
+        return testWoo[mod].__v != null ? String(testWoo[mod].__v) : null;
+      } catch (eV) {
+        return null;
+      }
+    }
+    var libs = {
+      common: _twLibV("common"),
+      env: _twLibV("env"),
+      cfg: _twLibV("cfg"),
+      fragments: _twLibV("fragments"),
+      llm: _twLibV("llm"),
+      compiler: _twLibV("compiler"),
+      gates: _twLibV("gates"),
+      repo: _twLibV("repo"),
+      lifecycle: _twLibV("lifecycle"),
+      embedding: _twLibV("embedding"),
+      foundry: _twLibV("foundry"),
+      match: _twLibV("match"),
+      probe: _twLibV("probe"),
+      dedup: _twLibV("dedup"),
+      toolkit: _twLibV("toolkit"),
+      feasibility: _twLibV("feasibility"),
+      studioContext: _twLibV("studioContext"),
+      wfClone: _twLibV("wfClone"),
+      workflowUi: _twLibV("workflowUi")
+    };
+    var mismatch = [];
+    for (var lk in libs) {
+      if (!libs.hasOwnProperty(lk)) continue;
+      if (libs[lk] == null || libs[lk] !== expected) mismatch.push(lk);
+    }
+    jsonOut({
+      ok: true,
+      expected: expected,
+      libs: libs,
+      mismatch: mismatch,
+      allMatch: mismatch.length === 0
+    });
+  } else if (action === "listaifolders") {
     var lim = p.limit != null ? p.limit : 200;
     var items = testWoo.studioContext.listAiFolders(lim);
     jsonOut({ ok: true, items: items, count: items.length });
@@ -130,7 +193,7 @@ try {
     throw new Error(
       "unknown action: " +
         action +
-        " (listAiFolders|listCampaigns|createCampaign|listWkfs|createWkf|selectWkf|releaseLock)"
+        " (libVersions|listAiFolders|listCampaigns|createCampaign|listWkfs|createWkf|selectWkf|releaseLock)"
     );
   }
 } catch (e) {

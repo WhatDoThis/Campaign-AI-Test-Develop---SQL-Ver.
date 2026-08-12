@@ -1,6 +1,7 @@
 /*
  * testWooConfig.js (런타임 설정 병합)
  * ==================================================
+ * litmus 동기 __v=159 (#160 배포정합).
  * XtkOption 시크릿 3개와 testWooEnv 상수를 합쳐 파이프라인 cfg 객체 반환.
  * LLM·Foundry·Match 모듈이 공통으로 getConfig() 호출.
  *
@@ -97,3 +98,4 @@ testWoo.cfg = (function () {
 
   return { getConfig: getConfig };
 })();
+testWoo.cfg.__v = "159";

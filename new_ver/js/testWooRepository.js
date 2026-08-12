@@ -1,6 +1,7 @@
 /*
  * testWooRepository.js (AI SQL·큐·GapLog 저장소)
  * ==================================================
+ * litmus 동기 __v=159 (#160 배포정합).
  * woo:testWooAiSql·testWooAiRequestQueue·testWooAiGapLog CRUD.
  * Register·Foundry·Match·Studio가 xtk.session#Write·queryDef 경유.
  *
@@ -503,3 +504,4 @@ testWoo.repo = (function () {
     getAiSqlById: getAiSqlById
   };
 })();
+testWoo.repo.__v = "159";

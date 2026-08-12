@@ -1,6 +1,7 @@
 /*
  * testWooFeasibility.js (슬롯 실현가능성 Triage)
  * ==================================================
+ * litmus 동기 __v=159 (#160 배포정합).
  * Foundry SQL 생성 전 슬롯별 feasible 여부 판정.
  * toolkit 실호출 로그만 근거로 쓰며, 마지막 턴은 JSON 판정 강제.
  *
@@ -367,3 +368,4 @@ testWoo.feasibility = (function () {
     meetsConfidence: meetsConfidence
   };
 })();
+testWoo.feasibility.__v = "159";

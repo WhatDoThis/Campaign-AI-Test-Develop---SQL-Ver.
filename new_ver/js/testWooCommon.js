@@ -2,13 +2,14 @@
  * testWooCommon.js (JSSP 공통 헬퍼)
  * ==================================================
  * Studio·Foundry JSSP API의 JSON 응답·요청 파싱·인증·권한 검사.
- * TW_* 바인드 후 loadLibrary로 로드한다.
+ * TW_* 바인드 후 loadLibrary로 로드한다. __v=159 (litmus 동기).
  *
  * [Main Functions]
  * ===========
  * - jsonOut — 성공 JSON 응답 기록
  * - errOut — 오류 JSON 응답 기록
- * - handleApiError — 예외를 errOut으로 변환
+ * - handleApiError — 예외를 errOut으로 변환 (code=LIB 메시지 그대로)
+ * - twRequireLib — loadLibrary 직후 전역 모듈 존재 검사
  * - readPayload — payload 파라미터·body JSON 파싱
  * - twSessionTokenFromRequest — Cookie에서 세션 토큰 추출
  * - twLogonWithToken — logonWithToken으로 오퍼레이터 바인드
@@ -23,13 +24,31 @@
  * =========
  * - JSSP — TW_RESPONSE/TW_REQUEST/TW_DOCUMENT 바인드 후 loadLibrary
  * - testWooEnv.js — security.allowedCidr(선택 preload)
+ * - testWoo.common.__v — StudioContext libVersions 진단
  */
+
+if (typeof testWoo === "undefined") testWoo = {};
+if (!testWoo.common) testWoo.common = {};
+testWoo.common.__v = "159";
 
 var TW_TITLE_MAX = 200; // woo:testWooAiSql @title length
 
 // ACC Rhino: String.trim 미보장 → regex
 function twTrim(s) {
   return String(s == null ? "" : s).replace(/^\s+|\s+$/g, "");
+}
+
+/* loadLibrary 실패는 예외 없이 넘어가는 경우가 있음 — 전역 부재를 즉시 노출 */
+function twRequireLib(nsName, globalPath) {
+  if (globalPath === undefined || globalPath === null || globalPath === false) {
+    var err = new Error(
+      "LIB_NOT_LOADED: " +
+        String(nsName) +
+        " — ACC 콘솔에서 JS 라이브러리를 재등록하세요"
+    );
+    err.code = "LIB";
+    throw err;
+  }
 }
 
 function _twResp() {
@@ -86,6 +105,11 @@ function handleApiError(e) {
       logonUrl: "/nl/jsp/logon.jsp?target=" +
         encodeURIComponent("/woo/testWooAiStudio.jssp")
     });
+    return;
+  }
+  /* 배포 누락 — 500 요약으로 덮지 않고 안내 문구 그대로 */
+  if (code === "LIB" || msg.indexOf("LIB_NOT_LOADED:") >= 0) {
+    errOut(msg, "LIB", { errId: errId, detail: detail });
     return;
   }
   if (code === "FORBIDDEN" || msg.indexOf("missing right:") === 0 ||

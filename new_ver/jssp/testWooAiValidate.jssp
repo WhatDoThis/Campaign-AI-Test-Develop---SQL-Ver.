@@ -19,6 +19,7 @@ response.setContentType("application/json;charset=utf-8");
  * - woo:testWooCommon.js (+ Config/Fragments/Compiler/Gates/Repository by action)
  * - right testWooAiSqlGenerate · schema woo:testWooAiSql, woo:testWooAiFragment
  * - Option testWooAiBindPick_{login}
+ * - action별 loadLibrary 직후 twRequireLib (#160)
  */
 try {
   TW_RESPONSE = response;
@@ -114,6 +115,7 @@ function _runGetBindPick(p) {
 function _runCatalog() {
   loadLibrary("woo:testWooConfig.js");
   loadLibrary("woo:testWooFragments.js");
+  twRequireLib("woo:testWooFragments.js", (typeof testWoo !== "undefined") && testWoo.fragments);
   jsonOut({ ok: true, categories: testWoo.fragments.listCategories() });
 }
 
@@ -123,6 +125,9 @@ function _runCount(p) {
   loadLibrary("woo:testWooFragments.js");
   loadLibrary("woo:testWooCompiler.js");
   loadLibrary("woo:testWooGates.js");
+  twRequireLib("woo:testWooFragments.js", (typeof testWoo !== "undefined") && testWoo.fragments);
+  twRequireLib("woo:testWooCompiler.js", (typeof testWoo !== "undefined") && testWoo.compiler);
+  twRequireLib("woo:testWooGates.js", (typeof testWoo !== "undefined") && testWoo.gates);
   var compiled = testWoo.compiler.compile(p.plan);
   jsonOut({
     ok: true,
@@ -140,6 +145,9 @@ function _runValidate(p) {
   loadLibrary("woo:testWooFragments.js");
   loadLibrary("woo:testWooCompiler.js");
   loadLibrary("woo:testWooGates.js");
+  twRequireLib("woo:testWooFragments.js", (typeof testWoo !== "undefined") && testWoo.fragments);
+  twRequireLib("woo:testWooCompiler.js", (typeof testWoo !== "undefined") && testWoo.compiler);
+  twRequireLib("woo:testWooGates.js", (typeof testWoo !== "undefined") && testWoo.gates);
 
   var compiled = testWoo.compiler.compile(p.plan);
   var results = testWoo.gates.runAll(p.plan, compiled.sql);
@@ -162,7 +170,8 @@ function _runListSql(p) {
   var wf = String(p.workflow_name || p.workflowName || "").replace(/^\s+|\s+$/g, "");
   if (!wf) throw new Error("workflow_name missing");
   loadLibrary("woo:testWooRepository.js");
-  if (!testWoo.repo || typeof testWoo.repo.listAiSqlByWorkflow !== "function") {
+  twRequireLib("woo:testWooRepository.js", (typeof testWoo !== "undefined") && testWoo.repo);
+  if (typeof testWoo.repo.listAiSqlByWorkflow !== "function") {
     throw new Error(
       "testWoo.repo.listAiSqlByWorkflow missing — redeploy JS Code woo:testWooRepository.js " +
       "(uses xtk.queryDef; local new_ver already has the function)"
@@ -180,7 +189,8 @@ function _runGetSql(p) {
   var id = p.ai_sql_id != null ? p.ai_sql_id : p.id;
   if (id == null || id === "") throw new Error("ai_sql_id missing");
   loadLibrary("woo:testWooRepository.js");
-  if (!testWoo.repo || typeof testWoo.repo.getAiSqlById !== "function") {
+  twRequireLib("woo:testWooRepository.js", (typeof testWoo !== "undefined") && testWoo.repo);
+  if (typeof testWoo.repo.getAiSqlById !== "function") {
     throw new Error(
       "testWoo.repo.getAiSqlById missing — redeploy JS Code woo:testWooRepository.js"
     );
@@ -198,7 +208,8 @@ function _runDeleteSql(p) {
   var id = p.ai_sql_id != null ? p.ai_sql_id : p.id;
   if (id == null || id === "") throw new Error("ai_sql_id missing");
   loadLibrary("woo:testWooRepository.js");
-  if (!testWoo.repo || typeof testWoo.repo.deleteAiSql !== "function") {
+  twRequireLib("woo:testWooRepository.js", (typeof testWoo !== "undefined") && testWoo.repo);
+  if (typeof testWoo.repo.deleteAiSql !== "function") {
     throw new Error(
       "testWoo.repo.deleteAiSql missing — redeploy JS Code woo:testWooRepository.js"
     );

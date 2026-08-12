@@ -1,6 +1,7 @@
 /*
  * testWooMatch.js (조건 매칭 엔진)
  * ==================================================
+ * litmus 동기 __v=159 (#160 배포정합).
  * dedup=Jaccard≥0.9(name 집합). discover=값복합키 SAME/CONFLICT/MISSING.
  * UI 단정·Option ON은 Studio — 본 모듈은 판정만.
  *
@@ -748,3 +749,4 @@ testWoo.match = (function () {
     matchByPlan: matchByPlan
   };
 })();
+testWoo.match.__v = "159";

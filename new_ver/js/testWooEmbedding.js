@@ -1,6 +1,7 @@
 /*
  * testWooEmbedding.js (Fragment 임베딩)
  * ==================================================
+ * litmus 동기 __v=159 (#160 배포정합).
  * fragment 메타(label·description·tags)를 벡터화. sql_text는 임베딩하지 않음.
  * embedEnabled=false면 embed()→null. 영속화는 lifecycle.publish가 담당.
  *
@@ -139,3 +140,4 @@ testWoo.embedding = (function () {
     sourceHash: sourceHash
   };
 })();
+testWoo.embedding.__v = "159";

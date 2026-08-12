@@ -1,6 +1,7 @@
 /*
  * testWooCompiler.js (CNF plan → SQL 컴파일러)
  * ==================================================
+ * litmus 동기 __v=159 (#160 배포정합).
  * LLM이 낸 CNF plan을 fragment sql_text로 조합해 최종 audience SQL 생성.
  * summary·chips는 compile 결과에서만 만든다. Oracle은 EXCEPT→MINUS.
  *
@@ -290,3 +291,4 @@ testWoo.compiler = (function () {
 
   return { compile: compile, chipsFromPlan: chipsFromPlan, collectUsedFragments: collectUsedFragments };
 })();
+testWoo.compiler.__v = "159";

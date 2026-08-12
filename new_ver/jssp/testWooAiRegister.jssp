@@ -21,6 +21,7 @@ response.setContentType("application/json;charset=utf-8");
  * ===========
  * - usedFragments 비면 등록 거부 — WF XML 직접 쓰기 없음
  * - gates 미통과 SQL은 woo:testWooAiSql에 insert 금지
+ * - loadLibrary 직후 twRequireLib (#160)
  */
 try {
   TW_RESPONSE = response;
@@ -39,6 +40,11 @@ try {
   loadLibrary("woo:testWooGates.js");
   loadLibrary("woo:testWooLifecycle.js");
   loadLibrary("woo:testWooRepository.js");
+  twRequireLib("woo:testWooFragments.js", (typeof testWoo !== "undefined") && testWoo.fragments);
+  twRequireLib("woo:testWooCompiler.js", (typeof testWoo !== "undefined") && testWoo.compiler);
+  twRequireLib("woo:testWooGates.js", (typeof testWoo !== "undefined") && testWoo.gates);
+  twRequireLib("woo:testWooLifecycle.js", (typeof testWoo !== "undefined") && testWoo.lifecycle);
+  twRequireLib("woo:testWooRepository.js", (typeof testWoo !== "undefined") && testWoo.repo);
 
   var compiled = testWoo.compiler.compile(p.plan);
   var results = testWoo.gates.runAll(p.plan, compiled.sql);

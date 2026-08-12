@@ -22,6 +22,7 @@ response.setContentType("application/json;charset=utf-8");
  * - Option testWooAiMatchEnabled 기본 OFF — AI·코드가 ON 금지
  * - OFF 시 plan 없이 disabled 빈 목록 (plan missing로 Generate와 혼동 금지)
  * - UI "포함/일치" 단정 금지 — compare[] 값 대조 필수
+ * - Match ON 경로 loadLibrary 직후 twRequireLib (#160)
  */
 try {
   TW_RESPONSE = response;
@@ -67,6 +68,12 @@ try {
   loadLibrary("woo:testWooRepository.js");
   loadLibrary("woo:testWooWorkflowClone.js");
   loadLibrary("woo:testWooMatch.js");
+  twRequireLib("woo:testWooFragments.js", (typeof testWoo !== "undefined") && testWoo.fragments);
+  twRequireLib("woo:testWooCompiler.js", (typeof testWoo !== "undefined") && testWoo.compiler);
+  twRequireLib("woo:testWooLifecycle.js", (typeof testWoo !== "undefined") && testWoo.lifecycle);
+  twRequireLib("woo:testWooRepository.js", (typeof testWoo !== "undefined") && testWoo.repo);
+  twRequireLib("woo:testWooWorkflowClone.js", (typeof testWoo !== "undefined") && testWoo.wfClone);
+  twRequireLib("woo:testWooMatch.js", (typeof testWoo !== "undefined") && testWoo.match);
 
   var campaignId = String(p.campaign_id || p.operation_id || "");
   var mode = String(p.mode || "dedup").replace(/^\s+|\s+$/g, "").toLowerCase();

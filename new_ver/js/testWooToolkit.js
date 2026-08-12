@@ -1,6 +1,7 @@
 /*
  * testWooToolkit.js (LLM Tool 레지스트리)
  * ==================================================
+ * litmus 동기 __v=159 (#160 배포정합).
  * OpenRouter tools용 spec·invoke·evidenceLog.
  * Triage·Foundry가 schema 조사·probe_sql·search_columns 호출.
  *
@@ -703,3 +704,4 @@ testWoo.toolkit = (function () {
     getEvidenceLogSince: getEvidenceLogSince
   };
 })();
+testWoo.toolkit.__v = "159";

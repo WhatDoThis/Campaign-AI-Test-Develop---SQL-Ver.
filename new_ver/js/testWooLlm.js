@@ -1,6 +1,7 @@
 /*
  * testWooLlm.js (LLM Pass0·Pass1 파이프라인)
  * ==================================================
+ * litmus 동기 __v=159 (#160 배포정합).
  * Pass0: NL→slots. Pass1: Stage A 후보만 보고 CNF plan 생성.
  * 최종 SQL은 쓰지 않음. 동기 HttpClientRequest만 사용.
  *
@@ -849,3 +850,4 @@ testWoo.llm = (function () {
     _readResponseBody: _readResponseBody
   };
 })();
+testWoo.llm.__v = "159";

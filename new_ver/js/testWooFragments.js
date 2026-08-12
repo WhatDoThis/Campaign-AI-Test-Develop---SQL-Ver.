@@ -1,6 +1,7 @@
 /*
  * testWooFragments.js (Fragment Stage A 검색)
  * ==================================================
+ * litmus 동기 __v=159 (#160 배포정합).
  * 슬롯별 후보 fragment 메타 검색. 전체 카탈로그·sql_text 일괄 로드 금지.
  * queryDef 페이지네이션(lineCount·startLine)으로 가드레일 유지.
  *
@@ -20,6 +21,7 @@
  *
  * [Invariants]
  * ===========
+ * litmus 동기 __v=159 (#160 배포정합).
  * - Stage A LIKE: label/tags/synonyms/sample_questions/name/description
  *   (Foundry description-only 메타도 후보로 잡혀야 함)
  */
@@ -315,3 +317,4 @@ testWoo.fragments = (function () {
     clearCache: clearCache
   };
 })();
+testWoo.fragments.__v = "159";

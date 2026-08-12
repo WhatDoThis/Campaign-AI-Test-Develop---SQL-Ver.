@@ -1,6 +1,7 @@
 /*
  * testWooFoundry.js (Fragment Foundry 배치 처리)
  * ==================================================
+ * litmus 동기 __v=159 (#160 배포정합).
  * 큐 슬롯별 triage → feasible만 SQL 생성 → dedup → publish.
  * WF 스크립트에서 logError 즉시 중단 — 실패는 큐 저장 후 logWarning.
  *
@@ -1217,3 +1218,4 @@ testWoo.foundry = (function () {
     isAutoApprove: isAutoApprove
   };
 })();
+testWoo.foundry.__v = "159";

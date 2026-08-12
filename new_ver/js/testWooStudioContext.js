@@ -1,6 +1,7 @@
 /*
  * testWooStudioContext.js (Studio 컨텍스트 조회)
  * ==================================================
+ * litmus 동기 __v=159 (#160 배포정합).
  * AI Studio 2차: @isAiFolder=1 Program/폴더만 queryDef 조회.
  * Write·삭제 없음. WKF 클론은 testWooWorkflowClone.js.
  *
@@ -70,3 +71,4 @@ testWoo.studioContext = (function () {
     listAiFolders: listAiFolders
   };
 })();
+testWoo.studioContext.__v = "159";

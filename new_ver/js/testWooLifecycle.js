@@ -1,6 +1,7 @@
 /*
  * testWooLifecycle.js (Fragment·SQL 생애주기)
  * ==================================================
+ * litmus 동기 __v=159 (#160 배포정합).
  * fragment contentHash·버전 발행·revoke·impact 조회.
  * publish 시 dedup 판정·emb_* 벡터를 함께 기록.
  *
@@ -331,3 +332,4 @@ testWoo.lifecycle = (function () {
     compileHash: compileHash
   };
 })();
+testWoo.lifecycle.__v = "159";

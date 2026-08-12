@@ -1,6 +1,7 @@
 /*
  * testWooDedup.js (Fragment 중복 판정)
  * ==================================================
+ * litmus 동기 __v=159 (#160 배포정합).
  * Foundry publish 전 후보 SQL을 기존 fragment와 L0~L4 단계로 비교.
  * near 비율 분모는 모집단 COUNT, 후보 row 수가 아니다.
  *
@@ -325,3 +326,4 @@ testWoo.dedup = (function () {
 
   return { check: check, tokensOf: tokensOf, jaccard: jaccard };
 })();
+testWoo.dedup.__v = "159";
