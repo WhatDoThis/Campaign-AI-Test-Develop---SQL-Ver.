@@ -1,6 +1,7 @@
 # Log
 
 ## Log Index
+210. 2026-08-12 #164 P0 — Foundry 슬롯 삼킴 차단(색인 오염·AND 커버리지 게이트·큐 이어달리기)
 209. 2026-08-12 #161 실측 — libs 불일치 8종을 필수 재등록 목록으로 격상
 208. 2026-08-12 #160 배포정합 진단 · twRequireLib · __v · libVersions
 207. 2026-08-12 개발가이드 AuthDebug 잔여 참조 제거 (#197 정합)
@@ -212,6 +213,15 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+210. 2026-08-12 #164 P0 — Foundry 슬롯 삼킴 차단(색인 오염·AND 커버리지 게이트·큐 이어달리기)
+Purpose: 큐 1건당 fragment 1건만 생기던 슬롯 삼킴을 막고, 상한 도달 시 남은 슬롯을 다음 배치로 이어달린다.
+Changes:
+- #164-A (`e7dab7f`): `_fragDocFromLlm`에서 nlText 색인 제거 · `_coversSlot` AND 게이트 · 부분 히트는 pending 유지
+- #164-B (`09e75c9`): maxNewFragments=10 · tokenBudget=200000 · totalCallBudget=384 · created>0이면 queued 재적재(attempt 복원)
+- 문서: `30_Foundry_슬롯삼킴_P0.md` · 진행판에 #164를 #162 앞에 삽입
+Verification: HUMAN — 검증표 #1~#6(특히 #4 synonyms 오염 없음). litmus/`__v` bump는 별도 지시 대기.
+Changed files: new_ver/js/testWooFoundry.js, new_ver/js/testWooEnv.js, docs/report/upgrade_plan/30_Foundry_슬롯삼킴_P0.md, docs/report/upgrade_plan/01_진행판.md, docs/report/00_ReportIndex.md, docs/log/log.md
 
 209. 2026-08-12 #161 실측 — libs 불일치 8종을 필수 재등록 목록으로 격상
 Purpose: Studio 진입 시 배너에 match/probe/dedup/toolkit/feasibility/studioContext/wfClone/workflowUi 불일치가 남음 — 코어만 올린 상태. Changes:
