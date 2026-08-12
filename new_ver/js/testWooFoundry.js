@@ -25,7 +25,7 @@
  * =========
  * - 건별 실패: 큐 status/err_id 저장 → logWarning(순서 뒤집으면 processing 고착)
  * - tokenBudget 초과 → needs_human_design(dryRunSlot 제외)
- * - publish/reuse 후 Stage A가 잡도록 sample_questions·synonyms에 슬롯·NL 키워드 기록
+ * - publish/reuse 후 Stage A가 잡도록 sample_questions·synonyms에 자기 슬롯 키워드만 기록(#164)
  */
 var testWoo = testWoo || {};
 testWoo.foundry = (function () {
@@ -663,12 +663,14 @@ testWoo.foundry = (function () {
     if (typeof tags === "string") tagsStr = tags;
     else if (tags && tags.length) tagsStr = tags.join(",");
 
+    // [#164 P0] Stage A 색인에 nlText 를 넣으면 이 fragment 가 형제 슬롯까지 자기 것이라
+    // 주장하여 _resolveRemainingBySearch 가 남은 슬롯을 삼킨다(큐당 1건만 생성).
+    // 색인 대상은 자기 슬롯 텍스트로 한정한다. nlText 는 LLM 프롬프트 문맥으로만 쓴다.
     var samples = [];
     if (_trim(slotText)) samples.push(String(slotText));
-    if (_trim(nlText) && String(nlText) !== String(slotText)) samples.push(String(nlText));
     if (_trim(frag.rationale)) samples.push(String(frag.rationale));
     if (!samples.length) samples.push(String(frag.label || frag.name || ""));
-    var synTok = _stageATokens(slotText, nlText);
+    var synTok = _stageATokens(slotText, "");
     var synStr = synTok.length ? synTok.join(",") : "";
 
     var auto = isAutoApprove();
@@ -705,6 +707,28 @@ testWoo.foundry = (function () {
     return t;
   }
 
+  // [#164 P0] 재사용 인정 게이트. Stage A LIKE 부분 히트만으로 "커버됨"을 선언하면
+  // 형제 슬롯이 삼켜진다. 슬롯 핵심 토큰이 후보 카드에 전부 있을 때만 재사용으로 본다.
+  // Pass1(LLM) 판정보다 관대하면 Studio 가 unmatched 로 되돌려 재큐잉 루프가 된다.
+  function _coversSlot(card, slot) {
+    if (!card) return false;
+    var need = (slot.searchKeywords && slot.searchKeywords.length) ?
+      slot.searchKeywords : String(slot.text || "").split(/[^0-9a-zA-Z가-힣]+/);
+    var parts = [card.label, card.description, card.tags, card.synonyms];
+    var sq = card.sample_questions;
+    if (sq != null) parts.push((typeof sq === "object" && typeof sq.length === "number") ?
+      sq.join(" ") : String(sq));
+    var blob = parts.join(" ").toLowerCase().replace(/\s+/g, "");
+    var req = 0, hit = 0;
+    for (var i = 0; i < need.length; i++) {
+      var t = String(need[i] || "").toLowerCase().replace(/\s+/g, "");
+      if (t.length < 2) continue;
+      req++;
+      if (blob.indexOf(t) >= 0) hit++;
+    }
+    return req > 0 && hit === req;
+  }
+
   // publish 직후 남은 슬롯이 새 fragment로 커버되는지 Stage A로 재검색한다.
   // 자동승인 ON → active만. OFF(킬스위치) → verified 잔여분도 포함.
   function _resolveRemainingBySearch(pending, slotResults) {
@@ -721,7 +745,8 @@ testWoo.foundry = (function () {
         logWarning("[testWoo.foundry._resolveRemainingBySearch] " + String(eS.message || eS));
       }
       var cands = (hit && hit.length && hit[0].candidates) ? hit[0].candidates : [];
-      if (!cands.length) {
+      if (!cands.length || !_coversSlot(cands[0], pending[k])) {
+        // 부분 히트는 재사용 불가 — pending 에 남겨 같은 큐 안에서 계속 생성한다.
         stillMissing.push(pending[k]);
         continue;
       }
@@ -731,7 +756,8 @@ testWoo.foundry = (function () {
         slotText: pending[k].text,
         verdict: "feasible",
         confidence: "medium",
-        narrative: "직전에 생성된 fragment(" + String(cands[0].name) + ")가 이 조건을 커버합니다.",
+        narrative: "직전 생성 fragment(" + String(cands[0].name) +
+          ")가 이 슬롯의 모든 키워드를 포함합니다(AND 커버리지 통과).",
         evidence: {},
         alternatives: [],
         resolvedBy: "reuse_after_publish",
