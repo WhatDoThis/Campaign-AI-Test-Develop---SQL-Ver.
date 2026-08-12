@@ -1,6 +1,10 @@
 # Log
 
 ## Log Index
+191. 2026-08-12 #147 교정 — create Match 제거 · discover valueContainment=1 (v=153)
+190. 2026-08-12 #147 — intent·plan-only discover·breadcrumb (v=152)
+189. 2026-08-11 #146 — Match 이원화 (dedup=Jaccard / discover=containment)
+188. 2026-08-11 PoC-M(#145) — 매칭의미론·복제가능성 조사 (코드변경없음)
 187. 2026-08-11 5차 — 매칭잔상/Max안내 분기 (matchShown · v=151)
 186. 2026-08-11 5차 보완 — 전역 유사WKF·3줄목록·컨텍스트 자동반영 v=150
 185. 2026-08-11 5차 — 조건매칭(Jaccard≥0.9)·SQL목록·Register dedup v=149
@@ -190,6 +194,36 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+191. 2026-08-12 #147 교정 — create Match 제거 · discover valueContainment=1 (v=153)
+Purpose: create 전역 유사목록·reuse name-only 오매칭(서울≠인천) 수정. Changes:
+
+- discover: valueKey containment==1만 통과 · 라벨/카운트 value 기준 · plan_json 없으면 제외
+- Studio create: generate 후 runMatch 제거 · 빈목록 안내 정합 · litmus v=153
+Changed files: new_ver/js/testWooMatch.js, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
+
+190. 2026-08-12 #147 — intent·plan-only discover·breadcrumb (v=152)
+Purpose: 캠페인 선택 후 create|reuse 의도 분기 · 탐색은 plan-only+Match(discover) · 브레드크럼 네비. Changes:
+
+- Generate: plan_only 시 compile/gates/Foundry 큐 생략
+- Studio: intent 버튼 · [찾기] discoverFind · 포함카드(수치 숨김) · Program>Campaign>WKF crumb · litmus v=152
+- 뒤로/초기화/의도전환 시 matchShown·compose 클리어 (v=151 패턴 유지)
+Changed files: new_ver/jssp/testWooAiGenerate.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
+
+189. 2026-08-11 #146 — Match 이원화 (dedup=Jaccard / discover=containment)
+Purpose: 탐색용 containment Top-N과 중복판정 Jaccard 0.9를 모드 분리. Changes:
+
+- containment() 추가 · mode=dedup|discover (기본 dedup=기존 동일)
+- discover: intersection≥1 · Top20 · name/valueContainment (plan_json)
+- Match.jssp mode 통과 · listAiSqlForMatch에 plan_json
+Changed files: new_ver/js/testWooMatch.js, new_ver/jssp/testWooAiMatch.jssp, new_ver/js/testWooRepository.js, docs/report/upgrade_plan/12_PoC-M_매칭의미론.md, docs/log/log.md
+
+188. 2026-08-11 PoC-M(#145) — 매칭의미론·복제가능성 조사 (코드변경없음)
+Purpose: 탐색 매칭·복제·시점정합 설계용 사실 확인. new_ver 미수정. Changes:
+
+- M1~M8 파일:라인·Adobe URL 근거 기입 · 결론 (a)(b)(c)(d) 단정
+- #146/#147 착수 게이트: M1·M3 확인 · plan-only 분리 가능
+Changed files: docs/report/upgrade_plan/12_PoC-M_매칭의미론.md, docs/report/00_ReportIndex.md, docs/log/log.md
 
 187. 2026-08-11 5차 — 매칭잔상/Max안내 분기 (matchShown · v=151)
 Purpose: 뒤로/초기화 후 캠페인 재진입 시 이전 plan 매칭·Max 모순 안내 제거. Changes:

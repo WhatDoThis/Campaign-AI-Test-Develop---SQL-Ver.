@@ -7,7 +7,7 @@
  * ===========
  * - saveAiSql / enqueueRequest / getQueueStatus / upsertGapLog / listGapLog
  * - listAiSqlByWorkflow / getAiSqlById / deleteAiSql — WF별 SQL 목록·불러오기·삭제 (섹션 7b)
- * - listAiSqlForMatch / findAiSqlBySqlHash — 5차 매칭·Register 중복 스킵
+ * - listAiSqlForMatch / findAiSqlBySqlHash — 5차 매칭·Register 중복 스킵 (#146 plan_json)
  * - approveFragment : 민감/킬스위치 OFF 잔여 verified → active (4차 일반 경로는 Foundry 자동)
  *
  * [Dependencies]
@@ -359,6 +359,7 @@ testWoo.repo = (function () {
           <node expr="@id"/><node expr="@workflow_name"/>
           <node expr="@used_fragments"/><node expr="@compile_hash"/>
           <node expr="@nl_request"/><node expr="@title"/>
+          <node expr="@plan_json"/>
           <node expr="@status"/><node expr="@creation_date"/>
         </select>
         <where>
@@ -378,6 +379,7 @@ testWoo.repo = (function () {
         compile_hash: String(r.@compile_hash || ""),
         nl_request: String(r.@nl_request || ""),
         title: String(r.@title || ""),
+        plan_json: String(r.@plan_json || ""),
         status: String(r.@status || ""),
         creation_date: String(r.@creation_date || "")
       });

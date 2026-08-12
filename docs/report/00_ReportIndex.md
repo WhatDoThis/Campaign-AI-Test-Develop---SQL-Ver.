@@ -12,6 +12,7 @@
 | `upgrade_plan/04_3a_PoC_RESULT.md` | PoC-1~3 HUMAN 실측 절차·RESULT 기입 (new_ver 코드 변경 없음) |
 | `upgrade_plan/04_3a_PoC_Campaign.md` | PoC-C: bare Write 캠페인(위치 PASS·품질 FAIL) |
 | `upgrade_plan/04_3a_PoC_Template.md` | PoC-T: opEmptyTemplate_LLM / wfEmptyTemplate_CUSTOM 공식 API 검증 |
+| `upgrade_plan/12_PoC-M_매칭의미론.md` | PoC-M(#145): plan/params·plan-only·AiSql필드·실행메타·LIMIT·날짜·Duplicate 조사 (new_ver 변경 없음) |
 | `10_Fragment_생애주기_설계.md` | Fragment 승인 모델 게이트→라벨 전환 설계 — 현행 enum 매핑 · 빈도 기반 검수 · 야간 게이트 재실행 · 킬스위치는 revoked 재사용 |
 | `09_SQL생성추가_디버깅3.md` | F-0~F-5 반영 검증 후 잔여 C-1·E-1·E-2·A-1 — sanitize/compress 순서·phase 예산 누수·tokenBudget·자격 검증·스모크 9c |
 | `08_SQL생성추가_디버깅2.md` | Foundry 생성 단계 근원 진단 F-0~F-5 — 출력 계약 부재·루프 종료 불일치·자가진단 알고리즘·dryRunSlot 계측기 |

@@ -2,6 +2,7 @@
 response.setContentType("application/json;charset=utf-8");
 /*
  * testWooAiGenerate.jssp (Pass0→StageA→Pass1 → SQL / Foundry 큐 분기)
+ * #147: plan_only=true 이면 compile·gates·Foundry 큐 없이 plan만 반환 (탐색용).
  * queued 안내 message 유니코드: 질문=\uC9C8\uBB38, 재시도=\uC7AC\uC2DC\uB3C4 (#127)
  */
 try {
@@ -20,22 +21,42 @@ try {
   var p = readPayload();
   if (!p.nl_request) throw new Error("nl_request missing");
   var cfg = testWoo.cfg.getConfig();
+  var planOnly = !!(
+    p.plan_only === true ||
+    p.plan_only === 1 ||
+    p.plan_only === "1" ||
+    p.plan_only === "true" ||
+    p.planOnly === true
+  );
 
   var plan = testWoo.llm.generatePlan(p.nl_request);
   var unmatched = plan.unmatched || [];
 
+  var clientPlan = {
+    grainKey: plan.grainKey || "",
+    include: plan.include || [],
+    exclude: plan.exclude || [],
+    unmatched: unmatched
+  };
+
   if (unmatched.length) {
-    if (cfg.foundry.enabled) {
+    /* 탐색(plan_only): 큐/SQL 없이 unmatched만 반환 */
+    if (planOnly) {
+      jsonOut({
+        ok: false,
+        passed: false,
+        planOnly: true,
+        unmatched: unmatched,
+        matchedSlots: plan.matchedSlots || [],
+        plan: clientPlan,
+        error: "unmatched slots — plan only"
+      });
+    } else if (cfg.foundry.enabled) {
       var queueId = testWoo.repo.enqueueRequest({
         nl_text: p.nl_request,
         slots_json: JSON.stringify(plan._meta ? plan._meta.slots : []),
         missing_slots_json: JSON.stringify(unmatched),
-        plan_json: JSON.stringify({
-          grainKey: plan.grainKey,
-          include: plan.include || [],
-          exclude: plan.exclude || [],
-          unmatched: unmatched
-        }),
+        plan_json: JSON.stringify(clientPlan),
         created_by: currentLogin(),
         workflow_name: p.workflow_name || ""
       });
@@ -55,14 +76,21 @@ try {
         passed: false,
         unmatched: unmatched,
         matchedSlots: plan.matchedSlots || [],
-        plan: {
-          grainKey: plan.grainKey || "",
-          include: plan.include || [],
-          exclude: plan.exclude || [],
-          unmatched: unmatched
-        }
+        plan: clientPlan
       });
     }
+  } else if (planOnly) {
+    jsonOut({
+      ok: true,
+      passed: true,
+      planOnly: true,
+      plan: clientPlan,
+      sql: "",
+      chips: testWoo.compiler.chipsFromPlan(clientPlan),
+      summary: "\uD0D0\uC0C9\uC6A9 \uC870\uAC74 \uACC4\uD68D(\uC0DD\uC131 SQL \uC5C6\uC74C)",
+      results: [],
+      error: null
+    });
   } else {
     var compiled = testWoo.compiler.compile(plan);
     var results = testWoo.gates.runAll(plan, compiled.sql);
@@ -70,12 +98,6 @@ try {
     for (var ri = 0; ri < results.length; ri++) {
       if (!results[ri].ok) { passed = false; break; }
     }
-    var clientPlan = {
-      grainKey: plan.grainKey,
-      include: plan.include || [],
-      exclude: plan.exclude || [],
-      unmatched: plan.unmatched || []
-    };
     jsonOut({
       ok: true,
       passed: passed,

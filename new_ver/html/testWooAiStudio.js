@@ -8,10 +8,12 @@
  * #134: 진단 패널은 details 대신 div 토글 (IE details 미지원).
  * #135: TW-BOOT. 2차: ctx 상태머신 · listAiFolders · 입력 게이트.
  * 5차 v=151: matchShown(Generate 후만) · 뒤로/초기화 시 compose 클리어 · Max 안내 분기.
+ * #147 v=153: create=Match 없음 · reuse=plan_only+valueContainment1 · breadcrumb.
  *
  * [Main Functions]
  * ===========
- * - generate / validate / register / runMatch
+ * - generate / discoverFind / validate / register / runMatch
+ * - setIntent / _syncIntentUi / renderBreadcrumb
  * - loadAiFolders / selectFolder / loadCampaigns / selectCampaign / createCampaign
  * - createWkf / selectWkf / showOpenHint
  * - goBack / resetCtx / renderListPane / setInputEnabled
@@ -21,7 +23,7 @@
  * =========
  * - /woo/testWooAiGenerate|Validate|Register|Match|StudioContext.jssp
  * - Cookie credentials + X-Requested-With / payload.csrf + pageHost
- * - Served as /woo/testWooAiStudioJs.jssp?v=151 (keep in sync with html/)
+ * - Served as /woo/testWooAiStudioJs.jssp?v=153 (keep in sync with html/)
  * - ES5 only: no fetch/Promise/classList/forEach/URLSearchParams/const/let/=>
  */
 (function () {
@@ -83,6 +85,8 @@
     wkfMax: 15,
     openHint: "",
     matchShown: false,
+    matchMode: "",
+    intent: "",
     stack: []
   };
   var SHELL_MODE = !(WORKFLOW_NAME && EMBED);
@@ -387,9 +391,24 @@
     _rmCls($("cardSlotResults"), "hidden");
   }
 
+  function _planHasFragments(plan) {
+    if (!plan) return false;
+    var inc = plan.include || [];
+    var exc = plan.exclude || [];
+    return (inc.length + exc.length) > 0;
+  }
+
   function generate() {
     if (SHELL_MODE && (!ctx.campaign || !ctx.campaign.id)) {
       showErr("\uCEA0\uD398\uC778\uC744 \uBA3C\uC800 \uC120\uD0DD\uD558\uC138\uC694.");
+      return;
+    }
+    if (SHELL_MODE && !ctx.intent) {
+      showErr("\uC704\uC5D0\uC11C \uC791\uC5C5 \uBC29\uC2DD\uC744 \uC120\uD0DD\uD558\uC138\uC694.");
+      return;
+    }
+    if (SHELL_MODE && ctx.intent === "reuse") {
+      discoverFind();
       return;
     }
     var nl = _trim($("nl").value);
@@ -435,8 +454,13 @@
           renderSummaryHint(res.summary, true);
         }
         hideFunnel();
-        if (SHELL_MODE && ctx.campaign && ctx.campaign.id && state.plan) {
-          runMatch(null);
+        /* create: 유사/포함 WKF 목록 금지 — 새 WKF 후 [등록]만 (#147) */
+        if (SHELL_MODE && !ctx.workflow) {
+          ctx.wkfs = [];
+          ctx.matchShown = false;
+          ctx.matchMode = "";
+          _showSqlSide(false);
+          renderListPane();
         }
       } finally {
         setBusy(false);
@@ -445,6 +469,84 @@
       showErr(String(e && e.message ? e.message : e));
       setBusy(false);
     });
+  }
+
+  /* #147 reuse: plan_only Generate → Match discover (SQL/Register/Foundry \uC5C6\uC74C) */
+  function discoverFind() {
+    if (SHELL_MODE && (!ctx.campaign || !ctx.campaign.id)) {
+      showErr("\uCEA0\uD398\uC778\uC744 \uBA3C\uC800 \uC120\uD0DD\uD558\uC138\uC694.");
+      return;
+    }
+    var nl = _trim($("nl").value);
+    if (!nl) return;
+    state.nl = nl;
+    clearErr();
+    setBusy(true);
+    _diag("discoverFind start");
+    post(
+      "testWooAiGenerate.jssp",
+      {
+        nl_request: nl,
+        workflow_name: _activeWorkflowName(),
+        plan_only: true
+      },
+      function (res) {
+        try {
+          if (res && res.status === "queued") {
+            showErr(
+              "\uD0D0\uC0C9 \uACBD\uB85C\uC5D0\uC11C\uB294 Foundry \uD050\uB97C \uC0AC\uC6A9\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC870\uAC74\uC744 \uB2E4\uC2DC \uC785\uB825\uD558\uC138\uC694."
+            );
+            hideResultCards();
+            return;
+          }
+          if (!res || !res.plan || !_planHasFragments(res.plan)) {
+            if (res && res.unmatched && res.unmatched.length) {
+              $("hint").className = "banner warn";
+              $("hint").textContent =
+                "\uB9E4\uCE6D \uC2E4\uD328(\uD0D0\uC0C9 \uBD88\uAC00): \uB77C\uC774\uBE0C\uB7EC\uB9AC\uC5D0 \uD574\uB2F9 fragment\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. " +
+                "\uC2AC\uB86F: " +
+                res.unmatched.join(" | ");
+            } else {
+              showErr(_errText(res) || "plan_only failed");
+            }
+            hideResultCards();
+            ctx.wkfs = [];
+            ctx.matchShown = false;
+            ctx.matchMode = "";
+            if (!ctx.workflow) renderListPane();
+            return;
+          }
+          state.plan = res.plan;
+          state.sql = "";
+          state.summary = res.summary || "";
+          state.passed = false;
+          if (res.chips) renderChips(res.chips);
+          else hideResultCards();
+          _addCls($("cardCode"), "hidden");
+          _addCls($("cardGates"), "hidden");
+          $("btnReg").disabled = true;
+          if (res.unmatched && res.unmatched.length) {
+            $("hint").className = "banner warn";
+            $("hint").textContent =
+              "\uC77C\uBD80 \uC870\uAC74\uB9CC\uC73C\uB85C \uD0D0\uC0C9\uD569\uB2C8\uB2E4. \uBBF8\uB9E4\uCE6D: " +
+              res.unmatched.join(" | ");
+          } else {
+            clearErr();
+            $("hint").className = "banner ok";
+            $("hint").textContent =
+              "\uC870\uAC74 \uACC4\uD68D \uC644\uB8CC \u2014 \uD3EC\uD568 WKF\uB97C \uCC3E\uB294 \uC911\u2026";
+          }
+          hideFunnel();
+          runMatch(null, "discover");
+        } finally {
+          setBusy(false);
+        }
+      },
+      function (e) {
+        showErr(String(e && e.message ? e.message : e));
+        setBusy(false);
+      }
+    );
   }
 
   function validate() {
@@ -523,19 +625,23 @@
     });
   }
 
-  // 5차: plan → Jaccard≥0.9 WKF (캠페인 전체 listWkfs 아님)
-  function runMatch(done) {
+  // 5차/#146: plan → Match (mode: dedup|discover)
+  function runMatch(done, mode) {
     if (!SHELL_MODE || !ctx.campaign || !ctx.campaign.id || !state.plan) {
       if (done) done(false);
       return;
     }
-    _diag("runMatch start");
+    var m = mode || (ctx.intent === "reuse" ? "discover" : "dedup");
+    if (m !== "discover") m = "dedup";
+    ctx.matchMode = m;
+    _diag("runMatch start mode=" + m);
     post(
       "testWooAiMatch.jssp",
       {
         plan: state.plan,
         campaign_id: ctx.campaign.id,
-        operation_id: ctx.campaign.id
+        operation_id: ctx.campaign.id,
+        mode: m
       },
       function (res) {
         if (!res || !res.ok) {
@@ -556,8 +662,14 @@
           _showSqlSide(false);
           renderListPane();
           var h = $("hint");
-          if (h && state.passed) {
-            var n = ctx.wkfs.length;
+          var n = ctx.wkfs.length;
+          if (h && m === "discover") {
+            h.className = "banner ok";
+            h.textContent =
+              "\uC870\uAC74\uC744 \uD3EC\uD568\uD55C WKF " +
+              n +
+              "\uAC74. \uC120\uD0DD \uC2DC Program/\uCEA0\uD398\uC778\uC774 \uC790\uB3D9 \uBC18\uC601\uB429\uB2C8\uB2E4.";
+          } else if (h && state.passed) {
             h.className = "banner ok";
             h.textContent =
               (state.summary || "SQL\uC774 \uC900\uBE44\uB418\uC5C8\uC2B5\uB2C8\uB2E4.") +
@@ -592,6 +704,7 @@
     state.foundryDoneQid = null;
     ctx.wkfs = [];
     ctx.matchShown = false;
+    ctx.matchMode = "";
     try {
       var nlEl = $("nl");
       if (nlEl) nlEl.value = "";
@@ -603,6 +716,55 @@
       var sqlBox = $("sql");
       if (sqlBox) sqlBox.textContent = "";
     } catch (eS) {}
+  }
+
+  function setIntent(mode) {
+    var m = mode === "reuse" ? "reuse" : mode === "create" ? "create" : "";
+    if (!m) return;
+    if (ctx.intent && ctx.intent !== m) _clearComposeState();
+    ctx.intent = m;
+    _syncIntentUi();
+    setInputEnabled(true);
+    clearErr();
+    var h = $("hint");
+    if (h) {
+      h.className = "banner warn";
+      if (m === "reuse") {
+        h.textContent =
+          "\uAE30\uC874 \uC870\uAC74 \uCC3E\uAE30: \uC870\uAC74\uC744 \uC785\uB825\uD55C \uB4A4 [\uCC3E\uAE30]\uB97C \uB204\uB974\uC138\uC694. (SQL \uC0DD\uC131/\uB4F1\uB85D \uC5C6\uC74C)";
+      } else {
+        h.textContent =
+          "\uC0C8 \uC870\uAC74 \uB9CC\uB4E4\uAE30: \uC870\uAC74\uC744 \uC785\uB825\uD55C \uB4A4 [\uC0DD\uC131]\uC744 \uB204\uB974\uC138\uC694.";
+      }
+    }
+    if (!ctx.workflow) renderListPane();
+  }
+
+  function _syncIntentUi() {
+    var bar = $("twIntentBar");
+    var btnC = $("btnIntentCreate");
+    var btnR = $("btnIntentReuse");
+    var btnG = $("btnGen");
+    var showBar =
+      SHELL_MODE &&
+      !!(ctx.campaign && ctx.campaign.id) &&
+      !ctx.workflow &&
+      ctx.listMode === "WKF";
+    if (bar) {
+      if (showBar) _rmCls(bar, "hidden");
+      else _addCls(bar, "hidden");
+    }
+    if (btnC) {
+      if (ctx.intent === "create") _addCls(btnC, "on");
+      else _rmCls(btnC, "on");
+    }
+    if (btnR) {
+      if (ctx.intent === "reuse") _addCls(btnR, "on");
+      else _rmCls(btnR, "on");
+    }
+    if (btnG) {
+      btnG.textContent = ctx.intent === "reuse" ? "\uCC3E\uAE30" : "\uC0DD\uC131";
+    }
   }
 
   function setBindPick(aiSqlId) {
@@ -618,9 +780,116 @@
   }
 
   function setInfoBar(text) {
-    var el = $("twInfoText") || $("twInfoBar");
+    /* #147: text 인자는 호환용 — 실제는 breadcrumb DOM */
+    renderBreadcrumb();
+  }
+
+  function renderBreadcrumb() {
+    var el = $("twInfoText");
     if (!el) return;
-    el.textContent = text || "\uCEA0\uD398\uC778: (\uBBF8\uC120\uD0DD)";
+    while (el.firstChild) el.removeChild(el.firstChild);
+
+    function addSep() {
+      var s = document.createElement("span");
+      s.className = "crumb-sep";
+      s.appendChild(document.createTextNode(">"));
+      el.appendChild(s);
+    }
+    function addCrumb(label, isCur, onClick) {
+      var a = document.createElement("span");
+      a.className = isCur ? "crumb cur" : "crumb";
+      a.appendChild(document.createTextNode(label));
+      if (!isCur && onClick) {
+        a.onclick = function () {
+          onClick();
+          return false;
+        };
+      }
+      el.appendChild(a);
+    }
+
+    if (!ctx.folder) {
+      addCrumb("Program: (\uBBF8\uC120\uD0DD)", true, null);
+    } else {
+      addCrumb(
+        ctx.folder.label || ctx.folder.name || "Program",
+        !ctx.campaign,
+        function () {
+          navToProgram();
+        }
+      );
+      if (ctx.campaign) {
+        addSep();
+        addCrumb(
+          ctx.campaign.label || ctx.campaign.name || "Campaign",
+          !ctx.workflow,
+          function () {
+            navToCampaignList();
+          }
+        );
+      }
+      if (ctx.workflow) {
+        addSep();
+        addCrumb(
+          ctx.workflow.label || ctx.workflow.name || "WKF",
+          true,
+          null
+        );
+      }
+    }
+    if (state.aiSqlId) {
+      var sqlSp = document.createElement("span");
+      sqlSp.appendChild(
+        document.createTextNode(" | SQL: ai_sql_id=" + state.aiSqlId)
+      );
+      el.appendChild(sqlSp);
+    }
+  }
+
+  function navToProgram() {
+    if (!SHELL_MODE) return;
+    _releaseCurrentLock(function () {
+      ctx.intent = "";
+      _clearComposeState();
+      ctx.workflow = null;
+      ctx.openHint = "";
+      ctx.campaign = null;
+      ctx.campaigns = [];
+      ctx.stack = [];
+      if (!EMBED) WORKFLOW_NAME = "";
+      _showSqlSide(false);
+      ctx.listMode = "FOLDER";
+      ctx.phase = "FOLDER_LIST";
+      setInputEnabled(false);
+      _syncIntentUi();
+      _refreshOpenButtons();
+      renderBreadcrumb();
+      loadAiFolders();
+    });
+  }
+
+  function navToCampaignList() {
+    if (!SHELL_MODE || !ctx.folder) {
+      navToProgram();
+      return;
+    }
+    _releaseCurrentLock(function () {
+      ctx.intent = "";
+      _clearComposeState();
+      ctx.workflow = null;
+      ctx.openHint = "";
+      ctx.campaign = null;
+      if (!EMBED) WORKFLOW_NAME = "";
+      _showSqlSide(false);
+      ctx.listMode = "CAMPAIGN";
+      ctx.phase = "PROGRAM_SELECTED";
+      ctx.stack = [];
+      setInputEnabled(false);
+      _syncIntentUi();
+      _refreshOpenButtons();
+      renderBreadcrumb();
+      loadCampaigns();
+    });
   }
 
   function _refreshOpenButtons() {
@@ -655,16 +924,27 @@
     var nl = $("nl");
     var btn = $("btnGen");
     var hint = $("twNlHint");
-    if (nl) nl.disabled = !on;
-    if (btn) btn.disabled = !on;
+    var allow = !!on;
+    if (SHELL_MODE) {
+      if (!ctx.campaign || !ctx.campaign.id) allow = false;
+      else if (!ctx.intent) allow = false;
+    }
+    if (nl) nl.disabled = !allow;
+    if (btn) btn.disabled = !allow;
     if (hint) {
-      if (on) _addCls(hint, "hidden");
+      if (allow) _addCls(hint, "hidden");
       else {
         _rmCls(hint, "hidden");
-        hint.textContent =
-          "\uC624\uB978\uCABD\uC5D0\uC11C Program\uC744 \uACE0\uB978 \uB4A4 \uCEA0\uD398\uC778\uC744 \uC120\uD0DD\uD558\uC138\uC694";
+        if (SHELL_MODE && ctx.campaign && ctx.campaign.id && !ctx.intent) {
+          hint.textContent =
+            "\uC704\uC5D0\uC11C \uC791\uC5C5 \uBC29\uC2DD\uC744 \uC120\uD0DD\uD558\uC138\uC694";
+        } else {
+          hint.textContent =
+            "\uC624\uB978\uCABD\uC5D0\uC11C Program\uC744 \uACE0\uB978 \uB4A4 \uCEA0\uD398\uC778\uC744 \uC120\uD0DD\uD558\uC138\uC694";
+        }
       }
     }
+    _syncIntentUi();
   }
 
   function _folderInfoText() {
@@ -824,10 +1104,13 @@
     }
 
     if (ctx.listMode === "WKF") {
+      var isDiscover = ctx.matchMode === "discover" || ctx.intent === "reuse";
       if (title) {
-        title.textContent = ctx.matchShown
-          ? "\uC720\uC0AC WKF (\uC804\uC5ED)"
-          : "WKF";
+        if (ctx.matchShown && isDiscover) {
+          title.textContent = "\uC870\uAC74 \uD3EC\uD568 WKF";
+        } else {
+          title.textContent = "WKF";
+        }
       }
       var createRow = document.createElement("div");
       if (ctx.canCreateWkf) {
@@ -862,19 +1145,25 @@
         emptyW.className = "side-empty";
         var emptyMsg = "";
         if (!ctx.matchShown) {
-          emptyMsg = ctx.canCreateWkf
-            ? "\uC67C\uCABD\uC5D0\uC11C \uC870\uAC74 [\uC0DD\uC131] \uD6C4 \uC804\uC5ED \uC720\uC0AC WKF\uAC00 \uD45C\uC2DC\uB429\uB2C8\uB2E4. \uB610\uB294 \uC704\uC5D0\uC11C \uC0C8 WKF\uB97C \uBA3C\uC800 \uB9CC\uB4DC\uC138\uC694."
-            : "\uC67C\uCABD\uC5D0\uC11C \uC870\uAC74 [\uC0DD\uC131] \uD6C4 \uC720\uC0AC WKF\uAC00 \uD45C\uC2DC\uB429\uB2C8\uB2E4. (\uC774 \uCEA0\uD398\uC778\uC740 WKF Max " +
-              ctx.wkfMax +
-              " \u2014 \uC0C8 WKF \uBD88\uAC00)";
-        } else if (ctx.canCreateWkf) {
+          if (!ctx.intent) {
+            emptyMsg =
+              "\uC67C\uCABD\uC5D0\uC11C \uC791\uC5C5 \uBC29\uC2DD\uC744 \uC120\uD0DD\uD55C \uB4A4 \uC870\uAC74\uC744 \uC785\uB825\uD558\uC138\uC694. \uB610\uB294 \uC704\uC5D0\uC11C \uC0C8 WKF\uB97C \uB9CC\uB4DC\uC138\uC694.";
+          } else if (isDiscover) {
+            emptyMsg =
+              "\uC870\uAC74\uC744 \uC785\uB825\uD55C \uB4A4 [\uCC3E\uAE30]\uB97C \uB204\uB974\uC138\uC694. (\uB0B4 \uC870\uAC74\uC774 \uBAA8\uB450 \uD3EC\uD568\uB41C WKF\uB9CC \uD45C\uC2DC)";
+          } else {
+            emptyMsg = ctx.canCreateWkf
+              ? "WKF\uB97C \uB9CC\uB4E0 \uB4A4 [\uB4F1\uB85D]\uD558\uC138\uC694. \uC720\uC0AC \uC870\uAC74 \uD0D0\uC0C9\uC740 \u300E\uAE30\uC874 \uC870\uAC74 \uCC3E\uC544 \uC4F0\uAE30\u300F"
+              : "\uC870\uAC74 [\uC0DD\uC131] \uD6C4 WKF\uAC00 \uD544\uC694\uD569\uB2C8\uB2E4. (\uC774 \uCEA0\uD398\uC778\uC740 WKF Max " +
+                ctx.wkfMax +
+                " \u2014 \uC0C8 WKF \uBD88\uAC00. \uD0D0\uC0C9\uC740 \u300E\uAE30\uC874 \uC870\uAC74 \uCC3E\uC544 \uC4F0\uAE30\u300F)";
+          }
+        } else if (isDiscover) {
           emptyMsg =
-            "\uC720\uC0AC WKF\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4 (Jaccard 0.9 \uBBF8\uB9CC). \uC0C8 WKF\uB97C \uC0DD\uC131\uD558\uC138\uC694.";
+            "\uB0B4 \uC870\uAC74\uC774 \uBAA8\uB450 \uD3EC\uD568\uB41C WKF\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. \uC0C8 WKF\uB97C \uC0DD\uC131\uD558\uAC70\uB098 \uC870\uAC74\uC744 \uBC14\uAFB8\uC138\uC694.";
         } else {
           emptyMsg =
-            "\uC720\uC0AC WKF\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4 (Jaccard 0.9 \uBBF8\uB9CC). \uC774 \uCEA0\uD398\uC778\uC740 WKF \uC0C1\uD55C(Max " +
-            ctx.wkfMax +
-            ")\uC774\uB77C \uC0C8 WKF\uB97C \uB9CC\uB4E4 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uB2E4\uB978 \uCEA0\uD398\uC778\uC744 \uC120\uD0DD\uD558\uC138\uC694.";
+            "WKF\uB97C \uB9CC\uB4E0 \uB4A4 [\uB4F1\uB85D]\uD558\uC138\uC694.";
         }
         emptyW.appendChild(document.createTextNode(emptyMsg));
         box.appendChild(emptyW);
@@ -887,39 +1176,88 @@
 
           var wfLabel = row.label || row.name || "";
           var wfName = row.name || "";
-          var line1 = document.createElement("div");
-          line1.className = "sid";
-          var l1 = wfLabel + " / " + wfName;
-          if (row.exact) l1 += " \u2014 \uB3D9\uC77C\uC870\uAC74";
-          else if (row.matchLabel) l1 += " \u2014 " + row.matchLabel;
-          if (row.locked) l1 += " \u2014 \uC7A0\uAE08: " + (row.locked_by || "?");
-          line1.textContent = l1;
-          line1.title = wfLabel + " / " + wfName;
-
           var campLabel = row.campaign_label || row.campaign_name || "?";
           var campName = row.campaign_name || "?";
           var progLabel =
             row.program_label || row.program_name || "?";
-          var line2 = document.createElement("div");
-          line2.className = "meta";
-          var l2 =
-            campLabel +
-            " / " +
-            campName +
-            " | " +
-            progLabel;
-          line2.textContent = l2;
-          line2.title = l2;
-
           var nlTxt = row.nl_request || "(NL \uC5C6\uC74C)";
-          var line3 = document.createElement("div");
-          line3.className = "meta";
-          line3.textContent = nlTxt;
-          line3.title = nlTxt;
 
-          el.appendChild(line1);
-          el.appendChild(line2);
-          el.appendChild(line3);
+          if (isDiscover) {
+            var d1 = document.createElement("div");
+            d1.className = "nl-line";
+            d1.textContent = nlTxt;
+            d1.title = nlTxt + " | " + wfLabel + " / " + wfName;
+            el.appendChild(d1);
+
+            var d2 = document.createElement("div");
+            d2.className = "sid";
+            d2.textContent =
+              row.matchLabel ||
+              ("\uB0B4 \uC870\uAC74 " +
+                (row.queryCount != null ? row.queryCount : "?") +
+                "\uAC1C \uC911 " +
+                (row.intersectionCount != null ? row.intersectionCount : "?") +
+                "\uAC1C \uD3EC\uD568");
+            el.appendChild(d2);
+
+            var extra = 0;
+            if (row.candidateCount != null && row.intersectionCount != null) {
+              extra = row.candidateCount - row.intersectionCount;
+            }
+            if (extra > 0) {
+              var d3 = document.createElement("div");
+              d3.className = "meta";
+              d3.textContent =
+                "\uC774 \uC6CC\uD06C\uD50C\uB85C\uC6B0\uC5D4 \uC870\uAC74 " +
+                extra +
+                "\uAC1C\uAC00 \uB354 \uC788\uC74C";
+              el.appendChild(d3);
+            }
+
+            var d4 = document.createElement("div");
+            d4.className = "meta";
+            d4.textContent =
+              campLabel + " / " + campName + " | " + progLabel;
+            d4.title = d4.textContent;
+            el.appendChild(d4);
+
+            if (row.locked) {
+              var badge = document.createElement("span");
+              badge.className = "badge-lock";
+              badge.textContent =
+                (row.locked_by || "?") + " \uD3B8\uC9D1 \uC911";
+              el.appendChild(badge);
+            }
+          } else {
+            var line1 = document.createElement("div");
+            line1.className = "sid";
+            var l1 = wfLabel + " / " + wfName;
+            if (row.exact) l1 += " \u2014 \uB3D9\uC77C\uC870\uAC74";
+            else if (row.matchLabel) l1 += " \u2014 " + row.matchLabel;
+            if (row.locked) l1 += " \u2014 \uC7A0\uAE08: " + (row.locked_by || "?");
+            line1.textContent = l1;
+            line1.title = wfLabel + " / " + wfName;
+
+            var line2 = document.createElement("div");
+            line2.className = "meta";
+            var l2 =
+              campLabel +
+              " / " +
+              campName +
+              " | " +
+              progLabel;
+            line2.textContent = l2;
+            line2.title = l2;
+
+            var line3 = document.createElement("div");
+            line3.className = "meta";
+            line3.textContent = nlTxt;
+            line3.title = nlTxt;
+
+            el.appendChild(line1);
+            el.appendChild(line2);
+            el.appendChild(line3);
+          }
           el.onclick = function () {
             if (row.locked) {
               showErr(
@@ -1038,10 +1376,11 @@
     ctx.phase = "CAMPAIGN_SELECTED";
     ctx.listMode = "WKF";
     /* 매칭은 Generate 성공 후에만. 재진입 시 이전 plan으로 자동 Match 금지 */
-    ctx.wkfs = [];
-    ctx.matchShown = false;
+    ctx.intent = "";
+    _clearComposeState();
     setInfoBar(_folderInfoText());
-    setInputEnabled(true);
+    setInputEnabled(false);
+    _syncIntentUi();
     _refreshOpenButtons();
     renderListPane();
   }
@@ -1076,8 +1415,7 @@
         setBusy(false);
         if (!res || !res.ok || !res.workflow) {
           showErr(_errText(res) || "createWkf failed");
-          if (state.plan) runMatch(null);
-          else renderListPane();
+          _refreshMatchOrList();
           return;
         }
         clearErr();
@@ -1090,6 +1428,7 @@
         ctx.openHint = String(res.open_hint || "");
         state.aiSqlId = null;
         setInfoBar(_folderInfoText());
+        _syncIntentUi();
         _refreshOpenButtons();
         loadSqlList();
         showOpenHint();
@@ -1097,10 +1436,24 @@
       function (err) {
         setBusy(false);
         showErr(String(err && err.message ? err.message : err));
-        if (state.plan) runMatch(null);
-        else renderListPane();
+        _refreshMatchOrList();
       }
     );
+  }
+
+  /* reuse만 Match 재조회 · create는 목록 비움 */
+  function _refreshMatchOrList() {
+    if (ctx.intent === "reuse" && state.plan) {
+      runMatch(null, "discover");
+      return;
+    }
+    ctx.wkfs = [];
+    ctx.matchShown = false;
+    ctx.matchMode = "";
+    if (!ctx.workflow) {
+      _showSqlSide(false);
+      renderListPane();
+    }
   }
 
   // 전역 매칭 행 선택 시 Program·Campaign 정보바/생성 대상 반영
@@ -1136,8 +1489,7 @@
         setBusy(false);
         if (!res || !res.ok) {
           showErr(_errText(res) || "selectWkf failed");
-          if (state.plan) runMatch(null);
-          else renderListPane();
+          _refreshMatchOrList();
           return;
         }
         clearErr();
@@ -1152,6 +1504,7 @@
         ctx.openHint = String(res.open_hint || "");
         state.aiSqlId = null;
         setInfoBar(_folderInfoText());
+        _syncIntentUi();
         _refreshOpenButtons();
         if (res.lock_warning) {
           $("hint").className = "banner warn";
@@ -1163,8 +1516,7 @@
       function (err) {
         setBusy(false);
         showErr(String(err && err.message ? err.message : err));
-        if (state.plan) runMatch(null);
-        else renderListPane();
+        _refreshMatchOrList();
       }
     );
   }
@@ -1189,26 +1541,34 @@
       ctx.workflow = null;
       /* WKF 뎁스를 벗어나면 이전 조건·매칭 폐기 (재진입 시 잔상 방지) */
       if (ctx.listMode !== "WKF") {
+        ctx.intent = "";
         _clearComposeState();
       }
       if (ctx.listMode === "WKF" && ctx.campaign) {
+        ctx.intent = "";
+        _clearComposeState();
         setInfoBar(_folderInfoText());
-        setInputEnabled(true);
-        ctx.wkfs = [];
-        ctx.matchShown = false;
+        setInputEnabled(false);
+        _syncIntentUi();
         renderListPane();
       } else if (ctx.listMode === "CAMPAIGN" && ctx.folder) {
         ctx.campaign = null;
+        ctx.intent = "";
         setInfoBar(_folderInfoText());
         setInputEnabled(false);
+        _syncIntentUi();
         loadCampaigns();
       } else if (ctx.folder) {
+        ctx.intent = "";
         setInfoBar(_folderInfoText());
         setInputEnabled(false);
+        _syncIntentUi();
         renderListPane();
       } else {
+        ctx.intent = "";
         setInfoBar("Program: (\uBBF8\uC120\uD0DD)");
         setInputEnabled(false);
+        _syncIntentUi();
         renderListPane();
       }
     });
@@ -1226,16 +1586,19 @@
       ctx.workflow = null;
       ctx.openHint = "";
       ctx.matchShown = false;
+      ctx.matchMode = "";
+      ctx.intent = "";
       ctx.stack = [];
       _clearComposeState();
       setInfoBar("Program: (\uBBF8\uC120\uD0DD)");
       setInputEnabled(false);
+      _syncIntentUi();
       _refreshOpenButtons();
       var hintR = $("hint");
       if (hintR) {
         hintR.className = "banner warn";
         hintR.textContent =
-          "Program \u2192 \uCEA0\uD398\uC778 \uC120\uD0DD/\uC0DD\uC131 \uD6C4 \uC870\uAC74\uC744 \uC785\uB825\uD558\uC138\uC694. (\uCEA0\uD398\uC778\uB2F9 WKF Max 15)";
+          "Program \u2192 \uCEA0\uD398\uC778 \uC120\uD0DD/\uC0DD\uC131 \uD6C4 \uC791\uC5C5 \uBC29\uC2DD\uC744 \uACE0\uB974\uC138\uC694. (\uCEA0\uD398\uC778\uB2F9 WKF Max 15)";
       }
       loadAiFolders();
     });
@@ -1617,7 +1980,24 @@
   function esc(s) {
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
-  function setBusy(b) { $("btnGen").disabled = b; $("nl").disabled = b; }
+  function setBusy(b) {
+    var btnC = $("btnIntentCreate");
+    var btnR = $("btnIntentReuse");
+    if (b) {
+      $("btnGen").disabled = true;
+      $("nl").disabled = true;
+      if (btnC) btnC.disabled = true;
+      if (btnR) btnR.disabled = true;
+    } else {
+      if (btnC) btnC.disabled = false;
+      if (btnR) btnR.disabled = false;
+      if (SHELL_MODE) {
+        setInputEnabled(!!(ctx.campaign && ctx.campaign.id && ctx.intent));
+      } else {
+        setInputEnabled(true);
+      }
+    }
+  }
 
   // IE 는 <details> 미지원 — #twDiagSum 클릭 토글. embed 한시적 기본 펼침 (#139)
   function _wireDiagToggle() {
@@ -1638,7 +2018,7 @@
       _wireDiagToggle();
       try {
         var dm0 = (typeof document.documentMode !== "undefined") ? String(document.documentMode) : "n/a(non-IE)";
-          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | v=151";
+          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | v=153";
         var bootReached = !!(window.__TW_BOOT_MSG__);
         if (bootReached) _diag(String(window.__TW_BOOT_MSG__));
         _diag(okMsg);
@@ -1678,9 +2058,23 @@
       _refreshOpenButtons();
       var btnGen = $("btnGen");
       var btnReg = $("btnReg");
+      var btnIntentCreate = $("btnIntentCreate");
+      var btnIntentReuse = $("btnIntentReuse");
       var nl = $("nl");
       if (btnGen) btnGen.onclick = function () { generate(); };
       if (btnReg) btnReg.onclick = function () { register(); };
+      if (btnIntentCreate) {
+        btnIntentCreate.onclick = function () {
+          setIntent("create");
+          return false;
+        };
+      }
+      if (btnIntentReuse) {
+        btnIntentReuse.onclick = function () {
+          setIntent("reuse");
+          return false;
+        };
+      }
       if (nl) {
         nl.onkeydown = function (e) {
           e = e || window.event;
@@ -1694,11 +2088,12 @@
       }
       if (SHELL_MODE) {
         setInputEnabled(false);
+        _syncIntentUi();
         var hint0 = $("hint");
         if (hint0) {
           hint0.className = "banner warn";
           hint0.textContent =
-            "Program \u2192 \uCEA0\uD398\uC778 \uC120\uD0DD/\uC0DD\uC131 \uD6C4 \uC870\uAC74\uC744 \uC785\uB825\uD558\uC138\uC694. (\uCEA0\uD398\uC778\uB2F9 WKF Max 15)";
+            "Program \u2192 \uCEA0\uD398\uC778 \uC120\uD0DD/\uC0DD\uC131 \uD6C4 \uC791\uC5C5 \uBC29\uC2DD\uC744 \uACE0\uB974\uC138\uC694. (\uCEA0\uD398\uC778\uB2F9 WKF Max 15)";
         }
         setTimeout(function () {
           try { loadAiFolders(); }
