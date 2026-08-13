@@ -1,15 +1,17 @@
 /*
  * testWooLlm.js (LLM Pass0·Pass1 파이프라인)
  * ==================================================
- * litmus 동기 __v=159 (#160 배포정합).
- * Pass0: NL→slots. Pass1: Stage A 후보만 보고 CNF plan 생성.
+ * litmus 동기 __v=164 (카탈로그 렉시콘 분할).
+ * Pass0: NL→slots. 그 전에 라이브러리 nlMap/enum 값으로 슬롯을 확정한다.
+ * Pass1: Stage A 후보만 보고 CNF plan 생성.
  * 최종 SQL은 쓰지 않음. 동기 HttpClientRequest만 사용.
  *
  * [Main Functions]
  * ===========
- * - decomposeSlots — Pass0 NL→slots JSON
+ * - decomposeSlots — Pass0 NL→slots JSON(+원자 분할)
+ * - normalizeAtomicSlots — 복합 슬롯→축별 슬롯(결정적, LLM 무관)
  * - selectPlan — Pass1 후보→CNF plan JSON
- * - generatePlan — Pass0→StageA→Pass1 일괄
+ * - generatePlan — 렉시콘 분할→Pass0→StageA→Pass1(+params 수리·domain heal)
  * - postChat — chat/completions 호출·오류 메타 부착
  * - postEmbedding — embeddings 호출·오류 메타 부착
  * - explainDedupDiff — dedup near 차이 설명(판정 무관)
@@ -18,13 +20,17 @@
  * [Dependencies]
  * =========
  * - testWoo.cfg.getConfig — apiKey·model·endpoint·provider
- * - testWoo.fragments.searchSlots — generatePlan Stage A
+ * - testWoo.fragments.searchSlots·listLexiconCards·healDomain — Stage A · 값사전
+ * - testWoo.fragContract.splitByLexicon·validateBind — 카탈로그 값⊂NL · 바인딩
  * - HttpClientRequest + MemoryBuffer — serverConf urlPermission 필요
+ * - Foundry `_normalizeSlots` — normalizeAtomicSlots 재사용
  *
  * [Invariants]
  * =========
  * - response_format json_object 미사용 — 프롬프트+_parseJson으로 JSON 강제
  * - HttpClientRequest.wait 금지 · Rhino map/forEach/filter 금지
+ * - #170: 슬롯 1개 = 조건 축 1개. 연령 다중 밴드(30대 50대)는 age 슬롯 1개로 유지
+ * - 같은 tags/name 축 frag가 있으면 unmatched→Foundry 신규 생성 금지. 값은 heal
  */
 var testWoo = testWoo || {};
 testWoo.llm = (function () {
@@ -48,6 +54,228 @@ testWoo.llm = (function () {
     );
   }
 
+  // #170 — NL 축 힌트(컬럼명 하드코딩 아님). 슬롯 원자 분할·키워드용.
+    var AXIS_REGIONS = [
+    "경기도", "서울", "경기", "인천", "부산", "대구", "대전", "광주", "울산", "세종",
+    "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주"
+  ];
+
+  function _slotKeywords(text, maxTok) {
+    var raw = String(text || "").split(/[^0-9a-zA-Z가-힣_]+/);
+    var out = [];
+    var seen = {};
+    for (var i = 0; i < raw.length; i++) {
+      var t = _trim(raw[i]);
+      if (t.length < 2) continue;
+      var key = t.toLowerCase();
+      if (seen[key]) continue;
+      seen[key] = 1;
+      out.push(t);
+      if (maxTok > 0 && out.length >= maxTok) break;
+    }
+    return out;
+  }
+
+  function _isNoiseResidue(text) {
+    if (testWoo.fragContract && testWoo.fragContract.isNoiseResidue)
+      return testWoo.fragContract.isNoiseResidue(text);
+    var t = _trim(text || "");
+    if (!t) return true;
+    var cleaned = t.replace(
+      /고객|대상자|회원|사용자|사는|거주하는|거주|쓰는|사용하는|이용하는|이용|이면서|그리고|및|또|에게|한테|인|명/g,
+      " "
+    );
+    cleaned = cleaned.replace(/\s+/g, "");
+    return cleaned.length < 2;
+  }
+
+  function _extractAgePhrase(text) {
+    var t = String(text || "");
+    var bands = [];
+    var reBand = /(\d+)\s*대/g;
+    var m;
+    while ((m = reBand.exec(t)) != null) {
+      bands.push({ n: Number(m[1]), raw: m[0] });
+    }
+    var reRange = /(\d+)\s*[~\-–]\s*(\d+)\s*대/;
+    var rm = reRange.exec(t);
+    if (rm) {
+      return {
+        phrase: String(rm[1]) + "대~" + String(rm[2]) + "대",
+        strip: [rm[0]]
+      };
+    }
+    if (!bands.length) return null;
+    var strip = [];
+    for (var bi = 0; bi < bands.length; bi++) strip.push(bands[bi].raw);
+    if (bands.length === 1)
+      return { phrase: bands[0].n + "대", strip: strip };
+    var minN = bands[0].n;
+    var maxN = bands[0].n;
+    for (var bj = 1; bj < bands.length; bj++) {
+      if (bands[bj].n < minN) minN = bands[bj].n;
+      if (bands[bj].n > maxN) maxN = bands[bj].n;
+    }
+    // 30대 50대 → age 슬롯 1개(범위). 축을 둘로 쪼개지 않음.
+    return { phrase: String(minN) + "대~" + String(maxN) + "대", strip: strip };
+  }
+
+  function _extractGenderPhrase(text) {
+    var t = String(text || "");
+    if (/남성|남자/.test(t)) return { phrase: "남성", strip: ["남성", "남자"] };
+    if (/여성|여자/.test(t)) return { phrase: "여성", strip: ["여성", "여자"] };
+    return null;
+  }
+
+  function _extractPlanPhrase(text) {
+    var t = String(text || "");
+    var m = /([A-Za-z가-힣0-9]+요금제?)/.exec(t);
+    if (m) return { phrase: m[1], strip: [m[1]] };
+    return null;
+  }
+
+  function _extractRegionPhrase(text) {
+    var t = String(text || "");
+    var best = "";
+    var i;
+    for (i = 0; i < AXIS_REGIONS.length; i++) {
+      var r = AXIS_REGIONS[i];
+      if (t.indexOf(r) >= 0 && r.length > best.length) best = r;
+    }
+    if (!best) return null;
+    return { phrase: best, strip: [best] };
+  }
+
+  function _stripPhrases(text, strips) {
+    var t = String(text || "");
+    var list = strips || [];
+    for (var i = 0; i < list.length; i++) {
+      if (!list[i]) continue;
+      t = t.split(String(list[i])).join(" ");
+    }
+    return t.replace(/\s+/g, " ").replace(/^[~\-–\s]+|[~\-–\s]+$/g, "");
+  }
+
+  // 축 2개 이상이면 축별 슬롯. 1개면 추출 phrase만(고객 등 잔여 제거). 0개·노이즈면 버림.
+  function _expandOneSlot(slot, maxTok) {
+    var text = _trim(slot && slot.text != null ? slot.text : slot);
+    if (!text) return [];
+    var base = {
+      hintedCategory: slot && slot.hintedCategory ? String(slot.hintedCategory) : "",
+      searchKeywords: (slot && slot.searchKeywords) ? slot.searchKeywords : [],
+      resolvedName: slot && slot.resolvedName ? String(slot.resolvedName) : ""
+    };
+    var age = _extractAgePhrase(text);
+    var gender = _extractGenderPhrase(text);
+    var plan = _extractPlanPhrase(text);
+    var region = _extractRegionPhrase(text);
+    var axisCount = (age ? 1 : 0) + (gender ? 1 : 0) + (plan ? 1 : 0) + (region ? 1 : 0);
+    if (axisCount === 0) {
+      if (_isNoiseResidue(text)) return [];
+      return [{
+        text: text,
+        hintedCategory: base.hintedCategory || "",
+        searchKeywords: base.searchKeywords.length ?
+          base.searchKeywords : _slotKeywords(text, maxTok),
+        resolvedName: base.resolvedName
+      }];
+    }
+    if (axisCount === 1) {
+      var one = region || plan || age || gender;
+      var phrase = one.phrase;
+      return [{
+        text: phrase,
+        hintedCategory: region ? "demo" : (plan ? "plan" : (base.hintedCategory || "demo")),
+        searchKeywords: _slotKeywords(phrase, maxTok),
+        resolvedName: base.resolvedName
+      }];
+    }
+    var out = [];
+    var strips = [];
+    if (region) {
+      out.push({
+        text: region.phrase,
+        hintedCategory: "demo",
+        searchKeywords: _slotKeywords(region.phrase, maxTok)
+      });
+      for (var ri = 0; ri < region.strip.length; ri++) strips.push(region.strip[ri]);
+    }
+    if (plan) {
+      out.push({
+        text: plan.phrase,
+        hintedCategory: "plan",
+        searchKeywords: _slotKeywords(plan.phrase, maxTok)
+      });
+      for (var pi = 0; pi < plan.strip.length; pi++) strips.push(plan.strip[pi]);
+    }
+    if (age) {
+      out.push({
+        text: age.phrase,
+        hintedCategory: "demo",
+        searchKeywords: _slotKeywords(age.phrase, maxTok)
+      });
+      for (var ai = 0; ai < age.strip.length; ai++) strips.push(age.strip[ai]);
+    }
+    if (gender) {
+      out.push({
+        text: gender.phrase,
+        hintedCategory: "demo",
+        searchKeywords: _slotKeywords(gender.phrase, maxTok)
+      });
+      for (var gi = 0; gi < gender.strip.length; gi++) strips.push(gender.strip[gi]);
+    }
+    var rest = _stripPhrases(text, strips);
+    if (!_isNoiseResidue(rest)) {
+      out.push({
+        text: _trim(rest),
+        hintedCategory: "other",
+        searchKeywords: _slotKeywords(rest, maxTok)
+      });
+    }
+    return out;
+  }
+
+  // #170 공개 API — Pass0 이후·Foundry 큐 진입 시 동일 규칙
+  function normalizeAtomicSlots(slots, opts) {
+    opts = opts || {};
+    var cfg = null;
+    try { cfg = testWoo.cfg && testWoo.cfg.getConfig ? testWoo.cfg.getConfig() : null; }
+    catch (eC) { cfg = null; }
+    var maxSlots = opts.maxSlots != null ? Number(opts.maxSlots) :
+      (cfg && cfg.search && cfg.search.maxSlots != null ? Number(cfg.search.maxSlots) : 40);
+    var maxTok = opts.maxTokens != null ? Number(opts.maxTokens) :
+      (cfg && cfg.search && cfg.search.maxTokens != null ? Number(cfg.search.maxTokens) : 5);
+    if (isNaN(maxSlots) || maxSlots < 1) maxSlots = 40;
+    if (isNaN(maxTok) || maxTok < 1) maxTok = 5;
+
+    var list = slots || [];
+    var expanded = [];
+    var seen = {};
+    for (var i = 0; i < list.length; i++) {
+      var piece = list[i];
+      var parts = _expandOneSlot(piece, maxTok);
+      for (var j = 0; j < parts.length; j++) {
+        var p = parts[j];
+        var key = String(p.text || "").toLowerCase().replace(/\s+/g, "");
+        if (!key || seen[key] || _isNoiseResidue(p.text)) continue;
+        seen[key] = 1;
+        expanded.push({
+          id: "s" + (expanded.length + 1),
+          text: p.text,
+          hintedCategory: p.hintedCategory || "",
+          searchKeywords: p.searchKeywords || [],
+          resolvedName: p.resolvedName || ""
+        });
+      }
+    }
+    if (expanded.length > maxSlots) {
+      logWarning("[testWoo.llm.normalizeAtomicSlots] truncating " +
+        expanded.length + " -> " + maxSlots);
+      expanded = expanded.slice(0, maxSlots);
+    }
+    return expanded;
+  }
+
   // 1. Pass 0 — NL → slots only (no fragment ids)
   function decomposeSlots(nlRequest) {
     var cfg = testWoo.cfg.getConfig();
@@ -55,12 +283,20 @@ testWoo.llm = (function () {
     var systemLines = [
       "You extract targeting condition slots from marketer Korean NL.",
       "NL may be messy one sentence without '+' separators.",
-      "Split into atomic marketing conditions. Do NOT invent SQL or fragment ids.",
-      "HARD LIMITS: at most 6 slots; each searchKeywords at most 5 short phrases;",
+      "ATOMIC SLOT RULES (#170) — mandatory:",
+      "- ONE slot = ONE condition axis (region OR plan OR age OR gender OR other).",
+      "- NEVER put two axes in one slot (e.g. forbidden: text=\"20대 남성\").",
+      "- Correct: separate slots text=\"20대\" and text=\"남성\".",
+      "- Age bands in one request stay ONE age slot (e.g. \"30대~50대\" or \"30대 50대\"), not two age slots.",
+      "- Unknown axes (e.g. homepage visit) stay their own other slot — do not drop them.",
+      "- Do NOT emit slots that are only audience nouns (고객/대상자/회원/사용자) with no condition.",
+      "- Do NOT invent SQL or fragment ids.",
+      "HARD LIMITS: at most 8 slots; each searchKeywords at most 5 short phrases;",
       "total JSON under 1200 characters. No commentary, no padding, no token repetition.",
       "For each slot, fill searchKeywords: colloquial/abbreviated/normalized forms",
       "and alternate notations for any numeric range mentioned.",
-      "If one phrase mixes two conditions, you MAY keep one slot; Pass1 may split later.",
+      "hintedCategory: plan|demo|consent|fatigue|signup|other " +
+        "(use demo for region/age/gender; plan for tariff/plan).",
       'OUTPUT JSON ONLY: {"slots":[{"id":"s1","text":"...","hintedCategory":"plan|demo|consent|fatigue|signup|other","searchKeywords":["..."]}]}'
     ];
     if (cfg.llm.pass0Examples) {
@@ -79,7 +315,8 @@ testWoo.llm = (function () {
       logWarning("[testWoo.llm.decomposeSlots] pass0 length/repeat — retry once " +
         "(frequency_penalty=0.8)");
       var retrySys = system +
-        "\nCRITICAL: Output ONE short JSON object only. Max 4 slots. Do not repeat tokens.";
+        "\nCRITICAL: Output ONE short JSON object only. Max 6 slots. Do not repeat tokens. " +
+        "Split age/gender/region/plan into separate slots.";
       raw = _chat(cfg, retrySys, nl, "pass0", { frequencyPenalty: 0.8 });
       parsed = _parseJson(raw, "pass0");
     }
@@ -107,10 +344,8 @@ testWoo.llm = (function () {
         searchKeywords: kws.slice(0, maxTok)
       });
     }
-    if (slots.length > maxSlots) {
-      logWarning("[testWoo.llm.decomposeSlots] truncating slots " + slots.length + " -> " + maxSlots);
-      slots = slots.slice(0, maxSlots);
-    }
+    // #170: LLM이 복합 슬롯을 남겨도 결정적으로 축 분할
+    slots = normalizeAtomicSlots(slots, { maxSlots: maxSlots, maxTokens: maxTok });
     return slots;
   }
 
@@ -135,6 +370,14 @@ testWoo.llm = (function () {
       "grainKey MUST be copied verbatim from the key_column of the chosen candidates " +
         "(a physical DB column name). Do not translate or guess it — the compiler rejects " +
         "any mismatch with the fragment key_column.",
+      "PARAMS: for each chosen fragment, fill params from that candidate's param_domain " +
+        "(nlMap / _bucket.nlMap) using the slot/NL text. Example: slot \"20대\" + " +
+        "_bucket.nlMap[\"20대\"]={ageMin:20,ageMax:30} → params:{ageMin:20,ageMax:30}. " +
+        "slot \"남성\" + gender.nlMap → params:{gender:\"M\"}. " +
+        "If the candidate is the matching axis fragment (_source + same tags) pick it even when " +
+        "the exact NL value is not yet a nlMap key. Fill params by analogy with existing " +
+        "examples and the declared types/_range/enum. Do not put that phrase in unmatched[]. " +
+        "Only keys that appear as {{param}} in that fragment's SQL.",
       "CANDIDATES_BY_SLOT:",
       JSON.stringify(slim),
       'OUTPUT JSON ONLY: {"grainKey":"<key_column of chosen fragments>","include":[{"any":[{"fragment":"<name>","label":"<ko>","params":{}}]}],"exclude":[{"fragment":"<name>","label":"<ko>","params":{}}],"unmatched":[]}'
@@ -147,24 +390,109 @@ testWoo.llm = (function () {
     if (n > cfg.search.maxSlots)
       throw new Error("[testWoo.llm.selectPlan] too many fragments: " + n);
     _rejectOutsideCandidates(plan, allowed);
+    plan.nl_request = String(nlRequest || "");
+    if (testWoo.compiler && testWoo.compiler.bindPlanParams)
+      testWoo.compiler.bindPlanParams(plan, plan.nl_request);
+    _dropBindableUnmatched(plan);
     return plan;
+  }
+
+  function _loadLexiconPack() {
+    var empty = { cards: [], lex: [] };
+    if (!testWoo.fragments || !testWoo.fragments.listLexiconCards) return empty;
+    if (!testWoo.fragContract || !testWoo.fragContract.collectLexicon) return empty;
+    var cards = [];
+    try { cards = testWoo.fragments.listLexiconCards() || []; }
+    catch (eL) {
+      logWarning("[testWoo.llm.generatePlan] listLexiconCards failed: " +
+        String(eL.message || eL));
+      return empty;
+    }
+    return { cards: cards, lex: testWoo.fragContract.collectLexicon(cards) };
+  }
+
+  function _attachLexiconCandidates(slotCandidates, pack) {
+    if (!slotCandidates || !pack || !pack.cards || !pack.cards.length) return slotCandidates;
+    var fc = testWoo.fragContract;
+    var si, ci, sc, card, hits, name;
+    for (si = 0; si < slotCandidates.length; si++) {
+      sc = slotCandidates[si];
+      if (sc.candidates && sc.candidates.length) continue;
+      hits = [];
+      name = String(sc.resolvedName || "");
+      for (ci = 0; ci < pack.cards.length; ci++) {
+        card = pack.cards[ci];
+        if (!card) continue;
+        if (name && String(card.name) === name) { hits.push(card); continue; }
+        if (!fc) continue;
+        if (fc.domainMatchSlot && fc.domainMatchSlot(card.param_domain, sc.text) &&
+            fc.axesCompatible(card, sc))
+          hits.push(card);
+      }
+      if (hits.length) sc.candidates = hits;
+    }
+    return slotCandidates;
   }
 
   // 3. full pipeline helper
   function generatePlan(nlRequest) {
-    var slots = decomposeSlots(nlRequest);
+    var pack = _loadLexiconPack();
+    var lexSlots = [];
+    if (pack.lex && pack.lex.length && testWoo.fragContract.splitByLexicon)
+      lexSlots = testWoo.fragContract.splitByLexicon(nlRequest, pack.lex) || [];
+    var llmSlots = [];
+    try {
+      llmSlots = decomposeSlots(nlRequest) || [];
+    } catch (e0) {
+      logWarning("[testWoo.llm.generatePlan] Pass0 failed — lexicon slots only: " +
+        String(e0.message || e0));
+      llmSlots = [];
+    }
+    var slots = llmSlots;
+    if (testWoo.fragContract && testWoo.fragContract.mergeLexiconSlots)
+      slots = testWoo.fragContract.mergeLexiconSlots(lexSlots, llmSlots);
+    if (!slots || !slots.length) slots = lexSlots.length ? lexSlots : llmSlots;
+    slots = normalizeAtomicSlots(slots);
+    try {
+      logInfo("[testWoo.llm.generatePlan] lexicon=" + lexSlots.length +
+        " llm=" + llmSlots.length + " merged=" + slots.length);
+    } catch (eLog) { /* non-ACC */ }
     var slotCandidates = testWoo.fragments.searchSlots(slots);
+    slotCandidates = _attachLexiconCandidates(slotCandidates, pack);
     var empty = [];
+    var emptySlots = [];
     var matchedSlots = [];
     for (var si = 0; si < slotCandidates.length; si++) {
       var sc = slotCandidates[si];
-      if (!sc.candidates || !sc.candidates.length) empty.push(sc.text);
-      else matchedSlots.push({
+      if (!sc.candidates || !sc.candidates.length) {
+        if (_isNoiseResidue(sc.text)) continue;
+        empty.push(sc.text);
+        emptySlots.push({
+          id: sc.id,
+          text: sc.text,
+          hintedCategory: sc.hintedCategory || "",
+          searchKeywords: sc.searchKeywords || [],
+          resolvedName: sc.resolvedName || ""
+        });
+      } else matchedSlots.push({
         id: sc.id,
         text: sc.text,
         hintedCategory: sc.hintedCategory || "",
+        searchKeywords: sc.searchKeywords || [],
+        resolvedName: sc.resolvedName || "",
         candidates: sc.candidates
       });
+    }
+    if (!matchedSlots.length && !empty.length) {
+      return {
+        grainKey: "",
+        include: [],
+        exclude: [],
+        unmatched: ["조건 슬롯이 없습니다"],
+        unmatchedSlots: [],
+        matchedSlots: [],
+        _meta: { slots: slots, slotCandidates: slotCandidates, stage: "stageA_empty" }
+      };
     }
     if (empty.length) {
       return {
@@ -172,14 +500,215 @@ testWoo.llm = (function () {
         include: [],
         exclude: [],
         unmatched: empty,
+        unmatchedSlots: emptySlots,
         matchedSlots: matchedSlots,
         _meta: { slots: slots, slotCandidates: slotCandidates, stage: "stageA_empty" }
       };
     }
-    var plan = selectPlan(nlRequest, slotCandidates);
+    var plan = selectPlan(nlRequest, matchedSlots);
     plan.matchedSlots = matchedSlots;
+    plan.unmatchedSlots = [];
+    plan.nl_request = String(nlRequest || "");
     plan._meta = { slots: slots, slotCandidates: slotCandidates, stage: "pass1" };
+    if (testWoo.compiler && testWoo.compiler.bindPlanParams)
+      testWoo.compiler.bindPlanParams(plan, plan.nl_request);
+    _repairMissingParams(plan);
+    _healPlanDomains(plan);
+    _dropBindableUnmatched(plan);
     return plan;
+  }
+
+  // 같은 축+_source frag가 plan에 있으면 값 미등재는 heal 대상 — unmatched/큐 금지.
+  function _dropBindableUnmatched(plan) {
+    if (!plan || !plan.unmatched || !plan.unmatched.length) return;
+    if (!testWoo.fragContract || !testWoo.fragments || !testWoo.fragments.getByName) return;
+    var names = [];
+    _walkFragments(plan, function (item) {
+      if (item && item.fragment) names.push(String(item.fragment));
+    });
+    if (!names.length) return;
+    var kept = [];
+    var i, j, phrase, f, bindable, domain;
+    for (i = 0; i < plan.unmatched.length; i++) {
+      phrase = String(plan.unmatched[i] || "");
+      if (_isNoiseResidue(phrase)) continue;
+      bindable = false;
+      for (j = 0; j < names.length && !bindable; j++) {
+        f = null;
+        try { f = testWoo.fragments.getByName(names[j]); } catch (eG) { f = null; }
+        if (!f) continue;
+        domain = testWoo.fragContract.normalizeParamDomain ?
+          testWoo.fragContract.normalizeParamDomain(f.param_domain) : {};
+        if (domain && domain._source &&
+            testWoo.fragContract.axesCompatible(f, { text: phrase }))
+          bindable = true;
+      }
+      if (!bindable) kept.push(plan.unmatched[i]);
+    }
+    plan.unmatched = kept;
+  }
+
+  function _sqlNeed(sqlText) {
+    var need = {};
+    var re = /\{\{(\w+)\}\}/g;
+    var m;
+    while ((m = re.exec(String(sqlText || ""))) != null) need[m[1]] = 1;
+    return need;
+  }
+
+  function _paramsIncomplete(params, need) {
+    var pk;
+    var p = params || {};
+    for (pk in need) {
+      if (!need.hasOwnProperty(pk)) continue;
+      if (p[pk] == null || p[pk] === "") return true;
+    }
+    return false;
+  }
+
+  function _slimDomainForBind(domainRaw) {
+    var domain = {};
+    if (testWoo.fragContract && testWoo.fragContract.normalizeParamDomain)
+      domain = testWoo.fragContract.normalizeParamDomain(domainRaw);
+    var out = {};
+    if (domain._range) out._range = domain._range;
+    var k, nk, n, spec, c;
+    n = 0;
+    if (domain._bucket && domain._bucket.nlMap) {
+      out._bucketExamples = {};
+      for (nk in domain._bucket.nlMap) {
+        if (!domain._bucket.nlMap.hasOwnProperty(nk)) continue;
+        if (n >= 4) break;
+        out._bucketExamples[nk] = domain._bucket.nlMap[nk];
+        n++;
+      }
+    }
+    for (k in domain) {
+      if (!domain.hasOwnProperty(k)) continue;
+      if (String(k).charAt(0) === "_") continue;
+      spec = domain[k] || {};
+      var row = { type: spec.type || "string" };
+      if (spec.enum && spec.enum.length) {
+        row.enum = [];
+        var ei;
+        for (ei = 0; ei < spec.enum.length && ei < 20; ei++) row.enum.push(spec.enum[ei]);
+      }
+      if (spec.nlMap && typeof spec.nlMap === "object") {
+        row.examples = {};
+        c = 0;
+        for (nk in spec.nlMap) {
+          if (!spec.nlMap.hasOwnProperty(nk)) continue;
+          if (c >= 4) break;
+          row.examples[nk] = spec.nlMap[nk];
+          c++;
+        }
+      }
+      out[k] = row;
+    }
+    return out;
+  }
+
+  function _slotTextForFrag(plan, card) {
+    var slots = (plan && plan._meta && plan._meta.slots) || [];
+    var i;
+    for (i = 0; i < slots.length; i++) {
+      if (testWoo.fragContract && testWoo.fragContract.axesCompatible &&
+          testWoo.fragContract.axesCompatible(card, slots[i]))
+        return String(slots[i].text || "");
+    }
+    return String((plan && plan.nl_request) || "");
+  }
+
+  // Pass1이 params를 비우면, 기존 nlMap 예시를 보고 같은 축 값을 채운다(SQL 창작 금지).
+  function proposeParams(slotText, domain, needKeys) {
+    var cfg = testWoo.cfg.getConfig();
+    var need = [];
+    var pk;
+    if (needKeys) {
+      for (pk in needKeys) {
+        if (needKeys.hasOwnProperty(pk)) need.push(pk);
+      }
+    }
+    var system = [
+      "Fill fragment params from the slot text.",
+      "Use ONLY these keys: " + need.join(","),
+      "Follow types, _range, enum, and analogize from existing nlMap/_bucket examples.",
+      "Never write SQL or fragment names.",
+      "OUTPUT JSON ONLY: {\"params\":{}}"
+    ].join("\n");
+    var user = "SLOT:\n" + String(slotText || "") +
+      "\nDOMAIN:\n" + JSON.stringify(_slimDomainForBind(domain));
+    try {
+      var raw = _chat(cfg, system, user, "pass1");
+      var obj = _parseJson(raw, "pass1");
+      if (obj && obj.params && typeof obj.params === "object") return obj.params;
+      if (obj && typeof obj === "object") return obj;
+    } catch (eP) { /* leave empty */ }
+    return {};
+  }
+
+  function _ensureFreshDomain(f) {
+    if (!f) return {};
+    if (f._twFreshDomain) return f._twFreshDomain;
+    var domain = testWoo.fragContract.normalizeParamDomain(f.param_domain);
+    if (testWoo.toolkit && testWoo.toolkit.refreshDomain) {
+      try {
+        var rr = testWoo.toolkit.refreshDomain(domain);
+        if (rr && rr.ok && rr.domain) {
+          domain = rr.domain;
+          if (rr.json) f.param_domain = rr.json;
+        }
+      } catch (eR) { /* stale snapshot */ }
+    }
+    f._twFreshDomain = domain;
+    return domain;
+  }
+
+  function _repairMissingParams(plan) {
+    if (!plan || !testWoo.fragments || !testWoo.fragContract) return;
+    _walkFragments(plan, function (item) {
+      if (!item || !item.fragment) return;
+      var f = null;
+      try { f = testWoo.fragments.getByName(item.fragment); } catch (eG) { f = null; }
+      if (!f) return;
+      var need = _sqlNeed(f.sql_text);
+      if (!_paramsIncomplete(item.params, need)) return;
+      var fresh = _ensureFreshDomain(f);
+      var proposed = proposeParams(_slotTextForFrag(plan, f), fresh, need);
+      var chk = testWoo.fragContract.validateBind(fresh, proposed);
+      if (!chk || !chk.ok) return;
+      if (!item.params || typeof item.params !== "object") item.params = {};
+      var pk;
+      for (pk in proposed) {
+        if (!proposed.hasOwnProperty(pk)) continue;
+        if (!need[pk]) continue;
+        if (item.params[pk] == null || item.params[pk] === "")
+          item.params[pk] = proposed[pk];
+      }
+    });
+  }
+
+  function _healPlanDomains(plan) {
+    if (!plan || !testWoo.fragments || !testWoo.fragments.healDomain) return;
+    if (!testWoo.fragContract) return;
+    _walkFragments(plan, function (item) {
+      if (!item || !item.fragment || !item.params) return;
+      var f = null;
+      try { f = testWoo.fragments.getByName(item.fragment); } catch (eG) { f = null; }
+      if (!f || !f.id) return;
+      var need = _sqlNeed(f.sql_text);
+      if (_paramsIncomplete(item.params, need)) return;
+      var fresh = _ensureFreshDomain(f);
+      var chk = testWoo.fragContract.validateBind(fresh, item.params);
+      if (!chk || !chk.ok) return;
+      var alias = _slotTextForFrag(plan, f);
+      if (!alias) return;
+      try {
+        testWoo.fragments.healDomain(f, alias, item.params, { domain: fresh });
+      } catch (eH) {
+        try { logWarning("[testWoo.llm.healDomain] " + String(eH.message || eH)); } catch (eL) {}
+      }
+    });
   }
 
   var LLM_MAX_TOKENS = 8192; // reasoning 토큰이 max_tokens 에 합산되는 모델 기준 기본값
@@ -840,6 +1369,7 @@ testWoo.llm = (function () {
 
   return {
     decomposeSlots: decomposeSlots,
+    normalizeAtomicSlots: normalizeAtomicSlots,
     selectPlan: selectPlan,
     generatePlan: generatePlan,
     postChat: postChat,
@@ -850,4 +1380,4 @@ testWoo.llm = (function () {
     _readResponseBody: _readResponseBody
   };
 })();
-testWoo.llm.__v = "159";
+testWoo.llm.__v = "164";

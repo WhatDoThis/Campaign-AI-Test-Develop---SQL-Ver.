@@ -1,19 +1,22 @@
 /*
  * testWooCompiler.js (CNF plan → SQL 컴파일러)
  * ==================================================
- * litmus 동기 __v=159 (#160 배포정합).
+ * litmus 동기 __v=160 (#172 FragContract).
  * LLM이 낸 CNF plan을 fragment sql_text로 조합해 최종 audience SQL 생성.
  * summary·chips는 compile 결과에서만 만든다. Oracle은 EXCEPT→MINUS.
+ * #168-B/#172: NL 바인딩은 fragContract.resolveNlParams 공유.
  *
  * [Main Functions]
  * ===========
  * - compile — plan → {sql, keyColumn, summary, plan}
+ * - bindPlanParams — NL·도메인으로 plan item.params 채움
  * - chipsFromPlan — plan에서 UI 칩 배열 생성
  * - collectUsedFragments — plan에 쓰인 fragment 메타 수집
  *
  * [Dependencies]
  * =========
- * - testWoo.fragments.getByName — fragment sql_text 로드
+ * - testWoo.fragContract.resolveNlParams — nlMap/_bucket 해석 (#172)
+ * - testWoo.fragments.getByName — fragment sql_text·param_domain 로드
  * - testWoo.gates — fragmentSqlContract·checkScopePlan(로드 시)
  * - testWoo.cfg.getConfig — search.maxSlots 상한
  * - loadLibrary("woo:testWooCompiler.js") — Generate·Register JSSP
@@ -31,9 +34,68 @@ testWoo.compiler = (function () {
     };
   }
 
+  function _trim(s) {
+    return String(s == null ? "" : s).replace(/^\s+|\s+$/g, "");
+  }
+
+  function _sqlPlaceholders(sqlText) {
+    var need = {};
+    var re = /\{\{(\w+)\}\}/g;
+    var m;
+    var sql = String(sqlText || "");
+    while ((m = re.exec(sql)) != null) need[m[1]] = 1;
+    return need;
+  }
+
+  // NL(+슬롯 텍스트)에서 param_domain nlMap/_bucket 매칭 → item.params
+  // LLM Pass1 params 누락·오타를 보정. sql_text에 있는 키만 채운다.
+  function bindPlanParams(plan, nlText) {
+    if (!plan) return plan;
+    var blobs = [];
+    var nl = _trim(nlText || plan.nl_request || "");
+    if (nl) blobs.push(nl);
+    if (plan._meta && plan._meta.slots) {
+      for (var si = 0; si < plan._meta.slots.length; si++) {
+        var st = plan._meta.slots[si] && plan._meta.slots[si].text;
+        if (_trim(st)) blobs.push(String(st));
+      }
+    }
+    var hay = blobs.join(" \n ");
+
+    function bindItem(item) {
+      if (!item || !item.fragment) return;
+      var f = null;
+      try { f = testWoo.fragments.getByName(item.fragment); } catch (eG) { f = null; }
+      if (!f) return;
+      var need = _sqlPlaceholders(f.sql_text);
+      var params = item.params && typeof item.params === "object" ? item.params : {};
+      var resolved = {};
+      if (testWoo.fragContract && testWoo.fragContract.resolveNlParams)
+        resolved = testWoo.fragContract.resolveNlParams(f.param_domain, hay, need) || {};
+      var pk;
+      for (pk in resolved) {
+        if (!resolved.hasOwnProperty(pk)) continue;
+        if (!need[pk]) continue;
+        if (params[pk] == null || params[pk] === "")
+          params[pk] = resolved[pk];
+      }
+      item.params = params;
+    }
+
+    var inc = plan.include || [];
+    for (var i = 0; i < inc.length; i++) {
+      var any = (inc[i] && inc[i].any) || [];
+      for (var j = 0; j < any.length; j++) bindItem(any[j]);
+    }
+    var ex = plan.exclude || [];
+    for (var k = 0; k < ex.length; k++) bindItem(ex[k]);
+    return plan;
+  }
+
   // 1. CNF plan → SQL + summary
   function compile(plan) {
     if (!plan) throw new Error("[testWoo.compiler] plan missing");
+    bindPlanParams(plan, plan.nl_request || "");
     if (!_isArray(plan.include) || !plan.include.length)
       throw new Error("[testWoo.compiler] plan.include empty");
     var maxSlots = 40;
@@ -289,6 +351,11 @@ testWoo.compiler = (function () {
     return out;
   }
 
-  return { compile: compile, chipsFromPlan: chipsFromPlan, collectUsedFragments: collectUsedFragments };
+  return {
+    compile: compile,
+    bindPlanParams: bindPlanParams,
+    chipsFromPlan: chipsFromPlan,
+    collectUsedFragments: collectUsedFragments
+  };
 })();
-testWoo.compiler.__v = "159";
+testWoo.compiler.__v = "160";

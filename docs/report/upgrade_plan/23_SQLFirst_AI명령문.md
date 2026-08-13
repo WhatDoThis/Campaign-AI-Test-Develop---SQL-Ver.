@@ -13,11 +13,12 @@
 | PoC-V | #153 | [x] `24_[완료]_PoC-V_값인식매칭.md` |
 | **#154** | 값매칭 | [x] repo+배포 · C1~C6=`26_…` HUMAN[ ] · Option[ ] |
 | **#155** | 임베딩 | [x] OFF+영속화 코드 · true는 스모크+승인[ ] |
-| **다음** | **R4** (#149R 셸) | R3 배포 HUMAN 후 · Match Option 병렬 |
+| **다음** | **R5** 배포 HUMAN 후 **R6** | repo v=161 |
 | R1 | #147R | **[S] 단독 스킵 → #154 흡수** (Match OFF 중 R1 금지) |
 | R2 | #148R | [x] repo v=156 · S8 HUMAN confirm [ ] |
 | R3 | #149R | [x] repo v=157 · 배포/Tools입력 [`H`] |
-| R4 | #149R 셸 | [ ] 별도 Chat |
+| R4 | #149R 셸 | [x] repo v=160 · HUMAN SQL목록 |
+| R5 | 매핑 | [~] repo v=161 · 배포[`H`] |
 | R5 | 매핑 | [ ] |
 | R6 | #150R | [ ] |
 | R7/R8 | #151R | [ ] Chat 분리 |

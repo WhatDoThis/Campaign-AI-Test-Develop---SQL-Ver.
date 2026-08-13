@@ -1,20 +1,22 @@
 /*
  * testWooFeasibility.js (슬롯 실현가능성 Triage)
  * ==================================================
- * litmus 동기 __v=159 (#160 배포정합).
+ * litmus 동기 __v=160 (#172 FragContract).
  * Foundry SQL 생성 전 슬롯별 feasible 여부 판정.
  * #169: Triage 진입 전 Stage A 라이브러리 조회(서가 우선). 미스만 스키마 탐색.
- * #169-P0: 단일축+_source만으로 히트 금지 — 도메인 값(nlMap/bucket) 매칭 필수.
+ * 축·커버·도메인 매칭은 testWoo.fragContract.libraryHitPredicate에 위임.
  *
  * [Main Functions]
  * ===========
  * - triage — slot+cfg → {verdict, confidence, evidence, canProceed}
  * - libraryLookup — Stage A+_source 유효 frag 조회(툴 0)
+ * - axesCompatible — fragContract.axesCompatible 위임
  * - applyDemotionRules — LLM raw + toolLog → 강등·교정
  * - meetsConfidence — verdict·confidence 임계 충족 여부
  *
  * [Dependencies]
  * =========
+ * - testWoo.fragContract — axes·libraryHitPredicate·domainMatch (#172)
  * - testWoo.toolkit — specs/invoke/markPhase/getEvidenceLogSince·invoke 캐시
  * - testWoo.fragments — searchBySlot·getByName (#169 서가)
  * - testWoo.llm.postChat — tool calling 루프
@@ -24,6 +26,7 @@
  * =========
  * - 라이브러리 히트 시 search_columns/describe/probe 호출 금지
  * - 컬럼 확인·값 미probe 시 "확인 못 함→불가" 금지 → probe 1회 강제 후 재판정
+ * - reuse/서가 게이트 = fragContract.libraryHitPredicate (Foundry와 동일)
  */
 var testWoo = testWoo || {};
 testWoo.feasibility = (function () {
@@ -115,101 +118,35 @@ testWoo.feasibility = (function () {
   }
 
   function _parseDomain(raw) {
+    if (testWoo.fragContract && testWoo.fragContract.normalizeParamDomain) {
+      var d = testWoo.fragContract.normalizeParamDomain(raw);
+      if (!d) return null;
+      var empty = true;
+      for (var k in d) { if (d.hasOwnProperty(k)) { empty = false; break; } }
+      if (empty && (raw == null || raw === "")) return null;
+      return d;
+    }
     if (raw == null) return null;
     if (typeof raw === "object") return raw;
     try { return JSON.parse(String(raw)); } catch (e) { return null; }
   }
 
-  function _tagAxes(tagsStr) {
-    var raw = String(tagsStr || "").split(",");
-    var seen = {};
-    var out = [];
-    for (var i = 0; i < raw.length; i++) {
-      var t = _trim(raw[i]).toLowerCase();
-      if (!t) continue;
-      if (!seen[t]) {
-        seen[t] = 1;
-        out.push(t);
-      }
-    }
-    return out;
+  function axesCompatible(card, slotText) {
+    if (testWoo.fragContract && testWoo.fragContract.axesCompatible)
+      return testWoo.fragContract.axesCompatible(card, slotText);
+    return true;
   }
 
-  // Foundry _coversSlot 과 동일 취지 — 슬롯 토큰이 카드 텍스트에 전부 포함
-  function _coversSlotKeywords(card, slot) {
-    if (!card) return false;
-    var need = (slot && slot.searchKeywords && slot.searchKeywords.length) ?
-      slot.searchKeywords : String(slot && slot.text != null ? slot.text : slot || "")
-        .split(/[^0-9a-zA-Z가-힣]+/);
-    var parts = [card.label, card.description, card.tags, card.synonyms];
-    var sq = card.sample_questions;
-    if (sq != null) {
-      parts.push((typeof sq === "object" && typeof sq.length === "number") ?
-        sq.join(" ") : String(sq));
-    }
-    var blob = parts.join(" ").toLowerCase().replace(/\s+/g, "");
-    var req = 0;
-    var hit = 0;
-    for (var i = 0; i < need.length; i++) {
-      var t = String(need[i] || "").toLowerCase().replace(/\s+/g, "");
-      if (t.length < 2) continue;
-      req++;
-      if (blob.indexOf(t) >= 0) hit++;
-    }
-    return req > 0 && hit === req;
-  }
-
-  function _isSingleAxisCached(card, domain) {
-    if (!domain || !domain._source) return false;
-    var axes = _tagAxes(card && card.tags);
-    return axes.length === 1;
-  }
-
-  // 값만 다른 동일 축 재사용: Stage A 후보 + (키워드 AND 커버 | 도메인 값 매칭).
-  // 단일 축+_source 만으로 히트하면 타축 슬롯(예: 남성→age)을 삼킨다 — #169 P0.
-  function _libraryCoverOk(card, slotObj, domain, slotText) {
-    if (_coversSlotKeywords(card, slotObj)) return true;
-    if (!_isSingleAxisCached(card, domain)) return false;
-    return !!_domainMatchSlot(domain, slotText);
-  }
-
-  // param_domain nlMap/enum/버킷 키가 슬롯 텍스트에 있으면 값 히트
   function _domainMatchSlot(domain, slotText) {
-    if (!domain) return null;
-    var text = String(slotText || "");
-    if (!text) return null;
-    var k;
-    for (k in domain) {
-      if (!domain.hasOwnProperty(k)) continue;
-      if (k.charAt(0) === "_") continue;
-      var spec = domain[k] || {};
-      var map = spec.nlMap;
-      var nk;
-      if (map && typeof map === "object") {
-        for (nk in map) {
-          if (!map.hasOwnProperty(nk)) continue;
-          if (text.indexOf(String(nk)) >= 0 || text.indexOf(String(map[nk])) >= 0) {
-            return { param: k, nl: String(nk), value: map[nk] };
-          }
-        }
-      }
-      var en = spec.enum;
-      if (en && typeof en.length === "number") {
-        for (var ei = 0; ei < en.length; ei++) {
-          if (text.indexOf(String(en[ei])) >= 0)
-            return { param: k, value: en[ei] };
-        }
-      }
-    }
-    if (domain._bucket && domain._bucket.nlMap) {
-      var bm = domain._bucket.nlMap;
-      for (nk in bm) {
-        if (!bm.hasOwnProperty(nk)) continue;
-        if (text.indexOf(String(nk)) >= 0)
-          return { param: "_bucket", nl: String(nk), value: bm[nk] };
-      }
-    }
+    if (testWoo.fragContract && testWoo.fragContract.domainMatchSlot)
+      return testWoo.fragContract.domainMatchSlot(domain, slotText);
     return null;
+  }
+
+  function _libraryCoverOk(card, slotObj, domain, slotText) {
+    if (testWoo.fragContract && testWoo.fragContract.libraryHitPredicate)
+      return testWoo.fragContract.libraryHitPredicate(card, slotObj, domain);
+    return axesCompatible(card, slotText);
   }
 
   function _valueInText(slotText, values) {
@@ -663,8 +600,9 @@ testWoo.feasibility = (function () {
   return {
     triage: triage,
     libraryLookup: libraryLookup,
+    axesCompatible: axesCompatible,
     applyDemotionRules: applyDemotionRules,
     meetsConfidence: meetsConfidence
   };
 })();
-testWoo.feasibility.__v = "159";
+testWoo.feasibility.__v = "160";

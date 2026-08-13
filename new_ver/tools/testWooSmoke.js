@@ -7,7 +7,9 @@
  *
  * [Main Functions]
  * ===========
- * - 1. 라이브러리 전역 정의 확인 (testWoo.* 14개 · 전역 부재와 모듈 누락을 구분)
+ * - 1. 라이브러리 전역 정의 확인 (testWoo.* · fragContract 포함)
+ * - 1b. FragContract — 축 identity·validateBind·렉시콘 분할(인천에/z요금제)
+ * - 1c. normalizeAtomicSlots — 고객 잔여 제거 · 지역 최장일치 · 요금제 phrase
  * - 2. probe.preflight() → 'sql' named right + dbms/dialectVerified 기록
  * - 3. sqlSelect 반환 XML 구조 logInfo (파싱 가정 검증용)
  * - 4. describe_schema 속성 배열 비어있지 않은지 (N-2 회귀 검출)
@@ -21,8 +23,8 @@
  * - 6a. 큐 더미 1건 insert → _getQueue/getQueueStatus 조회 → 삭제 (N-1 회귀 검출)
  * - 7. llm.pass0 실호출 — 슬롯 1건 이상 + max_tokens 절단 없음 (billable)
  * - 8. llm.embedding 실호출 — 벡터 길이 > 0 (billable · embedEnabled=false면 SKIP)
- * - 9. foundry.generate — dryRunSlot 로 Triage+생성 경로 즉시 검증 (billable · 큐 부작용 0)
- * - 9c. foundry.budget — 단계 예산 분리·total 여유 검증 (비과금 · TW_SMOKE_SKIP_LLM 무관)
+ * - 9. foundry.generate — dryRunSlot: library_cache_hit(#169) 또는 gate.pass (billable)
+ * - 9c. foundry.budget — 단계 예산(캐시 미스만 차감) · limit 변형으로 버짓 소진 검증
  * - 10. PASS/FAIL/SKIP 요약 출력, 실패 1건 이상이면 logError
  *
  * logError 는 WF 스크립트 실행을 즉시 중단시킨다(문서화된 동작). 그래서 개별 스텝 실패는
@@ -35,7 +37,7 @@
  *
  * [Dependencies]
  * =========
- * - loadLibrary("woo:testWoo*.js") 전량
+ * - loadLibrary("woo:testWoo*.js") 전량 · FragContract 선행 (#172)
  * - sqlSelect / sqlGetInt ('sql' named right 필요)
  * - xtk.session#Write / xtk.session#GetNewIds, xtk.queryDef
  * - ACC Rhino: var / for 만 사용 (화살표함수·let·const·템플릿리터럴 금지)
@@ -45,6 +47,7 @@ loadLibrary("woo:testWooCommon.js");
 loadLibrary("woo:testWooEnv.js");
 loadLibrary("woo:testWooConfig.js");
 loadLibrary("woo:testWooProbe.js");
+loadLibrary("woo:testWooFragContract.js");
 loadLibrary("woo:testWooFragments.js");
 loadLibrary("woo:testWooCompiler.js");
 loadLibrary("woo:testWooGates.js");
@@ -96,7 +99,7 @@ function twStepGlobals() {
       "JS 라이브러리 배포 여부와 woo: 네임스페이스를 먼저 확인할 것");
     return false;
   }
-  var names = ["probe", "toolkit", "llm", "fragments", "lifecycle", "dedup",
+  var names = ["fragContract", "probe", "toolkit", "llm", "fragments", "lifecycle", "dedup",
     "gates", "feasibility", "foundry", "compiler", "repo", "cfg", "env", "embedding"];
   var missing = [];
   for (var i = 0; i < names.length; i++) {
@@ -109,6 +112,262 @@ function twStepGlobals() {
   }
   twPass("1.globals", names.length + " modules defined");
   return true;
+}
+
+// 1b. FragContract 계약 — 축·바인딩·색인 (DB/LLM 불필요)
+function twStepFragContract() {
+  var fc = testWoo.fragContract;
+  if (!fc) {
+    twFail("1b.fragContract", "testWoo.fragContract missing");
+    return false;
+  }
+  try {
+    var axes = fc.axisFromSlot({ text: "가입한지 1년 이내인 고객" });
+    var hasJoin = false;
+    for (var ai = 0; ai < axes.length; ai++) {
+      if (axes[ai] === "joindate") hasJoin = true;
+    }
+    if (!hasJoin) {
+      twFail("1b.fragContract", "axisFromSlot miss joindate for 가입 1년 이내");
+      return false;
+    }
+    var domain = {
+      joinDaysWithin: { required: true, type: "int" },
+      _bucket: { nlMap: { "1년 이내": { joinDaysWithin: 365 } } },
+      _source: { schema: "woo:testWooSampleCustomer", xpath: "@created_date" }
+    };
+    var bound = fc.sampleBindSql(
+      "SELECT DISTINCT sCustomer_id FROM t WHERE tsCreated_date >= AddDays(GetDate(), -{{joinDaysWithin}})",
+      domain);
+    if (bound.indexOf("{{") >= 0 || bound.indexOf("__sample__") >= 0) {
+      twFail("1b.fragContract", "sampleBindSql left placeholder: " + bound);
+      return false;
+    }
+    if (bound.indexOf("-365") < 0 && bound.indexOf("365") < 0) {
+      twFail("1b.fragContract", "sampleBindSql expected 365, got: " + bound);
+      return false;
+    }
+    var intBound = fc.sampleBindSql("SELECT 1 WHERE x = {{n}}", { n: { type: "int" } });
+    if (intBound.indexOf("'__sample__'") >= 0) {
+      twFail("1b.fragContract", "int sample must be 0 not __sample__: " + intBound);
+      return false;
+    }
+    var idx = fc.buildIndexFields({
+      slotText: "가입한지 1년 이내",
+      param_domain: domain,
+      name: "woo__customer__joindate",
+      tags: "joindate"
+    });
+    if (!idx.synonyms || idx.synonyms.indexOf("1년") < 0) {
+      twFail("1b.fragContract", "buildIndexFields must include bucket key, got: " + idx.synonyms);
+      return false;
+    }
+    var card = {
+      name: "woo__customer__joindate",
+      tags: "joindate",
+      label: "가입일",
+      synonyms: idx.synonyms,
+      sample_questions: idx.sample_questions,
+      param_domain: domain,
+      description: "",
+      category: "foundry"
+    };
+    if (!fc.libraryHitPredicate(card, { text: "가입한지 1년 이내", searchKeywords: ["가입", "1년"] }, domain)) {
+      twFail("1b.fragContract", "libraryHitPredicate should hit joindate card");
+      return false;
+    }
+    if (fc.axesCompatible({ tags: "age", name: "woo__customer__age" }, "남성")) {
+      twFail("1b.fragContract", "axesCompatible must reject gender→age");
+      return false;
+    }
+    var nlParams = fc.resolveNlParams(domain, "가입한지 1년 이내인 고객", { joinDaysWithin: 1 });
+    if (!nlParams || Number(nlParams.joinDaysWithin) !== 365) {
+      twFail("1b.fragContract", "resolveNlParams joinDaysWithin!=365");
+      return false;
+    }
+    var ageDomain = {
+      ageMin: { required: true, type: "int" },
+      ageMax: { required: true, type: "int" },
+      _bucket: { nlMap: { "20대": { ageMin: 20, ageMax: 30 }, "30대": { ageMin: 30, ageMax: 40 } } },
+      _source: { schema: "woo:testWooSampleCustomer", xpath: "@age" },
+      _range: { min: 0, max: 69 }
+    };
+    var ageCard = {
+      name: "woo__customer__age", tags: "age", label: "연령",
+      synonyms: "20대,30대", sample_questions: ["20대"],
+      param_domain: ageDomain, description: "", category: "foundry"
+    };
+    var ageToks = fc.keywordsFromSlot({ text: "10대" });
+    var hasAgeTok = false;
+    for (var aki = 0; aki < ageToks.length; aki++) {
+      if (String(ageToks[aki]).toLowerCase() === "age") hasAgeTok = true;
+    }
+    if (!hasAgeTok) {
+      twFail("1b.fragContract", "keywordsFromSlot 10대 must include axis token age");
+      return false;
+    }
+    if (!fc.libraryHitPredicate(ageCard, { text: "10대", searchKeywords: ["10대"] }, ageDomain)) {
+      twFail("1b.fragContract", "same-axis age frag must hit for unseen alias");
+      return false;
+    }
+    if (fc.libraryHitPredicate(ageCard, { text: "여성", searchKeywords: ["여성"] }, ageDomain)) {
+      twFail("1b.fragContract", "age frag must not hit gender slot");
+      return false;
+    }
+    var regionCard = {
+      name: "woo__customer__region", tags: "region", label: "지역",
+      synonyms: "", sample_questions: [],
+      param_domain: {
+        region: {
+          required: true, type: "string",
+          nlMap: { "경기도": "경기", "인천": "인천", "서울": "서울" },
+          enum: ["경기", "인천", "서울"]
+        },
+        _source: { schema: "woo:testWooSampleCustomer", xpath: "@region" }
+      },
+      description: "", category: "foundry"
+    };
+    var planCard = {
+      name: "woo__subscription__plan", tags: "plan", label: "요금제",
+      synonyms: "", sample_questions: [],
+      param_domain: {
+        planCode: { required: true, type: "string" },
+        _bucket: { nlMap: { "Z요금제": { planCode: "Z_PLAN" }, "학생요금제": { planCode: "STUDENT" } } },
+        _source: { schema: "woo:testWooSampleSubscription", xpath: "@plan_code" }
+      },
+      description: "", category: "foundry"
+    };
+    if (!fc.collectLexicon || !fc.splitByLexicon) {
+      twFail("1b.fragContract", "collectLexicon/splitByLexicon missing");
+      return false;
+    }
+    var lex = fc.collectLexicon([regionCard, planCard, ageCard]);
+    var split = fc.splitByLexicon("인천에 사는 20대 z요금제 쓰는 고객", lex);
+    if (!split || split.length !== 3) {
+      twFail("1b.fragContract", "lexicon split expected 3, got " +
+        (split ? split.length : 0));
+      return false;
+    }
+    var joined = "";
+    var spi;
+    for (spi = 0; spi < split.length; spi++)
+      joined += String(split[spi].text) + ":" + String(split[spi].resolvedName) + "|";
+    if (joined.indexOf("인천") < 0 || joined.indexOf("region") < 0) {
+      twFail("1b.fragContract", "lexicon miss 인천/region: " + joined);
+      return false;
+    }
+    if (joined.indexOf("20대") < 0 || joined.indexOf("age") < 0) {
+      twFail("1b.fragContract", "lexicon miss 20대/age: " + joined);
+      return false;
+    }
+    if (joined.toLowerCase().indexOf("z요금제") < 0 || joined.indexOf("plan") < 0) {
+      twFail("1b.fragContract", "lexicon miss z요금제/plan: " + joined);
+      return false;
+    }
+    var incheonToks = fc.keywordsFromSlot({ text: "인천에 사는" });
+    var hasIncheon = false;
+    var ki;
+    for (ki = 0; ki < incheonToks.length; ki++) {
+      if (String(incheonToks[ki]) === "인천") hasIncheon = true;
+    }
+    if (!hasIncheon) {
+      twFail("1b.fragContract", "keywordsFromSlot 인천에 must stem to 인천, got " +
+        incheonToks.join(","));
+      return false;
+    }
+    var merged = fc.mergeParamDomainJson(ageDomain, JSON.stringify({
+      _bucket: { nlMap: { "10대": { ageMin: 10, ageMax: 20 } } }
+    }));
+    if (!merged || !merged.changed) {
+      twFail("1b.fragContract", "mergeParamDomainJson should add missing alias");
+      return false;
+    }
+    var wide = fc.mergeParamDomainJson(
+      { _range: { min: 20, max: 40 } },
+      { _range: { min: 0, max: 69 } }
+    );
+    var wr = wide && wide.domain && wide.domain._range;
+    if (!wide || !wide.changed || !wr || Number(wr.min) !== 0 || Number(wr.max) !== 69) {
+      twFail("1b.fragContract", "mergeParamDomainJson must widen _range");
+      return false;
+    }
+    var attached = fc.attachAlias(ageDomain, "10대", { ageMin: 10, ageMax: 20 });
+    var dm = fc.domainMatchSlot(attached, "10대");
+    if (!dm || !dm.value || Number(dm.value.ageMin) !== 10) {
+      twFail("1b.fragContract", "attachAlias should add 10대 bucket");
+      return false;
+    }
+    var bad = fc.validateBind(ageDomain, { ageMin: 80, ageMax: 90 });
+    if (bad && bad.ok) {
+      twFail("1b.fragContract", "validateBind must reject out_of_range");
+      return false;
+    }
+    var okB = fc.validateBind(ageDomain, { ageMin: 10, ageMax: 20 });
+    if (!okB || !okB.ok) {
+      twFail("1b.fragContract", "validateBind 10/20 within _range should pass");
+      return false;
+    }
+    var codes = fc.errorCodes;
+    if (!codes || !codes.AXIS_MISMATCH || !codes.BIND_TYPE) {
+      twFail("1b.fragContract", "errorCodes incomplete");
+      return false;
+    }
+    twPass("1b.fragContract", "axis/bind/lexicon/libraryHit/resolveNl ok");
+    return true;
+  } catch (e) {
+    twFail("1b.fragContract", String(e.message || e));
+    return false;
+  }
+}
+
+// 1c. Pass0 원자 분할 — 청중명사(고객)는 축이 아님. LLM/DB 불필요.
+function twStepNormalizeSlots() {
+  if (!testWoo.llm || !testWoo.llm.normalizeAtomicSlots) {
+    twFail("1c.normalizeSlots", "normalizeAtomicSlots missing");
+    return false;
+  }
+  try {
+    var n = testWoo.llm.normalizeAtomicSlots([
+      { text: "경기도에 사는 학생요금제 사용하는 고객" },
+      { text: "고객" }
+    ]);
+    if (!n || n.length !== 2) {
+      twFail("1c.normalizeSlots", "expected 2 slots (region+plan), got " +
+        (n ? n.length : 0));
+      return false;
+    }
+    var texts = String(n[0].text) + "|" + String(n[1].text);
+    if (texts.indexOf("고객") >= 0) {
+      twFail("1c.normalizeSlots", "audience noun leaked: " + texts);
+      return false;
+    }
+    if (texts.indexOf("경기도") < 0 && texts.indexOf("경기") < 0) {
+      twFail("1c.normalizeSlots", "region missing: " + texts);
+      return false;
+    }
+    if (texts.indexOf("학생요금제") < 0 && texts.indexOf("요금제") < 0) {
+      twFail("1c.normalizeSlots", "plan missing: " + texts);
+      return false;
+    }
+    var onlyCust = testWoo.llm.normalizeAtomicSlots([{ text: "고객" }]);
+    if (onlyCust && onlyCust.length) {
+      twFail("1c.normalizeSlots", "고객-only must drop, got " + onlyCust.length);
+      return false;
+    }
+    var one = testWoo.llm.normalizeAtomicSlots([
+      { text: "학생요금제 사용하는 고객" }
+    ]);
+    if (!one || one.length !== 1 || String(one[0].text).indexOf("학생요금제") < 0) {
+      twFail("1c.normalizeSlots", "single-axis must keep plan phrase, got " +
+        (one && one[0] ? one[0].text : "empty"));
+      return false;
+    }
+    twPass("1c.normalizeSlots", "region+plan kept, 고객 dropped");
+    return true;
+  } catch (e) {
+    twFail("1c.normalizeSlots", String(e.message || e));
+    return false;
+  }
 }
 
 // 2. 'sql' named right 프리플라이트
@@ -500,8 +759,9 @@ function twStepLlmEmbedding() {
   }
 }
 
-// 9. foundry.generate 드라이런 (billable) — 큐·WF 없이 생성 경로를 즉시 검증한다.
-// fragment JSON missing / 게이트 실패가 배치 5분 사이클에만 드러나던 사각지대를 덮는다.
+// 9. foundry.generate 드라이런 (billable) — 큐·WF 없이 Foundry 진입을 검증한다.
+// #169: 서가에 축 frag가 있으면 library_cache_hit 이 정상(생성 0·툴 0). 그때도 PASS.
+// 서가 미스일 때만 gate.pass 생성 경로를 요구한다.
 function twStepFoundryGenerate() {
   if (TW_SMOKE_SKIP_LLM === true) {
     twSkip("9.foundry.generate (billable)",
@@ -509,9 +769,13 @@ function twStepFoundryGenerate() {
     return true;
   }
   try {
-    // forceGenerate: triage 오탐(값 키워드만 검색 → no_column)이 있어도 생성 경로(F-0)는
-    // 검증한다. triage 결과는 로그에 남기고, PASS 조건은 여전히 gate.pass 이다.
     var r = testWoo.foundry.dryRunSlot(TW_SMOKE_SLOT_TEXT, { forceGenerate: true });
+    if (r && r.ok && r.reason === "library_cache_hit") {
+      twPass("9.foundry.generate (billable)",
+        "library_cache_hit id=" + String(r.fragmentId || "") +
+        " (#169 서가 우선 — 생성 스킵 정상)");
+      return true;
+    }
     if (r && r.triage && r.triage.canProceed === false)
       logWarning("[smoke] 9.foundry.generate triage blocked (forced generate) verdict=" +
         String(r.triage.verdict) + "/" + String(r.triage.confidence) +
@@ -542,7 +806,8 @@ function twStepFoundryGenerate() {
 }
 
 // 9c. foundry.budget (비과금) — E-1: 단계 예산이 자기 상한에서 멈추고 total 여유는 남는지.
-// TW_SMOKE_SKIP_LLM 과 무관하게 항상 실행. LLM 호출 없음.
+// #169: invoke 캐시 히트는 예산 미차감 → 동일 args 반복으로는 상한에 못 닿는다.
+// limit 을 호출마다 바꿔 캐시 미스로 실제 차감시킨다 (list_schemas 는 limit 허용).
 function twStepFoundryBudget() {
   try {
     var cfg = testWoo.cfg.getConfig();
@@ -556,8 +821,6 @@ function twStepFoundryBudget() {
       return false;
     }
 
-    // list_schemas 는 required:["namespace"]. {} 로 치면 "namespace not allowed: "
-    // 이 나며 예산 카운트가 안 올라간다(5c 와 동일하게 허용 ns 를 넘긴다).
     var nsList = [];
     try {
       nsList = testWoo.toolkit.env().allowedNamespaces || [];
@@ -569,20 +832,27 @@ function twStepFoundryBudget() {
       twFail("9c.foundry.budget", "허용 namespace 0건 — env foundry.namespaces 확인");
       return false;
     }
-    var burnArgs = { namespace: String(nsList[0]) };
+    var ns0 = String(nsList[0]);
+    // 호출마다 고유 limit → 캐시 키 분리 (1..N, 차단 시도는 N+1)
+    function burnArgs(seq) {
+      var lim = Number(seq);
+      if (lim < 1) lim = 1;
+      if (lim > 200) lim = 200;
+      return { namespace: ns0, limit: lim };
+    }
 
     testWoo.toolkit.resetRequest();
     testWoo.toolkit.setPhaseBudget("triage");
     var i, res;
     for (i = 0; i < triageLimit; i++) {
-      res = testWoo.toolkit.invoke("list_schemas", burnArgs);
+      res = testWoo.toolkit.invoke("list_schemas", burnArgs(i + 1));
       if (res && res.error) {
         twFail("9c.foundry.budget",
           "triage invoke failed early i=" + i + " / " + String(res.error));
         return false;
       }
     }
-    res = testWoo.toolkit.invoke("list_schemas", burnArgs);
+    res = testWoo.toolkit.invoke("list_schemas", burnArgs(triageLimit + 1));
     if (!res || !res.error || String(res.error).indexOf("phase triage") < 0) {
       twFail("9c.foundry.budget",
         "expected phase triage block, got " +
@@ -592,14 +862,15 @@ function twStepFoundryBudget() {
 
     testWoo.toolkit.setPhaseBudget("generate");
     for (i = 0; i < genLimit; i++) {
-      res = testWoo.toolkit.invoke("list_schemas", burnArgs);
+      // triage 와 겹치지 않게 offset
+      res = testWoo.toolkit.invoke("list_schemas", burnArgs(100 + i + 1));
       if (res && res.error) {
         twFail("9c.foundry.budget",
           "generate invoke failed early i=" + i + " / " + String(res.error));
         return false;
       }
     }
-    res = testWoo.toolkit.invoke("list_schemas", burnArgs);
+    res = testWoo.toolkit.invoke("list_schemas", burnArgs(100 + genLimit + 1));
     if (!res || !res.error) {
       twFail("9c.foundry.budget", "expected generate phase block, got no error");
       return false;
@@ -619,7 +890,7 @@ function twStepFoundryBudget() {
     var used = triageLimit + genLimit;
     twPass("9c.foundry.budget",
       "phase generate blocked at " + genLimit +
-      "; total used=" + used + "/" + totalLimit + " (margin ok)");
+      "; total used=" + used + "/" + totalLimit + " (margin ok · cache-busted limits)");
     return true;
   } catch (e) {
     twFail("9c.foundry.budget", String(e.message || e));
@@ -653,6 +924,8 @@ function twSummary() {
 }
 
 if (twStepGlobals()) {
+  twStepFragContract();
+  twStepNormalizeSlots();
   twStepPreflight();
   twStepSqlSelectShape();
   twStepDescribeSchema();

@@ -6,6 +6,7 @@ loadLibrary("woo:testWooConfig.js");
 loadLibrary("woo:testWooProbe.js");
 loadLibrary("woo:testWooLifecycle.js");
 loadLibrary("woo:testWooEmbedding.js");
+loadLibrary("woo:testWooFragContract.js");
 loadLibrary("woo:testWooDedup.js");
 loadLibrary("woo:testWooToolkit.js");
 loadLibrary("woo:testWooFeasibility.js");

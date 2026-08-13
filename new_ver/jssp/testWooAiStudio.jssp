@@ -13,14 +13,14 @@
  *
  * [Dependencies]
  * =========
- * - /woo/testWooAiStudioJs.jssp?v=159 — 클라이언트 IIFE
+ * - /woo/testWooAiStudioJs.jssp?v=164 — 클라이언트 IIFE
  * - Option testWooAiMatchEnabled — 1/true만 ON
  * - input_form testWooExtendWorkflow — urlViewer height=630(embed 본문+70 정합)
  *
  * [Invariants]
  * ===========
  * - MSHTML: fetch/Promise/flex/CSS변수 금지 · 한글 HTML 엔티티
- * - litmus URL v=159 필수 — Foundry 후 재큐잉 차단
+ * - litmus URL v=164 필수 — 뒤로가기 시 미반영 SQL 유지
  * - NL textarea·목록 고정 height(+70) — 단독 630 / embed 510
  */
 response.setContentType("text/html;charset=utf-8");
@@ -304,7 +304,7 @@ if (!_login) {
   <!-- 오류 시에만 표시(#136). 정상 시 숨기고 진단 패널에만 기록 -->
   <table id="twBootTable" width="100%" bgcolor="#FFFF00" border="0" cellspacing="0" cellpadding="3" class="tw-boot-show">
     <tr><td>
-      <font id="twBootFont" face="Tahoma" size="2" color="#000000">TW-BOOT v=159 | loading&#x2026;</font>
+      <font id="twBootFont" face="Tahoma" size="2" color="#000000">TW-BOOT v=164 | loading&#x2026;</font>
     </td></tr>
   </table>
   <div id="twBoot" class="tw-boot-show">Studio boot&#x2026;</div>
@@ -323,7 +323,7 @@ if (!_login) {
         r = amp < 0 ? rest : rest.substring(0, amp);
       }
     } catch (eR) {}
-    var msg = "TW-BOOT v=159 | documentMode=" + dm + " | embed=" + emb + " | match=" + (window.__TW_MATCH_ENABLED__ ? "1" : "0") + " | _r=" + (r || "-");
+    var msg = "TW-BOOT v=164 | documentMode=" + dm + " | embed=" + emb + " | match=" + (window.__TW_MATCH_ENABLED__ ? "1" : "0") + " | _r=" + (r || "-");
     var font = document.getElementById("twBootFont");
     if (font) font.innerHTML = msg;
     var el = document.getElementById("twBoot");
@@ -346,7 +346,7 @@ if (!_login) {
     </div>
 
     <div id="twInfoBar">
-      <span id="twInfoText">Program: (&#xBBF8;&#xC120;&#xD0DD;)</span>
+      <span id="twInfoText">&#xC870;&#xAC74; &gt; SQL</span>
       <span id="twInfoActions">
         <button type="button" class="btn-mini" id="btnTwOpenWkf" disabled="disabled">WKF &#xC5F4;&#xAE30; &#xC548;&#xB0B4;</button>
         <button type="button" class="btn-mini" id="btnTwBack">&#xB4A4;&#xB85C;</button>
@@ -385,7 +385,7 @@ if (!_login) {
           </div>
         </td>
         <td id="twListPane">
-          <h2 id="twListTitle">&#xBAA9;&#xB85D;</h2>
+          <h2 id="twListTitle">SQL &#xBAA9;&#xB85D;</h2>
           <div id="twDummyList"></div>
           <div class="side" id="sideSql" style="display:none">
             <div class="side-empty" id="sqlListEmpty">&#xB4F1;&#xB85D;&#xB41C; SQL &#xC774; &#xC5C6;&#xC2B5;&#xB2C8;&#xB2E4;. &#xC0DD;&#xC131; &#xD6C4; &#xB4F1;&#xB85D;&#xD558;&#xBA74; &#xC5EC;&#xAE30; &#xBAA8;&#xC785;&#xB2C8;&#xB2E4;.</div>
@@ -401,8 +401,8 @@ if (!_login) {
     </div>
   </div>
 
-  <!-- v=159 · Foundry 후 재큐잉 차단 · Match OFF 유지 -->
-  <script type="text/javascript" src="/woo/testWooAiStudioJs.jssp?v=159"></script>
+  <!-- v=164 · 뒤로가기 캐시 유지 · Match OFF 유지 -->
+  <script type="text/javascript" src="/woo/testWooAiStudioJs.jssp?v=164"></script>
 </body>
 </html>
 <%

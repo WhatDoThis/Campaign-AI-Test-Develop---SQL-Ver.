@@ -62,6 +62,7 @@ try {
   if (!p.plan) throw new Error("Match: plan missing");
 
   loadLibrary("woo:testWooConfig.js");
+  loadLibrary("woo:testWooFragContract.js");
   loadLibrary("woo:testWooFragments.js");
   loadLibrary("woo:testWooCompiler.js");
   loadLibrary("woo:testWooLifecycle.js");

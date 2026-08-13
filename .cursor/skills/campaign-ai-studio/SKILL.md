@@ -42,6 +42,7 @@ NL → Pass0 (LLM slots) → Stage A (fragment search, paginated)
 |------|------|
 | `new_ver/js/testWooCommon.js` | jsonOut, auth, requireRight |
 | `new_ver/js/testWooConfig.js` | LLM options, queryDef guardrails |
+| `new_ver/js/testWooFragContract.js` | Slot↔Index↔Match↔Bind shared contract (#172) |
 | `new_ver/js/testWooFragments.js` | Stage A catalog search |
 | `new_ver/js/testWooLlm.js` | Pass0/Pass1, OpenRouter/Anthropic |
 | `new_ver/js/testWooCompiler.js` | CNF → SQL |

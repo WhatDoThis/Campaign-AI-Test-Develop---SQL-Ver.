@@ -1,6 +1,6 @@
 <%/*
  * testWooAiStudioJs.jssp (Studio 클라이언트 JS 서빙)
- * new_ver/html/testWooAiStudio.js 와 동기 유지 · v=159 · Foundry 후 재큐잉 차단.
+ * new_ver/html/testWooAiStudio.js 와 동기 유지 · v=164 · 뒤로가기 캐시 유지.
  */
 response.setContentType("text/javascript;charset=utf-8");
 try {
@@ -15,10 +15,9 @@ try {
  *
  * [Main Functions]
  * ===========
- * - generate / validate / register — 파이프라인 3단계 XHR (ST0→ST1/ST2, 등록→ST6)
- * - runMatch / discoverFind — dedup·discover 매칭(MATCH_ENABLED 게이트)
- * - renderBreadcrumb — Program/Campaign/WKF 탐색 크럼(셸 재구성은 R4)
- * - loadAiFolders·selectFolder·loadCampaigns·createCampaign·createWkf·selectWkf — ST3~ST5
+ * - generate / validate / register — ST0생성 → ST1 SQL목록 → ST3~ST5 매핑 후 WKF 있으면 Register
+ * - loadAiFolders·selectFolder·loadCampaigns·createCampaign·loadWkfs·createWkf·selectWkf — ST3~ST5
+ * - _jumpExistingSql — 분기 B 기존(반영됨) SQL → Program/Campaign/WKF 점프
  * - renderListPane / goBack / resetCtx — 우측 목록·뒤로·초기화(→ST0)
  * - putDraft / _cacheListDrafts — R2 미반영 SQL 캐시(twStudioCache)
  *
@@ -35,7 +34,7 @@ try {
  * - intent create/reuse UI 폐기 — 분기는 목록 데이터(R4+)
  * - ST0 최초 진입 시 NL 즉시 활성(폴더 선지정 게이트 없음)
  * - Draft는 saveAiSql/DB 금지 — Register 성공 시만 DB
- * - Served /woo/testWooAiStudioJs.jssp?v=159 (html/ 동기)
+ * - Served /woo/testWooAiStudioJs.jssp?v=164 · 뒤로가기≠초기화(캐시 SQL 유지)
  * - Foundry done 자동 재생성은 after_foundry(재큐잉 금지)
  */
 (function () {
@@ -249,7 +248,8 @@ try {
     state.cacheId = cid;
     _cacheUpsertDraft(rec);
     _diag("putDraft cacheId=" + cid);
-    if (SHELL_MODE && ctx.listMode === "WKF" && !ctx.workflow) renderListPane();
+    if (SHELL_MODE && (ctx.listMode === "SQL" || (ctx.listMode === "WKF" && !ctx.workflow)))
+      renderListPane();
   }
 
   function _restoreDraft(draft) {
@@ -273,7 +273,7 @@ try {
       _addCls($("cardFunnel"), "hidden");
       _addCls($("cardSlotResults"), "hidden");
     }
-    $("btnReg").disabled = !state.passed;
+    _syncRegButton();
     clearErr();
     renderSummaryHint(
       "\uC784\uC2DC SQL \uBCF5\uC6D0 \u2014 " + String(draft.cacheId || ""),
@@ -313,10 +313,10 @@ try {
     foundryDoneQid: null
   };
   var _delPending = { id: null, timer: null, btn: null };
-  /* SQL-First: phase=ST0~ST6 · listMode=FOLDER|CAMPAIGN|WKF (셸 패널은 R4) */
+  /* SQL-First: phase=ST0~ST6 · listMode=SQL|FOLDER|CAMPAIGN|WKF */
   var ctx = {
     phase: "ST0",
-    listMode: "FOLDER",
+    listMode: "SQL",
     folder: null,
     folders: [],
     campaigns: [],
@@ -328,6 +328,7 @@ try {
     openHint: "",
     matchShown: false,
     matchMode: "",
+    registeredSql: [],
     stack: []
   };
   var SHELL_MODE = !(WORKFLOW_NAME && EMBED);
@@ -492,11 +493,19 @@ try {
           _diag("libs: " + parts.join(" "));
           var mm = res.mismatch || [];
           if (mm.length || res.allMatch === false) {
+            var expMap = res.expectedByMod || {};
+            var wantBits = [];
+            var wi;
+            for (wi = 0; wi < mm.length; wi++) {
+              var mk = mm[wi];
+              wantBits.push(mk + "=" +
+                (expMap[mk] != null ? String(expMap[mk]) : String(res.expected || "159")));
+            }
             var warn =
               "JS \uB77C\uC774\uBE0C\uB7EC\uB9AC \uBC84\uC804 \uBD88\uC77C\uCE58: " +
               mm.join(",") +
-              " (expected " +
-              String(res.expected || "159") +
+              " (want " +
+              (wantBits.length ? wantBits.join(",") : String(res.expected || "159")) +
               ") \u2014 ACC \uCF58\uC194 JavaScript codes \uC7AC\uB4F1\uB85D \uD544\uC694. TW-BOOT v= \uB9CC\uC73C\uB85C\uB294 \uBCF4\uC99D\uB418\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.";
             var hint = $("hint");
             if (hint) {
@@ -733,9 +742,9 @@ try {
             // unmatched = Stage A \uD504\uB798\uADF8\uBA3C\uD2B8 \uBBF8\uBC1C\uACAC (\uCC3D\uC791 SQL/\uC870\uAC74 \uAE08\uC9C0)
             if (afterFoundry || res.afterFoundry) {
               $("hint").textContent =
-                "Foundry fragment\uB294 \uC788\uC73C\uB098 Stage A\uAC00 \uC544\uC9C1 \uC5F0\uACB0\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. " +
+                "\uB77C\uC774\uBE0C\uB7EC\uB9AC\uC5D0 \uD574\uB2F9 \uCD95 fragment\uAC00 \uC5C6\uAC70\uB098 Stage A\uAC00 \uC544\uC9C1 \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. " +
                 "\uC2AC\uB86F: " + res.unmatched.join(" | ") +
-                " \u2014 JS(testWooFragments) \uBC30\uD3EC \uD6C4 [\uC0DD\uC131] \uC7AC\uC2DC\uB3C4.";
+                " \u2014 Foundry \uD050\uAC00 Done\uC778\uB370\uB3C4 \uC774 \uCD95\uC774 \uC5C6\uC73C\uBA74 \uC0C8\uB85C [\uC0DD\uC131]\uD558\uAC70\uB098 frag name/synonyms/\uB300\uC18C\uBB38\uC790\uB97C \uD655\uC778\uD558\uC138\uC694.";
             } else {
               $("hint").textContent =
                 "\uB9E4\uCE6D \uC2E4\uD328(\uCC3D\uC791 \uC5C6\uC74C): \uB77C\uC774\uBE0C\uB7EC\uB9AC\uC5D0 \uD574\uB2F9 fragment\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. " +
@@ -759,7 +768,7 @@ try {
         renderChips(res.chips);
         renderSql(state.sql);
         renderGates(res.results || []);
-        $("btnReg").disabled = !state.passed;
+        _syncRegButton();
         if (!state.passed) {
           showErr(res.error || "validation failed");
           renderSummaryHint(res.summary, false);
@@ -772,8 +781,7 @@ try {
           ctx.wkfs = [];
           ctx.matchShown = false;
           ctx.matchMode = "";
-          _showSqlSide(false);
-          renderListPane();
+          renderBreadcrumb();
         }
       } finally {
         setBusy(false);
@@ -883,7 +891,7 @@ try {
       if (v.chips) renderChips(v.chips);
       renderSql(state.sql);
       renderGates(v.results);
-      $("btnReg").disabled = !v.passed;
+      _syncRegButton();
       renderSummaryHint(v.summary || state.summary, !!v.passed);
       if (state.passed && _trim(state.sql)) putDraft();
     }, function (e) {
@@ -894,9 +902,8 @@ try {
   function register() {
     if (!state.passed) return;
     if (SHELL_MODE && !_activeWorkflowName()) {
-      showErr(
-        "\uBA3C\uC800 WKF\uB97C \uC120\uD0DD\uD558\uAC70\uB098 \uC0C8 WKF\uB97C \uC0DD\uC131\uD558\uC138\uC694."
-      );
+      if (_isMappingWithoutWkf()) return;
+      _enterSqlList();
       return;
     }
     setBusy(true); clearErr();
@@ -1031,6 +1038,36 @@ try {
     );
   }
 
+  function _hasCompose() {
+    return !!(state.passed && _trim(state.sql) && state.plan);
+  }
+
+  /* ST3~ST5(WKF 미선택): [등록] 비활성. SQL목록은 브레드크럼/뒤로. 생성 직후 [등록]→목록은 유지. */
+  function _isMappingWithoutWkf() {
+    if (!SHELL_MODE) return false;
+    if (_activeWorkflowName()) return false;
+    var ph = String(ctx.phase || "ST0");
+    return ph === "ST3" || ph === "ST4" || ph === "ST5";
+  }
+
+  function _syncRegButton() {
+    var el = $("btnReg");
+    if (!el) return;
+    if (!state.passed) {
+      el.disabled = true;
+      return;
+    }
+    if (String(ctx.phase || "") === "ST6") {
+      el.disabled = true;
+      return;
+    }
+    if (_isMappingWithoutWkf()) {
+      el.disabled = true;
+      return;
+    }
+    el.disabled = false;
+  }
+
   // 뒤로가기/초기화: 이전 Generate·매칭이 캠페인 재진입에 남지 않게 정리
   function _clearComposeState() {
     state.plan = null;
@@ -1055,6 +1092,137 @@ try {
       var sqlBox = $("sql");
       if (sqlBox) sqlBox.textContent = "";
     } catch (eS) {}
+  }
+
+  /* R4: [등록] = SQL 목록 (WKF 선행 금지). DB Register는 WKF 있을 때만. */
+  function _enterSqlList() {
+    if (!SHELL_MODE) return;
+    _restoreLatestDraftIfNeeded();
+    if (state.passed && _trim(state.sql)) putDraft();
+    ctx.phase = state.passed && _trim(state.sql) ? "ST2" : "ST1";
+    ctx.listMode = "SQL";
+    _showSqlSide(false);
+    setInputEnabled(true);
+    renderBreadcrumb();
+    renderListPane();
+    _loadRegisteredSql();
+    _syncRegButton();
+    var hint = $("hint");
+    if (hint) {
+      hint.className = "banner ok";
+      hint.textContent = state.passed
+        ? "SQL \uBAA9\uB85D \u2014 \uC0C8 SQL\uB85C \uC9C4\uD589\uD558\uAC70\uB098 \uBBF8\uBC18\uC601(\uC784\uC2DC) \uD56D\uBAA9\uC744 \uC120\uD0DD\uD558\uC138\uC694."
+        : "\uC870\uAC74\uC744 [\uC0DD\uC131] \uD55C \uB4A4 [\uB4F1\uB85D]\uC744 \uB204\uB974\uBA74 SQL \uBAA9\uB85D\uC774 \uB098\uD0D5\uB2C8\uB2E4.";
+    }
+  }
+
+  function _beginMapping() {
+    if (!SHELL_MODE) return;
+    if (!state.passed || !_trim(state.sql)) {
+      showErr("\uBA3C\uC800 \uC870\uAC74\uC744 [\uC0DD\uC131]\uD558\uC138\uC694.");
+      return;
+    }
+    putDraft();
+    _pushStack();
+    ctx.phase = "ST3";
+    ctx.listMode = "FOLDER";
+    _showSqlSide(false);
+    setInputEnabled(true);
+    renderBreadcrumb();
+    loadAiFolders();
+    _syncRegButton();
+    var hintM = $("hint");
+    if (hintM) {
+      hintM.className = "banner ok";
+      hintM.textContent =
+        "\uD504\uB85C\uADF8\uB7A8\uC744 \uC120\uD0DD\uD55C \uB4A4 \uCEA0\uD398\uC778 \u2192 WKF \uC21C\uC73C\uB85C \uB9E4\uD551\uD569\uB2C8\uB2E4. SQL\uC740 \uC720\uC9C0\uB429\uB2C8\uB2E4.";
+    }
+  }
+
+  function _loadRegisteredSql() {
+    if (!SHELL_MODE) return;
+    post(
+      "testWooAiStudioContext.jssp",
+      { action: "listRegisteredSql", limit: 10 },
+      function (res) {
+        ctx.registeredSql = (res && res.ok && res.items) ? res.items : [];
+        if (ctx.listMode === "SQL") renderListPane();
+      },
+      function () {
+        ctx.registeredSql = ctx.registeredSql || [];
+      }
+    );
+  }
+
+  function _jumpExistingSql(row) {
+    if (!row || !row.id) return;
+    if (!row.workflow_id && !row.campaign_id) {
+      showErr(
+        "\uC774 SQL\uC758 WKF\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uC0C8 SQL\uB85C \uC9C4\uD589\uD558\uC138\uC694."
+      );
+      return;
+    }
+    setBusy(true);
+    post(
+      "testWooAiValidate.jssp",
+      { action: "getSql", ai_sql_id: row.id },
+      function (res) {
+        setBusy(false);
+        if (!res || !res.ok || !res.item) {
+          showErr(_errText(res) || "load failed");
+          return;
+        }
+        var it = res.item;
+        state.aiSqlId = it.id;
+        state.sql = it.sql_query || "";
+        state.summary = it.summary_ko || "";
+        state.nl = it.nl_request || "";
+        state.passed = !!_trim(state.sql);
+        state.plan = null;
+        try {
+          if (it.plan_json) state.plan = JSON.parse(it.plan_json);
+        } catch (eParse) {
+          state.plan = null;
+        }
+        try {
+          if (it.nl_request) $("nl").value = it.nl_request;
+        } catch (eNl) {}
+        renderSql(state.sql);
+        _syncRegButton();
+        if (row.program_id) {
+          ctx.folder = {
+            id: String(row.program_id),
+            name: String(row.program_name || ""),
+            label: String(row.program_label || row.program_name || "")
+          };
+        }
+        if (row.campaign_id) {
+          ctx.campaign = {
+            id: String(row.campaign_id),
+            name: String(row.campaign_name || ""),
+            label: String(row.campaign_label || row.campaign_name || "")
+          };
+        }
+        ctx.phase = "ST5";
+        ctx.listMode = "WKF";
+        ctx.matchMode = "";
+        ctx.matchShown = false;
+        _pushStack();
+        loadWkfs(function () {
+          if (row.workflow_id) {
+            selectWkf({
+              id: row.workflow_id,
+              name: row.workflow_name || "",
+              label: row.workflow_label || row.workflow_name || ""
+            });
+          }
+        });
+      },
+      function (e) {
+        setBusy(false);
+        showErr(String(e && e.message ? e.message : e));
+      }
+    );
   }
 
   function setBindPick(aiSqlId) {
@@ -1098,12 +1266,19 @@ try {
       el.appendChild(a);
     }
 
-    if (!ctx.folder) {
-      addCrumb("Program: (\uBBF8\uC120\uD0DD)", true, null);
-    } else {
+    var ph = String(ctx.phase || "ST0");
+    addCrumb("\uC870\uAC74", ph === "ST0", null);
+    addSep();
+    addCrumb(
+      "SQL",
+      ph === "ST1" || ph === "ST2",
+      function () { _enterSqlList(); }
+    );
+    if (ctx.folder) {
+      addSep();
       addCrumb(
         ctx.folder.label || ctx.folder.name || "Program",
-        !ctx.campaign,
+        ph === "ST3" && !ctx.campaign,
         function () {
           navToProgram();
         }
@@ -1112,7 +1287,7 @@ try {
         addSep();
         addCrumb(
           ctx.campaign.label || ctx.campaign.name || "Campaign",
-          !ctx.workflow,
+          ph === "ST4" && !ctx.workflow,
           function () {
             navToCampaignList();
           }
@@ -1122,7 +1297,7 @@ try {
         addSep();
         addCrumb(
           ctx.workflow.label || ctx.workflow.name || "WKF",
-          true,
+          ph === "ST5" || ph === "ST6",
           null
         );
       }
@@ -1139,12 +1314,13 @@ try {
   function navToProgram() {
     if (!SHELL_MODE) return;
     _releaseCurrentLock(function () {
-      _clearComposeState();
+      var keepSql = !!(state.passed && _trim(state.sql));
+      if (!keepSql) _restoreLatestDraftIfNeeded();
       ctx.workflow = null;
       ctx.openHint = "";
       ctx.campaign = null;
       ctx.campaigns = [];
-      ctx.stack = [];
+      ctx.stack = [_sqlStackFrame()];
       if (!EMBED) WORKFLOW_NAME = "";
       _showSqlSide(false);
       ctx.listMode = "FOLDER";
@@ -1153,6 +1329,7 @@ try {
       _refreshOpenButtons();
       renderBreadcrumb();
       loadAiFolders();
+      _syncRegButton();
     });
   }
 
@@ -1162,7 +1339,8 @@ try {
       return;
     }
     _releaseCurrentLock(function () {
-      _clearComposeState();
+      var keepSql = !!(state.passed && _trim(state.sql));
+      if (!keepSql) _restoreLatestDraftIfNeeded();
       ctx.workflow = null;
       ctx.openHint = "";
       ctx.campaign = null;
@@ -1170,11 +1348,23 @@ try {
       _showSqlSide(false);
       ctx.listMode = "CAMPAIGN";
       ctx.phase = "ST4";
-      ctx.stack = [];
+      ctx.stack = [
+        _sqlStackFrame(),
+        {
+          phase: "ST3",
+          listMode: "FOLDER",
+          folder: ctx.folder
+            ? { id: ctx.folder.id, name: ctx.folder.name, label: ctx.folder.label }
+            : null,
+          campaign: null,
+          workflow: null
+        }
+      ];
       setInputEnabled(true);
       _refreshOpenButtons();
       renderBreadcrumb();
       loadCampaigns();
+      _syncRegButton();
     });
   }
 
@@ -1249,6 +1439,22 @@ try {
     return t;
   }
 
+  function _sqlStackFrame() {
+    return {
+      phase: (state.passed && _trim(state.sql)) ? "ST2" : "ST1",
+      listMode: "SQL",
+      folder: null,
+      campaign: null,
+      workflow: null
+    };
+  }
+
+  function _restoreLatestDraftIfNeeded() {
+    if (state.passed && _trim(state.sql)) return;
+    var ds = _cacheListDrafts();
+    if (ds.length) _restoreDraft(ds[0]);
+  }
+
   function _pushStack() {
     ctx.stack.push({
       phase: ctx.phase,
@@ -1300,8 +1506,62 @@ try {
     box.style.display = "block";
     box.innerHTML = "";
 
+    if (ctx.listMode === "SQL") {
+      if (title) title.textContent = "SQL \uBAA9\uB85D";
+      var draftsSql = _cacheListDrafts();
+      var regs = ctx.registeredSql || [];
+      if (!draftsSql.length && !regs.length && !(state.passed && _trim(state.sql))) {
+        var emptyS = document.createElement("div");
+        emptyS.className = "side-empty";
+        emptyS.appendChild(document.createTextNode(
+          "\uC870\uAC74\uC744 [\uC0DD\uC131] \uD55C \uB4A4 [\uB4F1\uB85D]\uC744 \uB204\uB974\uBA74 \uC0C8 SQL\uACFC \uC720\uC0AC SQL\uC774 \uC5EC\uAE30 \uB098\uD0D5\uB2C8\uB2E4."
+        ));
+        box.appendChild(emptyS);
+        return;
+      }
+      _renderDraftRows(box);
+      if (state.passed && _trim(state.sql)) {
+        var goMap = document.createElement("div");
+        goMap.className = "shell-item";
+        goMap.appendChild(document.createTextNode(
+          "\uC774 \uC0C8 SQL\uB85C \uC9C4\uD589 (\uD504\uB85C\uADF8\uB7A8 \uC120\uD0DD)"
+        ));
+        goMap.onclick = function () {
+          _beginMapping();
+          return false;
+        };
+        box.appendChild(goMap);
+      }
+      for (var rg = 0; rg < regs.length; rg++) {
+        (function (row) {
+          var el = document.createElement("div");
+          el.className = "shell-item";
+          var nlLab = _trim(row.nl_request || row.title || "");
+          if (nlLab.length > 40) nlLab = nlLab.substring(0, 37) + "...";
+          var wfLab = row.workflow_label || row.workflow_name || "";
+          el.appendChild(document.createTextNode(
+            "[\uAE30\uC874(\uBC18\uC601\uB428)] " + nlLab + (wfLab ? (" \u00B7 " + wfLab) : "")
+          ));
+          el.onclick = function () {
+            _jumpExistingSql(row);
+            return false;
+          };
+          box.appendChild(el);
+        })(regs[rg]);
+      }
+      var emptyHint = document.createElement("div");
+      emptyHint.className = "side-empty";
+      emptyHint.appendChild(document.createTextNode(
+        MATCH_ENABLED
+          ? "\uC720\uC0AC SQL\uC774 \uC5C6\uC73C\uBA74 \uC0C8 SQL\uB85C \uC9C4\uD589\uD569\uB2C8\uB2E4."
+          : "\uAE30\uC874(\uBC18\uC601\uB428)\uC740 \uCD5C\uADFC \uB4F1\uB85D\uBD84\uC785\uB2C8\uB2E4. \uC720\uC0AC\uB3C4 \uB2E8\uC815\uC740 Match OFF\uB77C \uD45C\uC2DC\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."
+      ));
+      box.appendChild(emptyHint);
+      return;
+    }
+
     if (ctx.listMode === "FOLDER") {
-      if (title) title.textContent = "AI Program";
+      if (title) title.textContent = "\uD504\uB85C\uADF8\uB7A8 \uC120\uD0DD";
       if (!ctx.folders.length) {
         var empty = document.createElement("div");
         empty.className = "side-empty";
@@ -1416,42 +1676,18 @@ try {
       }
       box.appendChild(createRow);
 
-      _renderDraftRows(box);
-
-      /* #152: Match OFF — 유사 목록 자리 안내만 (오탐 카드 금지) · draft는 위에 표시 */
-      if (!MATCH_ENABLED) {
-        ctx.wkfs = [];
-        ctx.matchShown = false;
-        var offMsg = document.createElement("div");
-        offMsg.className = "side-empty";
-        offMsg.appendChild(document.createTextNode(_matchDisabledMsg()));
-        box.appendChild(offMsg);
-        return;
-      }
+      if (isDiscover) _renderDraftRows(box);
 
       if (!ctx.wkfs.length) {
         var emptyW = document.createElement("div");
         emptyW.className = "side-empty";
-        var emptyMsg = "";
-        if (!ctx.matchShown) {
-          if (isDiscover) {
-            emptyMsg =
-              "\uC870\uAC74\uC744 \uC785\uB825\uD55C \uB4A4 [\uC0DD\uC131]\uC744 \uB204\uB974\uC138\uC694. (\uAC12\uC774 \uC77C\uCE58\uD558\uB294 \uD6C4\uBCF4\uB9CC \uD45C\uC2DC \u00B7 CONFLICT \uC81C\uC678)";
-          } else {
-            emptyMsg = ctx.canCreateWkf
-              ? "\uC67C\uCABD\uC5D0\uC11C \uC870\uAC74\uC744 [\uC0DD\uC131]\uD55C \uB4A4 WKF\uB97C \uB9CC\uB4E0 \uB4A4 [\uB4F1\uB85D]\uD558\uC138\uC694."
-              : "\uC870\uAC74 [\uC0DD\uC131] \uD6C4 WKF\uAC00 \uD544\uC694\uD569\uB2C8\uB2E4. (\uC774 \uCEA0\uD398\uC778\uC740 WKF Max " +
-                ctx.wkfMax +
-                " \u2014 \uC0C8 WKF \uBD88\uAC00)";
-          }
-        } else if (isDiscover) {
-          emptyMsg =
-            "\uAC12\uC774 \uC77C\uCE58\uD558\uB294 \uD6C4\uBCF4 WKF\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. \uC0C8 WKF\uB97C \uC0DD\uC131\uD558\uAC70\uB098 \uC870\uAC74\uC744 \uBC14\uAFB8\uC138\uC694.";
-        } else {
-          emptyMsg =
-            "WKF\uB97C \uB9CC\uB4E0 \uB4A4 [\uB4F1\uB85D]\uD558\uC138\uC694.";
-        }
-        emptyW.appendChild(document.createTextNode(emptyMsg));
+        emptyW.appendChild(document.createTextNode(
+          isDiscover
+            ? "\uAC12\uC774 \uC77C\uCE58\uD558\uB294 \uD6C4\uBCF4 WKF\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. \uC0C8 WKF\uB97C \uC0DD\uC131\uD558\uAC70\uB098 \uC870\uAC74\uC744 \uBC14\uAFB8\uC138\uC694."
+            : (ctx.canCreateWkf
+              ? "\uC774 \uCEA0\uD398\uC778\uC5D0 WKF\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. \uC0C8 WKF\uB97C \uC0DD\uC131\uD558\uC138\uC694."
+              : "WKF Max " + ctx.wkfMax + " \u2014 \uC0C8 WKF \uBD88\uAC00")
+        ));
         box.appendChild(emptyW);
         return;
       }
@@ -1550,34 +1786,17 @@ try {
               el.appendChild(badge);
             }
           } else {
+            el.className = row.locked ? "shell-item locked" : "shell-item";
+            if (ctx.workflow && String(ctx.workflow.id) === String(row.id)) {
+              el.className += " active";
+            }
             var line1 = document.createElement("div");
             line1.className = "sid";
             var l1 = wfLabel + " / " + wfName;
-            if (row.exact) l1 += " \u2014 \uB3D9\uC77C\uC870\uAC74";
-            else if (row.matchLabel) l1 += " \u2014 " + row.matchLabel;
             if (row.locked) l1 += " \u2014 \uC7A0\uAE08: " + (row.locked_by || "?");
             line1.textContent = l1;
             line1.title = wfLabel + " / " + wfName;
-
-            var line2 = document.createElement("div");
-            line2.className = "meta";
-            var l2 =
-              campLabel +
-              " / " +
-              campName +
-              " | " +
-              progLabel;
-            line2.textContent = l2;
-            line2.title = l2;
-
-            var line3 = document.createElement("div");
-            line3.className = "meta";
-            line3.textContent = nlTxt;
-            line3.title = nlTxt;
-
             el.appendChild(line1);
-            el.appendChild(line2);
-            el.appendChild(line3);
           }
           el.onclick = function () {
             if (row.locked) {
@@ -1619,6 +1838,7 @@ try {
     _refreshOpenButtons();
     renderListPane();
     loadCampaigns();
+    _syncRegButton();
   }
 
   function loadCampaigns() {
@@ -1649,6 +1869,71 @@ try {
         showErr(String(err && err.message ? err.message : err));
       }
     );
+  }
+
+  function loadWkfs(done) {
+    if (!SHELL_MODE || !ctx.campaign || !ctx.campaign.id) {
+      if (done) done();
+      return;
+    }
+    ctx.phase = "ST5";
+    ctx.listMode = "WKF";
+    ctx.matchMode = "";
+    ctx.matchShown = false;
+    post(
+      "testWooAiStudioContext.jssp",
+      {
+        action: "listWkfs",
+        campaign_id: ctx.campaign.id,
+        operation_id: ctx.campaign.id,
+        limit: 200
+      },
+      function (res) {
+        if (!res || !res.ok) {
+          ctx.wkfs = [];
+          renderListPane();
+          showErr(_errText(res) || "listWkfs failed");
+          if (done) done();
+          return;
+        }
+        clearErr();
+        ctx.wkfs = res.items || [];
+        if (res.wkfMax != null) ctx.wkfMax = res.wkfMax;
+        if (res.canCreateWkf != null) ctx.canCreateWkf = !!res.canCreateWkf;
+        renderListPane();
+        renderBreadcrumb();
+        _syncRegButton();
+        if (done) done();
+      },
+      function (err) {
+        ctx.wkfs = [];
+        renderListPane();
+        showErr(String(err && err.message ? err.message : err));
+        if (done) done();
+      }
+    );
+  }
+
+  function _afterWkfBound(res) {
+    ctx.phase = "ST5";
+    setInfoBar(_folderInfoText());
+    _refreshOpenButtons();
+    if (res && res.lock_warning) {
+      $("hint").className = "banner warn";
+      $("hint").textContent =
+        "WKF \uC120\uD0DD\uB428 (\uC7A0\uAE08 \uACBD\uACE0: " + res.lock_warning + ")";
+    } else if (state.passed && _trim(state.sql)) {
+      $("hint").className = "banner ok";
+      $("hint").textContent =
+        "WKF \uC120\uD0DD\uB428. [\uB4F1\uB85D]\uC744 \uB204\uB974\uBA74 \uC774 SQL\uC774 \uBC18\uC601\uB429\uB2C8\uB2E4.";
+    }
+    _syncRegButton();
+    if (_hasCompose() || (state.passed && _trim(state.sql))) {
+      _showSqlSide(false);
+      renderListPane();
+    } else {
+      loadSqlList();
+    }
   }
 
   function createCampaign() {
@@ -1696,12 +1981,13 @@ try {
     if (row.wkfMax != null) ctx.wkfMax = row.wkfMax;
     ctx.phase = "ST5";
     ctx.listMode = "WKF";
-    /* 매칭은 Generate 성공 후에만. 재진입 시 이전 plan으로 자동 Match 금지 */
-    _clearComposeState();
+    ctx.matchMode = "";
+    ctx.matchShown = false;
     setInfoBar(_folderInfoText());
     setInputEnabled(true);
     _refreshOpenButtons();
-    renderListPane();
+    loadWkfs();
+    _syncRegButton();
   }
 
   function selectCampaign(row) {
@@ -1746,11 +2032,10 @@ try {
         if (!EMBED) WORKFLOW_NAME = String(res.workflow.name || "");
         ctx.openHint = String(res.open_hint || "");
         state.aiSqlId = null;
-        ctx.phase = "ST5";
-        setInfoBar(_folderInfoText());
-        _refreshOpenButtons();
-        loadSqlList();
-        showOpenHint();
+        loadWkfs(function () {
+          _afterWkfBound(res);
+          showOpenHint();
+        });
       },
       function (err) {
         setBusy(false);
@@ -1766,9 +2051,13 @@ try {
       runMatch(null, "discover");
       return;
     }
-    ctx.wkfs = [];
     ctx.matchShown = false;
     ctx.matchMode = "";
+    if (ctx.campaign && ctx.campaign.id) {
+      loadWkfs();
+      return;
+    }
+    ctx.wkfs = [];
     if (!ctx.workflow) {
       _showSqlSide(false);
       renderListPane();
@@ -1821,16 +2110,8 @@ try {
         // Tools Studio(embed=0)는 URL workflowName 이 없음 → 선택 WKF 로 바인딩
         if (!EMBED) WORKFLOW_NAME = String(row.name || "");
         ctx.openHint = String(res.open_hint || "");
-        state.aiSqlId = null;
-        ctx.phase = "ST5";
-        setInfoBar(_folderInfoText());
-        _refreshOpenButtons();
-        if (res.lock_warning) {
-          $("hint").className = "banner warn";
-          $("hint").textContent =
-            "WKF \uC120\uD0DD\uB428 (\uC7A0\uAE08 \uACBD\uACE0: " + res.lock_warning + ")";
-        }
-        loadSqlList();
+        if (!_hasCompose()) state.aiSqlId = null;
+        _afterWkfBound(res);
       },
       function (err) {
         setBusy(false);
@@ -1849,7 +2130,7 @@ try {
       _showSqlSide(false);
       _refreshOpenButtons();
       if (!ctx.stack.length) {
-        resetCtx();
+        _enterSqlList();
         return;
       }
       var prev = ctx.stack.pop();
@@ -1858,16 +2139,15 @@ try {
       ctx.folder = prev.folder;
       ctx.campaign = prev.campaign || null;
       ctx.workflow = null;
-      /* WKF 뎁스를 벗어나면 이전 조건·매칭 폐기 (재진입 시 잔상 방지) */
-      if (ctx.listMode !== "WKF") {
-        _clearComposeState();
+      if (ctx.listMode === "SQL") {
+        _enterSqlList();
+        return;
       }
       if (ctx.listMode === "WKF" && ctx.campaign) {
-        _clearComposeState();
         if (ctx.phase !== "ST5") ctx.phase = "ST5";
         setInfoBar(_folderInfoText());
         setInputEnabled(true);
-        renderListPane();
+        loadWkfs();
       } else if (ctx.listMode === "CAMPAIGN" && ctx.folder) {
         ctx.campaign = null;
         if (ctx.phase !== "ST4") ctx.phase = "ST4";
@@ -1880,11 +2160,10 @@ try {
         setInputEnabled(true);
         renderListPane();
       } else {
-        ctx.phase = "ST0";
-        setInfoBar("Program: (\uBBF8\uC120\uD0DD)");
-        setInputEnabled(true);
-        renderListPane();
+        _enterSqlList();
+        return;
       }
+      _syncRegButton();
     });
   }
 
@@ -1892,7 +2171,7 @@ try {
     if (!SHELL_MODE) return;
     _releaseCurrentLock(function () {
       ctx.phase = "ST0";
-      ctx.listMode = "FOLDER";
+      ctx.listMode = "SQL";
       ctx.folder = null;
       ctx.campaigns = [];
       ctx.campaign = null;
@@ -1901,20 +2180,22 @@ try {
       ctx.openHint = "";
       ctx.matchShown = false;
       ctx.matchMode = "";
+      ctx.registeredSql = [];
       ctx.stack = [];
       _cacheClearAll();
       state.cacheId = null;
       _clearComposeState();
-      setInfoBar("Program: (\uBBF8\uC120\uD0DD)");
       setInputEnabled(true);
       _refreshOpenButtons();
+      renderBreadcrumb();
+      renderListPane();
+      _syncRegButton();
       var hintR = $("hint");
       if (hintR) {
         hintR.className = "banner warn";
         hintR.textContent =
           "\uC870\uAC74\uC744 \uC785\uB825\uD55C \uB4A4 [\uC0DD\uC131]\uC744 \uB204\uB974\uC138\uC694. (\uD504\uB85C\uADF8\uB7A8/\uCEA0\uD398\uC778/\uC6CC\uD06C\uD50C\uB85C\uC6B0\uB294 SQL \uD6C4\uC5D0 \uC120\uD0DD \u00B7 WKF Max 15)";
       }
-      loadAiFolders();
     });
   }
 
@@ -2143,7 +2424,7 @@ try {
             state.passed = !!v.passed;
             if (v.chips) renderChips(v.chips);
             renderGates(v.results || []);
-            $("btnReg").disabled = !v.passed;
+            _syncRegButton();
           }
           renderSql(state.sql);
           renderSummaryHint(
@@ -2328,7 +2609,7 @@ try {
       _wireDiagToggle();
       try {
         var dm0 = (typeof document.documentMode !== "undefined") ? String(document.documentMode) : "n/a(non-IE)";
-          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | match=" + (MATCH_ENABLED ? "1" : "0") + " | phase=" + ctx.phase + " | v=159";
+          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | match=" + (MATCH_ENABLED ? "1" : "0") + " | phase=" + ctx.phase + " | v=164";
         var bootReached = !!(window.__TW_BOOT_MSG__);
         if (bootReached) _diag(String(window.__TW_BOOT_MSG__));
         _diag(okMsg);
@@ -2357,7 +2638,7 @@ try {
         wfEl.textContent = "user: " + (login || "?") +
           " / workflow: " + (WORKFLOW_NAME || "n/a") + " / register->ai_sql_id";
       }
-      setInfoBar("Program: (\uBBF8\uC120\uD0DD)");
+      renderBreadcrumb();
       var btnBack = $("btnTwBack");
       var btnReset = $("btnTwReset");
       var btnOpen = $("btnTwOpenWkf");
@@ -2385,6 +2666,7 @@ try {
       }
       if (SHELL_MODE) {
         ctx.phase = "ST0";
+        ctx.listMode = "SQL";
         setInputEnabled(true);
         var hint0 = $("hint");
         if (hint0) {
@@ -2393,9 +2675,9 @@ try {
             "\uC870\uAC74\uC744 \uC785\uB825\uD55C \uB4A4 [\uC0DD\uC131]\uC744 \uB204\uB974\uC138\uC694. (\uD504\uB85C\uADF8\uB7A8/\uCEA0\uD398\uC778/\uC6CC\uD06C\uD50C\uB85C\uC6B0\uB294 SQL \uD6C4\uC5D0 \uC120\uD0DD \u00B7 WKF Max 15)";
         }
         setTimeout(function () {
-          try { loadAiFolders(); }
+          try { renderListPane(); }
           catch (eF) {
-            _diag("loadAiFolders throw: " + String(eF && eF.message ? eF.message : eF));
+            _diag("renderListPane throw: " + String(eF && eF.message ? eF.message : eF));
           }
         }, 0);
       } else {

@@ -1,9 +1,9 @@
 /*
  * testWooFoundry.js (Fragment Foundry 배치 처리)
  * ==================================================
- * litmus 동기 __v=159 (#160 배포정합).
+ * litmus 동기 __v=160 (#172 FragContract · domain merge 위임).
  * 큐 슬롯별 triage → feasible만 SQL 생성 → dedup → publish.
- * WF 스크립트에서 logError 즉시 중단 — 실패는 큐 저장 후 logWarning.
+ * 색인·샘플바인딩·재사용 게이트는 testWoo.fragContract에 위임.
  *
  * [Main Functions]
  * ===========
@@ -15,15 +15,14 @@
  * - peekQueue — 읽기 전용 큐 조회
  * - isAutoApprove — Option testWooAiAutoApprove 판정
  * - assertAtomicFrag — #167 원자성 게이트(컬럼1·축1·이름에 값 금지)
- * - processQueueItem — #169 libraryLookup 히트 시 triage/generate 스킵(툴 0)
  * - auditIndexPollution — origin=foundry 색인(synonyms) 오염 읽기 전용 감사
  * - repairIndexPollution — 오염 synonyms·sample_questions 교정(dryRun 기본)
  *
  * [Dependencies]
  * =========
+ * - testWoo.fragContract — buildIndexFields·sampleBindSql·libraryHitPredicate·mergeParamDomainJson
  * - testWoo.feasibility.libraryLookup·triage — #169 서가 우선(공유)
  * - testWoo.toolkit·llm·repo·probe·dedup·lifecycle·gates·fragments·compiler
- * - testWoo.toolkit.classifyField·resolveDomain·checkSourceFreshness — #168-A
  * - woo:testWooAiRequestQueue — xtk.queryDef·xtk.session#Write
  * - woo:testWooAiFragment — 축 재사용 시 param_domain merge Write · 색인 감사/수리
  * - testWooAiAutoApprove Option — ON=active, OFF=verified+승인대기
@@ -31,13 +30,10 @@
  * [Invariants]
  * =========
  * - 건별 실패: 큐 status/err_id 저장 → logWarning(순서 뒤집으면 processing 고착)
- * - tokenBudget 초과 → needs_human_design(dryRunSlot 제외)
- * - publish/reuse 후 Stage A가 잡도록 sample_questions·synonyms에 자기 슬롯 키워드만 기록(#164)
- * - maxNewFragments 도달·created>0 → queued 이어달리기(attempt 복원); created=0만 needs_human_design
- * - #167: frag=축1=컬럼1 · 값은 {{param}}+param_domain · 다축/값구이 name 거부
- * - #168-A/#169: frag=_source · library hit 시 툴0 · fingerprint/TTL·stale/orphaned
- * - #168-A hotfix: _sqlFilterColumns 가 {{param}}/리터럴 RHS 에서도 컬럼 추출
- * - 색인 수리: synonyms·sample_questions만 Write · sql_text/key_column/scope_key/params/status/active/name 금지
+ * - publish 색인 = fragContract.buildIndexFields (슬롯+nlMap/_bucket만)
+ * - reuse_after_publish = libraryHitPredicate (서가와 동일 게이트)
+ * - #167: frag=축1=컬럼1 · 값은 {{param}}+param_domain
+ * - 색인 수리: synonyms·sample_questions만 Write
  */
 var testWoo = testWoo || {};
 testWoo.foundry = (function () {
@@ -402,11 +398,16 @@ testWoo.foundry = (function () {
         "(e.g. {\"gender\":{\"여성\":\"F\",\"남자\":\"M\"}}). Required for reuse.",
       "- Age axis: use iAge range comparisons (sargable). Never iAge/10 or column math. " +
         "Sample table has both iAge and dBirthDate — prefer iAge when present.",
+      "- Relative dates (가입 N년/개월 이내): prefer AddDays(GetDate(), -{{joinDaysWithin}}) " +
+        "after probe_sql confirms it runs. Do not quote AddDays/GetDate as string literals. " +
+        "Keep the day count in {{param}} + _bucket.nlMap (e.g. \"1년 이내\":{joinDaysWithin:365}).",
       "- name = woo__<table>__<axis> only (e.g. woo__customer__region). " +
         "Never put value tokens in the name (no gyeonggi, seoul, yplan, male, f).",
       "- Do NOT invent a higher-level value (부천→경기) without user approval. " +
         "If the slot value is missing from the column, do not emit a fragment.",
-      "When ready, output ONE fragment JSON object for THIS slot only (no prose wrapper).",
+      "When ready, output ONE fragment JSON object for THIS slot only.",
+      "FORBIDDEN: markdown fences, prose, tables, or a second fragment in the same answer.",
+      "If the slot mentions two axes (e.g. age+gender), still emit ONLY the axis for THIS slot text — never both JSON objects.",
       "OUTPUT JSON SCHEMA (keys must match exactly):",
       FRAGMENT_SCHEMA_EXAMPLE,
       "SQL RULES (enforced by gates — violation fails the attempt):",
@@ -435,11 +436,102 @@ testWoo.foundry = (function () {
     return s.substring(0, 200) + " … " + s.substring(s.length - 200);
   }
 
-  function _parseFragmentJson(content, loop) {
+  // 균형 잡힌 JSON 객체들을 순서대로 추출 (first{…last} 스팬 금지 — 이중 frag 파싱 실패 원흉)
+  function _extractJsonObjects(text) {
+    var s = String(text || "");
+    var out = [];
+    var i = 0;
+    while (i < s.length) {
+      var start = s.indexOf("{", i);
+      if (start < 0) break;
+      var depth = 0;
+      var inStr = false;
+      var esc = false;
+      var end = -1;
+      for (var j = start; j < s.length; j++) {
+        var c = s.charAt(j);
+        if (inStr) {
+          if (esc) { esc = false; continue; }
+          if (c === "\\") { esc = true; continue; }
+          if (c === "\"") inStr = false;
+          continue;
+        }
+        if (c === "\"") { inStr = true; continue; }
+        if (c === "{") depth++;
+        else if (c === "}") {
+          depth--;
+          if (depth === 0) { end = j; break; }
+        }
+      }
+      if (end < 0) break;
+      try {
+        var obj = JSON.parse(s.substring(start, end + 1));
+        if (obj && typeof obj === "object") out.push(obj);
+      } catch (eOne) { /* skip malformed span */ }
+      i = end + 1;
+    }
+    return out;
+  }
+
+  function _axisFromFragObj(frag) {
+    if (!frag) return "";
+    var name = String(frag.name || "").toLowerCase();
+    var segs = name.split("__");
+    if (segs.length >= 3) return segs[segs.length - 1];
+    var tags = frag.tags;
+    if (typeof tags === "string") return _trim(tags.split(",")[0]).toLowerCase();
+    if (tags && typeof tags.length === "number" && tags.length)
+      return String(tags[0] || "").toLowerCase();
+    return "";
+  }
+
+  function _axisHintsFromSlot(slotText) {
+    if (testWoo.fragContract && testWoo.fragContract.axisFromSlot)
+      return testWoo.fragContract.axisFromSlot({ text: slotText });
+    return [];
+  }
+
+  function _fragExistsByName(name) {
+    if (!name || !testWoo.fragments || !testWoo.fragments.getByName) return false;
+    try {
+      var row = testWoo.fragments.getByName(name);
+      return !!(row && row.id);
+    } catch (eE) {
+      return false;
+    }
+  }
+
+  // 슬롯 축에 맞는 단일 frag 선택. age+gender 동시 출력 시 미존재 축·힌트 우선.
+  function _pickFragForSlot(objs, slotText) {
+    var list = objs || [];
+    if (!list.length) return null;
+    if (list.length === 1) return list[0];
+    var hints = _axisHintsFromSlot(slotText);
+    var best = null;
+    var bestScore = -1;
+    for (var i = 0; i < list.length; i++) {
+      var o = list[i];
+      if (!o || !o.name) continue;
+      var axis = _axisFromFragObj(o);
+      var score = 0;
+      var hi;
+      for (hi = 0; hi < hints.length; hi++) {
+        if (hints[hi] === axis) score += 10;
+      }
+      if (hints.length === 1 && axis === hints[0]) score += 20;
+      if (!_fragExistsByName(o.name)) score += 8;
+      if (score > bestScore) {
+        bestScore = score;
+        best = o;
+      }
+    }
+    return best || list[0];
+  }
+
+  function _parseFragmentJson(content, loop, slotText) {
     var text = String(content || "");
-    var start = text.indexOf("{");
-    var end = text.lastIndexOf("}");
-    if (start < 0 || end <= start) {
+    var objs = _extractJsonObjects(text);
+    if (!objs.length) {
       var ctx = loop ?
         (" turn=" + String(loop.turn) + " finish_reason=" + String(loop.finishReason) +
           (loop.lastTurn ? " (forced answer)" : "")) : "";
@@ -447,14 +539,20 @@ testWoo.foundry = (function () {
       throw new Error("[testWoo.foundry] fragment JSON missing (contentLen=" +
         text.length + ctx + ")");
     }
-    try {
-      return JSON.parse(text.substring(start, end + 1));
-    } catch (eP) {
-      logWarning("[testWoo.foundry] fragment JSON parse error — 응답 본문: " +
-        _contentPreview(text));
-      throw new Error("[testWoo.foundry] fragment JSON parse error: " +
-        String(eP.message || eP));
+    if (objs.length > 1) {
+      logWarning("[testWoo.foundry] multiple JSON objects=" + objs.length +
+        " slot=" + String(slotText || "") + " — picking one axis");
     }
+    var picked = _pickFragForSlot(objs, slotText);
+    if (!picked || !picked.name)
+      throw new Error("[testWoo.foundry] fragment JSON parse error: no usable object");
+    var hints = _axisHintsFromSlot(slotText);
+    var axis = _axisFromFragObj(picked);
+    if (hints.length === 1 && axis && axis !== hints[0]) {
+      throw new Error("[testWoo.foundry] axis mismatch: slot wants " + hints[0] +
+        " but JSON is " + axis + " — emit ONE JSON for " + hints[0] + " only");
+    }
+    return picked;
   }
 
   function _gateFeedback(gate) {
@@ -468,8 +566,9 @@ testWoo.foundry = (function () {
 
   function _shapeFeedback(err) {
     return "SHAPE_FAILED " + String(err || "") +
-      "\nOutput a JSON object matching this schema exactly. Required keys: " +
-      "name, keyColumn, sqlText. scopeKey must be \"\" for recipient-level.\n" +
+      "\nOutput EXACTLY ONE JSON object for THIS slot only. No markdown. No second fragment. " +
+      "Required keys: name, keyColumn, sqlText. scopeKey must be \"\" for recipient-level.\n" +
+      "If the slot is gender → woo__customer__gender only. If age → woo__customer__age only.\n" +
       FRAGMENT_SCHEMA_EXAMPLE;
   }
 
@@ -574,7 +673,7 @@ testWoo.foundry = (function () {
       var fragDoc = null;
       try {
         fragDoc = _fragDocFromLlm(
-          _parseFragmentJson(loop.content, loop),
+          _parseFragmentJson(loop.content, loop, slotText),
           queueId,
           slotText,
           nlText
@@ -839,112 +938,15 @@ testWoo.foundry = (function () {
 
   // gates/probe 는 {{param}} 을 거부하므로 검증용으로만 샘플 바인딩한다.
   function _sampleBindSql(sqlText, domainJson) {
-    var domain = {};
-    try {
-      domain = domainJson ? JSON.parse(String(domainJson)) : {};
-    } catch (eP) {
-      domain = {};
-    }
-    return String(sqlText || "").replace(/\{\{(\w+)\}\}/g, function (_m, key) {
-      var spec = domain[key] || {};
-      var map = spec.nlMap;
-      var nk, nv, bk, b;
-      if (map && typeof map === "object") {
-        for (nk in map) {
-          if (!map.hasOwnProperty(nk)) continue;
-          nv = map[nk];
-          if (nv != null && typeof nv !== "object") return _sqlLit(nv);
-        }
-      }
-      if (spec.enum && _isArr(spec.enum) && spec.enum.length)
-        return _sqlLit(spec.enum[0]);
-      if (domain._bucket && domain._bucket.nlMap) {
-        for (bk in domain._bucket.nlMap) {
-          if (!domain._bucket.nlMap.hasOwnProperty(bk)) continue;
-          b = domain._bucket.nlMap[bk];
-          if (b && b[key] != null && typeof b[key] !== "object")
-            return _sqlLit(b[key]);
-        }
-      }
-      if (key === "ageMin") return "20";
-      if (key === "ageMax") return "30";
-      return "'__sample__'";
-    });
+    if (testWoo.fragContract && testWoo.fragContract.sampleBindSql)
+      return testWoo.fragContract.sampleBindSql(sqlText, domainJson);
+    return String(sqlText || "").replace(/\{\{\w+\}\}/g, "0");
   }
 
   function _mergeParamDomainJson(existingJson, incomingJson) {
-    var base = {};
-    var inc = {};
-    try {
-      base = existingJson ? JSON.parse(String(existingJson)) : {};
-    } catch (e1) {
-      base = {};
-    }
-    try {
-      inc = incomingJson ? JSON.parse(String(incomingJson)) : {};
-    } catch (e2) {
-      inc = {};
-    }
-    if (!base || typeof base !== "object") base = {};
-    if (!inc || typeof inc !== "object") inc = {};
-    var changed = false;
-    var k, nk, specB, specI, mapB, mapI;
-    for (k in inc) {
-      if (!inc.hasOwnProperty(k)) continue;
-      specI = inc[k] || {};
-      if (!base[k]) {
-        base[k] = specI;
-        changed = true;
-        continue;
-      }
-      specB = base[k] || {};
-      mapI = specI.nlMap;
-      if (mapI && typeof mapI === "object") {
-        if (!specB.nlMap || typeof specB.nlMap !== "object") {
-          specB.nlMap = {};
-          changed = true;
-        }
-        mapB = specB.nlMap;
-        for (nk in mapI) {
-          if (!mapI.hasOwnProperty(nk)) continue;
-          if (mapB[nk] == null) {
-            mapB[nk] = mapI[nk];
-            changed = true;
-          }
-        }
-      }
-      if (specI.enum && _isArr(specI.enum)) {
-        if (!specB.enum || !_isArr(specB.enum)) {
-          specB.enum = [];
-          changed = true;
-        }
-        for (var ei = 0; ei < specI.enum.length; ei++) {
-          var ev = specI.enum[ei];
-          var found = false;
-          for (var ej = 0; ej < specB.enum.length; ej++) {
-            if (String(specB.enum[ej]) === String(ev)) {
-              found = true;
-              break;
-            }
-          }
-          if (!found) {
-            specB.enum.push(ev);
-            changed = true;
-          }
-        }
-      }
-      if (specI.type && !specB.type) {
-        specB.type = specI.type;
-        changed = true;
-      }
-      base[k] = specB;
-    }
-    // #168-A: _source 는 스냅샷 메타 — 갱신 시 통째 교체(값 맵 merge 와 별개).
-    if (inc._source && typeof inc._source === "object") {
-      base._source = inc._source;
-      changed = true;
-    }
-    return { changed: changed, json: JSON.stringify(base) };
+    if (testWoo.fragContract && testWoo.fragContract.mergeParamDomainJson)
+      return testWoo.fragContract.mergeParamDomainJson(existingJson, incomingJson);
+    return { changed: false, json: String(existingJson || "{}") };
   }
 
   function _writeFragmentDomain(fragmentId, domainJson) {
@@ -1242,15 +1244,17 @@ testWoo.foundry = (function () {
     if (typeof tags === "string") tagsStr = tags;
     else if (tags && tags.length) tagsStr = tags.join(",");
 
-    // [#164 P0] Stage A 색인에 nlText 를 넣으면 이 fragment 가 형제 슬롯까지 자기 것이라
-    // 주장하여 _resolveRemainingBySearch 가 남은 슬롯을 삼킨다(큐당 1건만 생성).
-    // 색인 대상은 자기 슬롯 텍스트로 한정한다. nlText 는 LLM 프롬프트 문맥으로만 쓴다.
-    var samples = [];
-    if (_trim(slotText)) samples.push(String(slotText));
-    if (_trim(frag.rationale)) samples.push(String(frag.rationale));
-    if (!samples.length) samples.push(String(frag.label || frag.name || ""));
-    var synTok = _stageATokens(slotText, "");
-    var synStr = synTok.length ? synTok.join(",") : "";
+    // [#164/#172] 색인은 자기 슬롯+도메인 키만 — nlText 금지(형제 슬롯 삼킴).
+    var idx = { synonyms: "", sample_questions_json: "[]" };
+    if (testWoo.fragContract && testWoo.fragContract.buildIndexFields) {
+      idx = testWoo.fragContract.buildIndexFields({
+        slotText: slotText,
+        rationale: frag.rationale || "",
+        label: frag.label || frag.name,
+        name: frag.name,
+        param_domain: domainJson || pd
+      });
+    }
 
     var auto = isAutoApprove();
     return {
@@ -1258,14 +1262,14 @@ testWoo.foundry = (function () {
       label: frag.label || frag.name,
       category: "foundry",
       tags: tagsStr,
-      synonyms: synStr,
+      synonyms: idx.synonyms || "",
       key_column: frag.keyColumn,
       scope_key: frag.scopeKey != null ? String(frag.scopeKey) : "",
       sql_text: frag.sqlText,
       params: paramsJson,
       param_domain: domainJson,
       description: frag.description || "",
-      sample_questions: JSON.stringify(samples),
+      sample_questions: idx.sample_questions_json || "[]",
       status: auto ? "active" : "verified",
       active: auto,
       approved_by: auto ? "foundry" : "",
@@ -1286,26 +1290,13 @@ testWoo.foundry = (function () {
     return t;
   }
 
-  // [#164 P0] 재사용 인정 게이트. Stage A LIKE 부분 히트만으로 "커버됨"을 선언하면
-  // 형제 슬롯이 삼켜진다. 슬롯 핵심 토큰이 후보 카드에 전부 있을 때만 재사용으로 본다.
-  // Pass1(LLM) 판정보다 관대하면 Studio 가 unmatched 로 되돌려 재큐잉 루프가 된다.
+  // #172: 재사용 = 서가와 동일 libraryHitPredicate (_source·축·커버/도메인)
   function _coversSlot(card, slot) {
-    if (!card) return false;
-    var need = (slot.searchKeywords && slot.searchKeywords.length) ?
-      slot.searchKeywords : String(slot.text || "").split(/[^0-9a-zA-Z가-힣]+/);
-    var parts = [card.label, card.description, card.tags, card.synonyms];
-    var sq = card.sample_questions;
-    if (sq != null) parts.push((typeof sq === "object" && typeof sq.length === "number") ?
-      sq.join(" ") : String(sq));
-    var blob = parts.join(" ").toLowerCase().replace(/\s+/g, "");
-    var req = 0, hit = 0;
-    for (var i = 0; i < need.length; i++) {
-      var t = String(need[i] || "").toLowerCase().replace(/\s+/g, "");
-      if (t.length < 2) continue;
-      req++;
-      if (blob.indexOf(t) >= 0) hit++;
-    }
-    return req > 0 && hit === req;
+    if (testWoo.fragContract && testWoo.fragContract.libraryHitPredicate)
+      return testWoo.fragContract.libraryHitPredicate(card, slot, card && card.param_domain);
+    if (testWoo.fragContract && testWoo.fragContract.coversSlot)
+      return testWoo.fragContract.coversSlot(card, slot);
+    return false;
   }
 
   // publish 직후 남은 슬롯이 새 fragment로 커버되는지 Stage A로 재검색한다.
@@ -1349,6 +1340,7 @@ testWoo.foundry = (function () {
   }
 
   // missing_slots_json 항목(문자열 또는 객체)을 {id, text, searchKeywords} 로 통일
+  // #170: normalizeAtomicSlots 로 복합 슬롯(20대 남성 등) 방어적 재분할
   function _normalizeSlots(missing) {
     var out = [];
     var list = missing || [];
@@ -1361,6 +1353,14 @@ testWoo.foundry = (function () {
         hintedCategory: isObj ? String(mo.hintedCategory || "") : "",
         searchKeywords: (isObj && mo.searchKeywords) ? mo.searchKeywords : []
       });
+    }
+    if (testWoo.llm && testWoo.llm.normalizeAtomicSlots) {
+      try {
+        out = testWoo.llm.normalizeAtomicSlots(out);
+      } catch (eN) {
+        logWarning("[testWoo.foundry._normalizeSlots] atomic split failed: " +
+          String(eN.message || eN));
+      }
     }
     return out;
   }
@@ -2226,4 +2226,4 @@ testWoo.foundry = (function () {
     repairIndexPollution: repairIndexPollution
   };
 })();
-testWoo.foundry.__v = "159";
+testWoo.foundry.__v = "160";

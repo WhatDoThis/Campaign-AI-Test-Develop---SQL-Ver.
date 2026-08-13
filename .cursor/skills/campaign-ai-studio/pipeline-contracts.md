@@ -26,6 +26,23 @@ Required fields: `name`, `label`, `category`, `tags`, `key_column`, `sql_text`, 
 
 `sql_text` = complete `SELECT DISTINCT grain …` with `{{param}}` placeholders.
 
+## Slot ↔ Index ↔ Match ↔ Bind (`testWoo.fragContract` / #172)
+
+| Layer | Fields / rule | Owner |
+|---|---|---|
+| **Slot** | `id`, `text`, `searchKeywords[]`, `hintedCategory`. Audience-only residue (고객/대상자/회원/사용자) is dropped — it is not an unmatched axis. | Pass0 / `normalizeAtomicSlots` |
+| **Index (publish)** | `synonyms` ← slot tokens + nlMap/`_bucket` keys; `sample_questions` ← `[slotText]`; `tags` = axis; `category` = `foundry` (축은 tags) | `fragContract.buildIndexFields` |
+| **Match LIKE** | token⊂field is recall only. Acceptance = catalog key ⊂ slot (`domainMatchSlot`) after josa stem. Axis fallback is always merged, not only on empty LIKE. | `keywordsFromSlot` / `searchBySlot` |
+| **Lexicon split** | Before Pass0: nlMap/enum/_bucket keys in the NL become slots (`인천에 사는` → `인천`). Unknown remainder still goes to Pass0/Foundry. | `collectLexicon` / `splitByLexicon` |
+| **Match score** | sample×8, synonyms×6, param_domain×7, label×4, tags×3, description×2, name×1 | `fragContract.scoreCard` |
+| **Cover / reuse** | Identity = axesCompatible + `_source` + single tags. Missing nlMap alias is **heal** (validateBind + attachAlias + merge), not a new fragment. keywordsFromSlot appends axis tags; Stage A falls back to `searchByAxis`. | `libraryHitPredicate` / `searchByAxis` / `healDomain` |
+| **Sample bind** | nlMap → enum[0] → `_bucket` → ageMin/Max → typed int=`0` → `'__sample__'` | `fragContract.sampleBindSql` (Foundry+Dedup) |
+| **NL bind** | `_bucket`/nlMap → plan item.params. Alias miss: `refreshDomain`(_source live MIN/MAX or DISTINCT) → proposeParams → `validateBind` → `healDomain`. Stale snapshot must not reject newly loaded values. | `refreshDomain` + `healDomain` |
+
+Error log prefix: `FRAG_CONTRACT:<AXIS_MISMATCH|INDEX_MISS|DOMAIN_UNBOUND|BIND_TYPE|SOURCE_MISSING|DEDUP_ASYMMETRIC>`.
+
+Load order: `testWooFragContract.js` **before** Fragments / Feasibility / Dedup / Foundry / Compiler.
+
 ## SQL history (`woo:testWooAiSql`)
 
 Key fields: `nl_request`, `plan_json`, `sql_query`, `status`, `workflow_name` (WF internal name, e.g. `WKF94` — not the integer `@id`).

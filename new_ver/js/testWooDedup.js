@@ -1,9 +1,10 @@
 /*
  * testWooDedup.js (Fragment 중복 판정)
  * ==================================================
- * litmus 동기 __v=159 (#160 배포정합).
+ * litmus 동기 __v=160 (#172 FragContract).
  * Foundry publish 전 후보 SQL을 기존 fragment와 L0~L4 단계로 비교.
  * near 비율 분모는 모집단 COUNT, 후보 row 수가 아니다.
+ * L3/probe 샘플 바인딩은 fragContract.sampleBindSql 유일 구현.
  *
  * [Main Functions]
  * ===========
@@ -13,6 +14,7 @@
  *
  * [Dependencies]
  * =========
+ * - testWoo.fragContract.sampleBindSql — {{param}} 타입 인지 샘플 치환 (#172)
  * - testWoo.lifecycle — normalizeSql·contentHash
  * - testWoo.probe — L3 set equivalence 실행
  * - testWoo.embedding — L2 rerank(embedEnabled 시)
@@ -37,8 +39,12 @@ testWoo.dedup = (function () {
     return String(s == null ? "" : s).replace(/^\s+|\s+$/g, "");
   }
 
-  function _isArray(x) {
-    return Object.prototype.toString.call(x) === "[object Array]";
+  function _sampleBindSql(sqlText, domainRaw) {
+    if (testWoo.fragContract && testWoo.fragContract.sampleBindSql)
+      return testWoo.fragContract.sampleBindSql(sqlText, domainRaw);
+    if (testWoo.fragContract && testWoo.fragContract.logCode)
+      testWoo.fragContract.logCode("DEDUP_ASYMMETRIC", "fragContract missing");
+    return String(sqlText || "").replace(/\{\{\w+\}\}/g, "'__sample__'");
   }
 
   function tokensOf(sql) {
@@ -100,6 +106,7 @@ testWoo.dedup = (function () {
           <node expr="@id"/><node expr="@name"/><node expr="@version"/>
           <node expr="@label"/><node expr="@description"/><node expr="@tags"/>
           <node expr="@key_column"/><node expr="@scope_key"/><node expr="@sql_text"/>
+          <node expr="@param_domain"/>
           <node expr="@content_hash"/><node expr="@status"/><node expr="@is_current"/>
           <node expr="@emb_vector"/><node expr="@emb_source_hash"/>
         </select>
@@ -124,11 +131,14 @@ testWoo.dedup = (function () {
         key_column: String(r.@key_column),
         scope_key: String(r.@scope_key),
         sql_text: String(r.@sql_text),
+        param_domain: String(r.@param_domain || ""),
         content_hash: String(r.@content_hash),
         status: String(r.@status),
         emb_vector: String(r.@emb_vector || ""),
         emb_source_hash: String(r.@emb_source_hash || "")
       };
+      if (!row.param_domain && testWoo.fragContract && testWoo.fragContract.logCode)
+        testWoo.fragContract.logCode("DEDUP_ASYMMETRIC", "peer " + row.name + " empty param_domain");
       if (String(row.scope_key || "") !== String(sk || "")) continue;
       if (!_tagOverlap(row.tags, candidate.tags) &&
           candPrefix && _namePrefix(row.name) !== candPrefix) continue;
@@ -259,16 +269,26 @@ testWoo.dedup = (function () {
     var cfg = testWoo.cfg.getConfig();
     var nearThreshold = cfg.foundry.dedupNearThreshold || 0.01;
     var population = _population();
+    // {{param}} 템플릿은 PG에서 문법 오류 → 샘플 바인딩 후 probe/L3
+    var candSql = _sampleBindSql(candidate.sql_text, candidate.param_domain);
+    if (candSql.indexOf("{{") >= 0) {
+      logWarning("[testWoo.dedup] candidate still has placeholders after sampleBind — force literal");
+      candSql = candSql.replace(/\{\{\w+\}\}/g, "'__sample__'");
+    }
     // probeNew는 후보 SQL 자체 검증용 — population 분모로 쓰지 않는다.
-    var probeNew = testWoo.probe.run(candidate.sql_text, candidate.key_column, 5);
+    var probeNew = testWoo.probe.run(candSql, candidate.key_column, 5);
     report.candidateTotal = probeNew.ok ? probeNew.total : -1;
     report.population = population;
+    report.sampleBound = true;
 
     var bestNear = null;
     var bestDiff = -1;
     for (var m = 0; m < l3candidates.length; m++) {
       var old = l3candidates[m].frag;
-      var diff = _symmetricDiffCount(candidate.sql_text, old.sql_text, candidate.key_column);
+      var oldSql = _sampleBindSql(old.sql_text, old.param_domain);
+      if (oldSql.indexOf("{{") >= 0)
+        oldSql = oldSql.replace(/\{\{\w+\}\}/g, "'__sample__'");
+      var diff = _symmetricDiffCount(candSql, oldSql, candidate.key_column);
       report.l3.push({ id: old.id, name: old.name, symmetricDiff: diff });
       if (diff === 0) {
         return {
@@ -311,13 +331,15 @@ testWoo.dedup = (function () {
       };
     }
 
+    // L3 SQL 실패(diff<0)를 near로 위장하면 {{param}} 미바인딩·일시 오류가
+    // "near dedup — active 등록" 으로 둔갑한다. 실패는 novel(신규 허용)로 둔다.
     if (bestDiff < 0) {
+      report.l3Unverifiable = true;
       return {
-        verdict: "near",
-        matches: bestNear ? [bestNear] : [],
+        verdict: "novel",
+        matches: [],
         scores: report,
-        symmetricDiff: bestDiff,
-        delegateHuman: true
+        symmetricDiff: bestDiff
       };
     }
 
@@ -326,4 +348,4 @@ testWoo.dedup = (function () {
 
   return { check: check, tokensOf: tokensOf, jaccard: jaccard };
 })();
-testWoo.dedup.__v = "159";
+testWoo.dedup.__v = "160";

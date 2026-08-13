@@ -19,7 +19,7 @@
 | **R1** | #147R 매칭승격 | 있음 | R0+#154 | **[S] 단독스킵·#154 흡수** (17 체크리스트) |
 | **R2** | #148R 캐시 | 있음 | R1 + S8 | 미반영 SQL 보관. S8 HUMAN 대기면 중단 |
 | **R3** | #149R 상태머신 | 있음 | R2 | ST0~ST6 |
-| **R4** | #149R 셸 | 있음 | R3와 동일 Chat 또는 직후 | 좌입력/우목록 · 브레드크럼 |
+| **R4** | #149R 셸 | 있음 | R3 | [등록]=SQL목록(WKF 불필요) · 브레드크럼 · v=160 |
 | **R5** | 매핑재사용 | 있음 | R4 | ST3~ST5 API 연결 |
 | **R6** | #150R 커밋 | 있음 | R5 | 락→주입→기록→해제 |
 | **R7** | #151R 상대시점 | 있음 | R6 | relative/absolute · 복제 보조 |
@@ -141,15 +141,18 @@ R3
 
 ### DoD
 - table+고정px · flex/grid/vh 금지
-- 브레드크럼 48px
-- 0건 UI
+- 브레드크럼 `조건 > SQL > Program/Campaign/WKF` (48px)
+- ST0 우측 = SQL 빈 패널(폴더 선로드 금지)
+- **[등록]** WKF 없으면 SQL 목록(ST1/ST2) · `Register.jssp` 호출 금지 · “먼저 WKF…” 금지
+- 0건 UI · “이 새 SQL로 진행 (프로그램 선택)” → ST3 (`loadAiFolders`)
 - alert/confirm 금지
+- litmus `v=160` (Studio.jssp + StudioJs + html 동기)
 
 ### 롤백
 Studio.jssp + StudioJs 커밋 revert
 
 ### HUMAN_CONSOLE
-브레드크럼 이동 시 캐시 유지 육안
+Tools → 조건 [생성] → **[등록]** → 우측 SQL 목록(WKF 에러 없음) · “이 새 SQL로 진행” → Program 목록 · URL `v=160`
 
 ---
 
@@ -170,13 +173,19 @@ DoD: 신규 SQL 경로로 Program→Campaign→WKF까지 선택 완료 · 기존
 R4
 
 ### DoD
-분기 A·B 각각 1회 HUMAN 시나리오
+- ST3 `listAiFolders` · ST4 `listCampaigns`/`createCampaign` · ST5 **`listWkfs`** (Match OFF여도 WKF 목록)
+- 캠페인 진입 시 SQL 유지 (`_clearComposeState` 금지)
+- 분기 B: `listRegisteredSql` 기존(반영됨) 클릭 → Program/Campaign/WKF 점프 · ST5에서 WKF 변경 가능
+- 유사/포함 단정 문구 금지 (Match OFF)
+- litmus `v=161`
+- HUMAN: 분기 A Program→Campaign→WKF 1회 · 분기 B 점프 1회
 
 ### 롤백
-Context/StudioJs 매핑 커밋 revert
+Context/StudioJs/Repository listRecent 커밋 revert
 
 ### HUMAN_CONSOLE
-TG 스타일: 신규 생성 캠페인 1 · 기존 SQL 점프 1
+Tools `v=161` → [등록] → **이 새 SQL로 진행** → Program → Campaign → **WKF 목록** (SQL 좌측 유지) → WKF 선택 → `[등록]을 누르면 반영` 배너.
+기존(반영됨) 항목 클릭 시 해당 WKF로 점프.
 
 ---
 

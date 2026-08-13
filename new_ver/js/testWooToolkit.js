@@ -1,7 +1,7 @@
 /*
  * testWooToolkit.js (LLM Tool 레지스트리)
  * ==================================================
- * litmus 동기 __v=159 (#160 배포정합).
+ * litmus 동기 __v=160 (refreshDomain — 후속 적재 재스냅샷).
  * OpenRouter tools용 spec·invoke·evidenceLog.
  * Triage·Foundry가 schema 조사·probe_sql·search_columns 호출.
  * #168-A: 탐색(툴) 결과를 frag._source 로 결정화. classifyField·fingerprint·TTL.
@@ -21,6 +21,7 @@
  * - getEvidenceLogSince — offset 이후 evidence
  * - classifyField — schema+xpath → tier + toolCalls (메타데이터 판정)
  * - resolveDomain — 스냅샷 + _source(provenance·fingerprint)
+ * - refreshDomain — 기존 domain을 _source로 재스냅샷(후속 데이터 추가 반영)
  * - pathFromGrain / findSchemaBySqlTable / resolveGrainSchema — 경로·스키마 추론
  * - schemaFingerprint / checkSourceFreshness — 스키마 변화·TTL 판정
  *
@@ -1149,6 +1150,50 @@ testWoo.toolkit = (function () {
     return { ok: true, classification: cls, paramDomain: domain, snapshotSkipped: true };
   }
 
+  // 제작 이후 적재된 값을 반영. 기존 nlMap 별칭은 유지하고 _range/enum/_source만 넓힌다.
+  function refreshDomain(domainRaw, opts) {
+    opts = opts || {};
+    var domain = {};
+    if (testWoo.fragContract && testWoo.fragContract.normalizeParamDomain)
+      domain = testWoo.fragContract.normalizeParamDomain(domainRaw);
+    else {
+      try {
+        domain = (domainRaw && typeof domainRaw === "object") ?
+          domainRaw : JSON.parse(String(domainRaw || "{}"));
+      } catch (eP) { domain = {}; }
+    }
+    var src = domain._source;
+    if (!src || !src.schema || !src.xpath)
+      return { ok: false, reason: "SOURCE_MISSING" };
+    var rd;
+    try {
+      rd = resolveDomain(src.schema, src.xpath, {
+        grainSchemaId: opts.grainSchemaId,
+        pathFromTarget: src.pathFromTarget || src.xpath,
+        discoveredBy: src.discoveredBy,
+        toolCallCount: src.toolCallCount
+      });
+    } catch (eR) {
+      return { ok: false, reason: String(eR.message || eR) };
+    }
+    if (!rd || !rd.paramDomain)
+      return { ok: false, reason: (rd && rd.error) || "resolveDomain empty" };
+    if (rd.ok === false)
+      return { ok: false, reason: rd.error || "resolveDomain failed", domain: domain };
+    var merged;
+    if (testWoo.fragContract && testWoo.fragContract.mergeParamDomainJson)
+      merged = testWoo.fragContract.mergeParamDomainJson(domain, rd.paramDomain);
+    else
+      merged = { changed: true, json: JSON.stringify(rd.paramDomain), domain: rd.paramDomain };
+    return {
+      ok: true,
+      changed: !!merged.changed,
+      domain: merged.domain,
+      json: merged.json,
+      tier: rd.classification ? rd.classification.tier : String(src.tier || "")
+    };
+  }
+
   function isDomainStale(sourceBlock) {
     if (!sourceBlock || !sourceBlock.refreshedAt) return true;
     var dcfg = _domainCfg();
@@ -1492,6 +1537,7 @@ testWoo.toolkit = (function () {
     getEvidenceLogSince: getEvidenceLogSince,
     classifyField: classifyField,
     resolveDomain: resolveDomain,
+    refreshDomain: refreshDomain,
     pathFromGrain: pathFromGrain,
     isDomainStale: isDomainStale,
     schemaFingerprint: schemaFingerprint,
@@ -1501,4 +1547,4 @@ testWoo.toolkit = (function () {
     resolveGrainSchema: resolveGrainSchema
   };
 })();
-testWoo.toolkit.__v = "159";
+testWoo.toolkit.__v = "160";

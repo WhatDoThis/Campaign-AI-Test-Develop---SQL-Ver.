@@ -11,12 +11,14 @@ response.setContentType("application/json;charset=utf-8");
  * - listAiFolders — @isAiFolder Program 목록
  * - listCampaigns / createCampaign — Program 하위 Campaign
  * - listWkfs / createWkf — Campaign 하위 WKF(Max 15)
+ * - listRegisteredSql — 최근 반영 SQL + WKF/Program 점프 메타(분기 B)
  * - selectWkf / releaseLock — soft-lock 획득·해제(CSRF)
- * - libVersions — 로드된 testWoo.* 모듈 __v JSON (#160)
+ * - libVersions — 로드된 testWoo.* 모듈 __v JSON (expectedByMod: llm=164 fragContract=164 fragments=163)
  *
  * [Dependencies]
  * =========
- * - woo:testWooCommon.js, testWooStudioContext.js, testWooWorkflowClone.js
+ * - woo:testWooCommon.js, testWooStudioContext.js, testWooWorkflowClone.js, testWooRepository.js
+ * - right testWooAiSqlGenerate · schema nms:program, nms:operation, xtk:workflow
  * - right testWooAiSqlGenerate · schema nms:program, nms:operation, xtk:workflow
  * - libVersions — 진단용으로 pipeline/Foundry JS 추가 loadLibrary
  */
@@ -39,6 +41,7 @@ try {
   if (action === "libversions") {
     loadLibrary("woo:testWooConfig.js");
     loadLibrary("woo:testWooEnv.js");
+    loadLibrary("woo:testWooFragContract.js");
     loadLibrary("woo:testWooFragments.js");
     loadLibrary("woo:testWooLlm.js");
     loadLibrary("woo:testWooCompiler.js");
@@ -53,7 +56,13 @@ try {
     loadLibrary("woo:testWooToolkit.js");
     loadLibrary("woo:testWooFeasibility.js");
     loadLibrary("woo:testWooWorkflowUi.js");
-    var expected = "159";
+    // 모듈별 기대 __v. 기본 159. heal 경로만 올림(전체 강제 재배포 방지).
+    var expectedByMod = {
+      fragContract: "164", fragments: "163", compiler: "160",
+      foundry: "160", dedup: "160", feasibility: "160",
+      llm: "164", toolkit: "160"
+    };
+    var expectedDefault = "159";
     function _twLibV(mod) {
       try {
         if (typeof testWoo === "undefined" || !testWoo[mod]) return null;
@@ -66,6 +75,7 @@ try {
       common: _twLibV("common"),
       env: _twLibV("env"),
       cfg: _twLibV("cfg"),
+      fragContract: _twLibV("fragContract"),
       fragments: _twLibV("fragments"),
       llm: _twLibV("llm"),
       compiler: _twLibV("compiler"),
@@ -86,11 +96,13 @@ try {
     var mismatch = [];
     for (var lk in libs) {
       if (!libs.hasOwnProperty(lk)) continue;
-      if (libs[lk] == null || libs[lk] !== expected) mismatch.push(lk);
+      var want = expectedByMod[lk] != null ? expectedByMod[lk] : expectedDefault;
+      if (libs[lk] == null || libs[lk] !== want) mismatch.push(lk);
     }
     jsonOut({
       ok: true,
-      expected: expected,
+      expected: expectedDefault,
+      expectedByMod: expectedByMod,
       libs: libs,
       mismatch: mismatch,
       allMatch: mismatch.length === 0
@@ -134,6 +146,46 @@ try {
       campaign_template_id: testWoo.wfClone.getCampaignTemplateId(),
       open_mode: "fallback"
     });
+  } else if (action === "listregisteredsql") {
+    loadLibrary("woo:testWooRepository.js");
+    twRequireLib(
+      "woo:testWooRepository.js",
+      (typeof testWoo !== "undefined") && testWoo.repo
+    );
+    var limR = p.limit != null ? p.limit : 10;
+    var recent = testWoo.repo.listRecentAiSql(limR);
+    var names = [];
+    for (var ri = 0; ri < recent.length; ri++) {
+      if (recent[ri].workflow_name) names.push(recent[ri].workflow_name);
+    }
+    var metaMap = {};
+    try {
+      metaMap = testWoo.wfClone.resolveWorkflowsByName(names);
+    } catch (eMeta) {
+      metaMap = {};
+    }
+    var itemsR = [];
+    for (var rj = 0; rj < recent.length; rj++) {
+      var rec = recent[rj];
+      var meta = metaMap[rec.workflow_name] || {};
+      itemsR.push({
+        id: rec.id,
+        title: rec.title,
+        nl_request: rec.nl_request,
+        status: rec.status,
+        workflow_name: rec.workflow_name,
+        creation_date: rec.creation_date,
+        workflow_id: meta.id || "",
+        workflow_label: meta.label || rec.workflow_name || "",
+        campaign_id: meta.campaign_id || "",
+        campaign_name: meta.campaign_name || "",
+        campaign_label: meta.campaign_label || "",
+        program_id: meta.program_id || "",
+        program_name: meta.program_name || "",
+        program_label: meta.program_label || ""
+      });
+    }
+    jsonOut({ ok: true, items: itemsR, count: itemsR.length });
   } else if (action === "createwkf") {
     requireStudioCsrf(p);
     var cidC = String(p.campaign_id || p.operation_id || "");
@@ -193,7 +245,7 @@ try {
     throw new Error(
       "unknown action: " +
         action +
-        " (libVersions|listAiFolders|listCampaigns|createCampaign|listWkfs|createWkf|selectWkf|releaseLock)"
+        " (libVersions|listAiFolders|listCampaigns|createCampaign|listWkfs|listRegisteredSql|createWkf|selectWkf|releaseLock)"
     );
   }
 } catch (e) {

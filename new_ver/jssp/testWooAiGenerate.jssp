@@ -10,12 +10,12 @@ response.setContentType("application/json;charset=utf-8");
  * ===========
  * - generatePlan — nl_request→plan·matchedSlots·unmatched
  * - compile+runAll — gates 통과 시 sql·chips·summary 반환
- * - enqueueRequest — unmatched+Foundry ON 시 queued 상태
+ * - enqueueRequest — unmatched+Foundry ON 시 unmatchedSlots(#170) 큐잉
  * - plan_only — compile·큐 없이 plan/chips만 반환
  *
  * [Dependencies]
  * =========
- * - woo:testWooCommon.js, Config, Fragments, Llm, Compiler, Gates, Repository
+ * - woo:testWooCommon.js, Config, FragContract, Fragments, Probe, Toolkit, Llm, Compiler, Gates, Repository
  * - right testWooAiSqlGenerate · Option testWooAiFoundryEnabled
  *
  * [Invariants]
@@ -24,7 +24,8 @@ response.setContentType("application/json;charset=utf-8");
  * - unmatched+Foundry OFF → passed:false, 큐 없음
  * - after_foundry/no_enqueue → 재큐잉 금지(대기 UI 루프 방지)
  * - catch 메시지에 [Generate] 접두(타 API plan missing와 구분)
- * - loadLibrary 직후 twRequireLib — repo/fragments/llm/compiler/gates (#160)
+ * - loadLibrary 직후 twRequireLib — repo/fragments/toolkit/llm/compiler/gates
+ * - #170: missing_slots_json 은 축 원자 슬롯 객체(가능 시)
  */
 try {
   TW_RESPONSE = response;
@@ -32,13 +33,18 @@ try {
   TW_DOCUMENT = document;
   loadLibrary("woo:testWooCommon.js");
   loadLibrary("woo:testWooConfig.js");
+  loadLibrary("woo:testWooFragContract.js");
   loadLibrary("woo:testWooFragments.js");
+  loadLibrary("woo:testWooProbe.js");
+  loadLibrary("woo:testWooToolkit.js");
   loadLibrary("woo:testWooLlm.js");
   loadLibrary("woo:testWooCompiler.js");
   loadLibrary("woo:testWooGates.js");
   loadLibrary("woo:testWooRepository.js");
   twRequireLib("woo:testWooRepository.js", (typeof testWoo !== "undefined") && testWoo.repo);
+  twRequireLib("woo:testWooFragContract.js", (typeof testWoo !== "undefined") && testWoo.fragContract);
   twRequireLib("woo:testWooFragments.js", (typeof testWoo !== "undefined") && testWoo.fragments);
+  twRequireLib("woo:testWooToolkit.js", (typeof testWoo !== "undefined") && testWoo.toolkit);
   twRequireLib("woo:testWooLlm.js", (typeof testWoo !== "undefined") && testWoo.llm);
   twRequireLib("woo:testWooCompiler.js", (typeof testWoo !== "undefined") && testWoo.compiler);
   twRequireLib("woo:testWooGates.js", (typeof testWoo !== "undefined") && testWoo.gates);
@@ -90,10 +96,13 @@ try {
         error: "unmatched slots — plan only"
       });
     } else if (cfg.foundry.enabled && !noEnqueue) {
+      // #170: 축 원자 슬롯 객체(searchKeywords 포함)를 큐에 넣는다. 문자열만내면 Foundry가 재분할한다.
+      var missingForQueue = (plan.unmatchedSlots && plan.unmatchedSlots.length) ?
+        plan.unmatchedSlots : unmatched;
       var queueId = testWoo.repo.enqueueRequest({
         nl_text: p.nl_request,
         slots_json: JSON.stringify(plan._meta ? plan._meta.slots : []),
-        missing_slots_json: JSON.stringify(unmatched),
+        missing_slots_json: JSON.stringify(missingForQueue),
         plan_json: JSON.stringify(clientPlan),
         created_by: currentLogin(),
         workflow_name: p.workflow_name || ""

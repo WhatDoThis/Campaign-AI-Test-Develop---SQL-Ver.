@@ -1,6 +1,23 @@
 # Log
 
 ## Log Index
+235. 2026-08-13 카탈로그 렉시콘 분할 · Stage A 매칭 방향 정정
+234. 2026-08-13 Pass0 청중명사(고객) 슬롯 제거
+233. 2026-08-13 libVersions expectedByMod heal 버전 정합 (v=164)
+232. 2026-08-13 heal 전 live _source 재스냅샷 (후속 적재)
+231. 2026-08-13 축 identity 재사용 · param_domain 자동 heal
+230. 2026-08-13 10대 미등재 시 age frag 재사용 (N대 유도)
+229. 2026-08-13 뒤로가기 시 미반영 SQL 캐시 유지 (v=163)
+228. 2026-08-13 매핑 중 [등록] 비활성 (v=162)
+227. 2026-08-13 R5 ST3~ST5 매핑 — listWkfs·기존SQL점프 (v=161)
+226. 2026-08-13 R4 SQL목록 — [등록]≠WKF선행 (v=160)
+225. 2026-08-13 smoke 9·9c — library hit·invoke 캐시 정합
+224. 2026-08-12 #172 FragContract 공유 계약 미들웨어
+223. 2026-08-12 #170-P2 — Stage A 본문토큰 병합·category 필터 제거
+222. 2026-08-12 #168-B Generate 값 바인딩 · 템플릿 계약
+221. 2026-08-12 #170-P1 — 축정합 library hit·Stage A 대소문자
+220. 2026-08-12 #170 Pass0 슬롯 원자 분할 (normalizeAtomicSlots)
+219. 2026-08-12 #169-P1 — 다중 JSON 파싱·dedup {{param}} 바인딩
 218. 2026-08-12 #169-P0 — library hit 타축 삼킴(단일축+_source) 차단
 217. 2026-08-12 #169 Library-First — Triage 서가 우선·invoke 캐시
 216. 2026-08-12 #168-A hotfix — {{param}} SQL에서 filter 컬럼 미추출 수정
@@ -221,6 +238,166 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+235. 2026-08-13 카탈로그 렉시콘 분할 · Stage A 매칭 방향 정정
+Purpose: `인천에 사는`이 region nlMap의 `인천`과 안 붙음. Stage A는 토큰⊂카탈로그라 `인천에`를 찾고, 실제 값은 카탈로그 키⊂문장이다. Pass0 문구 패치로는 조사·대소문자·슬롯 경계가 계속 샌다.
+Changes:
+- fragContract: 조사 어간, 기능어 제외, collectLexicon/splitByLexicon(nlMap·enum·_bucket 최장일치)
+- generatePlan: 라이브러리 값으로 슬롯을 먼저 확정하고 Pass0 잔여만 합침
+- searchBySlot: 축 폴백을 LIKE 성공 여부와 무관하게 항상 합침
+- smoke 1b가 `인천에 사는 20대 z요금제 쓰는 고객` → region+age+plan 3슬롯
+Verification: HUMAN — FragContract `164` · Fragments `163` · Llm `164` · StudioContext.jssp 재등록. 같은 문장 → 큐 없이 3축 계획. 서버 로그 `lexicon=3`.
+Changed files: new_ver/js/testWooFragContract.js, testWooFragments.js, testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, .cursor/skills/campaign-ai-studio/pipeline-contracts.md, docs/log/log.md
+
+234. 2026-08-13 Pass0 청중명사(고객) 슬롯 제거
+Purpose: region·plan frag가 있는데 Pass0가 「고객」을 슬롯으로 남겨 Stage A가 전체를 unmatched로 중단함. Foundry Done 후에도 같은 슬롯이 재등장.
+Changes:
+- normalizeAtomicSlots: 고객/대상자 등 조건 없는 잔여 삭제. 단일 축은 추출 phrase만 유지
+- 지역 최장일치(경기도 > 경기). 노이즈에 「사용하는」 추가
+- generatePlan: 노이즈 empty는 무시하고 매칭 슬롯만 Pass1에 전달
+- smoke 1c · llm __v=163 · expectedByMod llm=163
+Verification: HUMAN — testWooLlm.js + StudioContext.jssp 재등록. `경기도에 사는 학생요금제 사용하는 고객` → 큐 없이 region+plan 계획.
+Changed files: new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, .cursor/skills/campaign-ai-studio/pipeline-contracts.md, docs/log/log.md
+
+233. 2026-08-13 libVersions expectedByMod heal 버전 정합 (v=164)
+Purpose: heal 모듈 __v를 올렸더니 Studio가 기본 159와 비교해 [LIB] 배너가 뜸. JS는 이미 새 버전인데 Context 기대표가 옛값.
+Changes:
+- expectedByMod: fragContract=163 · fragments=162 · llm=162 · toolkit=160
+- 배너 want=모듈별 기대값. Studio litmus v=164
+- foundry __v 160 유지(미배포 모듈 추가 불일치 방지)
+Verification: HUMAN — StudioContext.jssp + Studio.jssp/StudioJs v=164 저장 후 재오픈. [LIB] 배너 없어야 함.
+Changed files: new_ver/jssp/testWooAiStudioContext.jssp, testWooAiStudio.jssp, testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/js/testWooFoundry.js, docs/log/log.md
+
+232. 2026-08-13 heal 전 live _source 재스냅샷 (후속 적재)
+Purpose: age는 range라 DISTINCT를 안 타고 MIN/MAX만 남김. nlMap의 10대는 DB 값이 아님. 운영에서 제작 후 적재된 값을 stale _range/enum으로 거절하면 heal이 깨짐.
+Changes:
+- toolkit.refreshDomain — _source로 재스냅샷, 기존 별칭 유지
+- mergeParamDomainJson — _range는 넓히기만(후속 max 증가 수용)
+- Generate가 Probe+Toolkit 로드. propose/heal은 fresh domain 기준
+- 라이브에 없는 값만 validateBind 실패(신규 frag 금지)
+Verification: HUMAN — FragContract `163` · Toolkit `160` · Fragments `162` · Llm `162` · Generate.jssp 재배포. 같은 축 재사용 + 이후 적재 값은 refresh 후 bind.
+Changed files: new_ver/js/testWooFragContract.js, testWooToolkit.js, testWooFragments.js, testWooLlm.js, new_ver/jssp/testWooAiGenerate.jssp, new_ver/tools/testWooSmoke.js, .cursor/skills/campaign-ai-studio/pipeline-contracts.md, docs/log/log.md
+
+231. 2026-08-13 축 identity 재사용 · param_domain 자동 heal
+Purpose: 같은 tags/name frag인데 nlMap만 비면 Foundry가 새 frag를 만들려 함. 연령대 특수식은 스키마를 모르는 운영에서 확장되지 않음.
+Changes:
+- Identity = 축+_source+단일 tags. 값 미등재는 신규 frag가 아니라 heal
+- Stage A LIKE 미스 → searchByAxis(tags) 폴백
+- Pass1/proposeParams가 기존 nlMap 예시+_range/enum으로 params 제안 → validateBind → healDomain(merge+색인)
+- N대 하드코딩 derive 제거. Foundry merge는 fragContract.mergeParamDomainJson 위임
+Verification: HUMAN — FragContract `__v=162` · Fragments `161` · Llm `161` · Foundry `161` 재배포 후, 기존 age/gender/region으로 `경기도에 사는 10대 여성 고객` → 큐 없이 재사용, age `param_domain`에 `10대` 별칭이 merge되어야 함.
+Changed files: new_ver/js/testWooFragContract.js, testWooFragments.js, testWooLlm.js, testWooFoundry.js, new_ver/tools/testWooSmoke.js, .cursor/skills/campaign-ai-studio/pipeline-contracts.md, docs/report/upgrade_plan/36_FragContract_공유계약.md, docs/log/log.md
+
+230. 2026-08-13 10대 미등재 시 age frag 재사용 (N대 유도)
+Purpose: Active `woo__customer__age` nlMap이 20~60대만 있어 NL `10대`가 Stage A 미스 → Foundry 큐. `_range` 0~69인데도 새 frag를 만들려 함.
+Changes:
+- keywordsFromSlot에 축 태그(age/gender/region) 추가 — 값 미색인이어도 tags LIKE로 축 frag 검색
+- domainMatchSlot/resolveNlParams: nlMap에 없는 N대 → `{ageMin:N, ageMax:N+10}` (`_range` 겹칠 때만). 70대는 거부
+- Pass1: 축 frag는 nlMap 키 없어도 선택. include된 frag가 바인딩 가능하면 unmatched에서 제거(큐 방지)
+- smoke 1b: 10대→10/20, 여성↛age, 70대 범위 밖
+Verification: HUMAN — JS `testWooFragContract.js` `__v=161` + `testWooLlm.js` `__v=160` 재배포 후 `경기도에 사는 10대 여성 고객` → Foundry 큐 없이 기존 age/gender/region 재사용, SQL `iAge >= 10 AND iAge < 20`.
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/tools/testWooSmoke.js, .cursor/skills/campaign-ai-studio/pipeline-contracts.md, docs/report/upgrade_plan/36_FragContract_공유계약.md, docs/log/log.md
+
+229. 2026-08-13 뒤로가기 시 미반영 SQL 캐시 유지 (v=163)
+Purpose: 뒤로가기가 스택 비면 resetCtx와 같아져 방금 생성한 임시 SQL이 목록에서 사라지고, 서버 기존(반영됨)만 다시 보임.
+Changes:
+- goBack 빈 스택 → SQL 목록(`_enterSqlList`). 캐시 삭제·초기화 금지
+- 브레드크럼 Program/Campaign은 스택을 SQL 프레임으로 남겨 뒤로가기가 목록으로 복귀
+- 목록 진입 시 최신 draft 복원
+Verification: HUMAN — Studio `v=163` · 생성→등록→프로그램 진입→뒤로가기 → 미반영 SQL이 목록에 남아 있어야 함. 초기화만 캐시 삭제.
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
+
+228. 2026-08-13 매핑 중 [등록] 비활성 (v=162)
+Purpose: Program/Campaign/WKF 미선택 단계에서 [등록]이 SQL 목록으로 되돌아감. 브레드크럼·뒤로가기가 있으므로 매핑 중에는 버튼을 끈다.
+Changes:
+- ST3~ST5이고 WKF 없으면 `btnReg` disabled. 생성 직후 [등록]→SQL 목록은 유지. WKF 선택 후 다시 활성.
+Verification: HUMAN — Studio.jssp+StudioJs `v=162` · 새 SQL 진행 중 [등록] 비활성 · WKF 선택 후 활성.
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+227. 2026-08-13 R5 ST3~ST5 매핑 — listWkfs·기존SQL점프 (v=161)
+Purpose: R4 SQL목록 HUMAN 확인 후 매핑. 캠페인 진입이 SQL을 지우고 Match OFF가 WKF 목록을 비움 → listWkfs 미호출.
+Changes:
+- `_enterCampaign` SQL 유지 · `loadWkfs`(listWkfs) · Match OFF wipe 제거
+- WKF 선택/생성 후 compose 유지 · `[등록]하면 반영` 안내 (ST6 커밋은 R6)
+- `listRecentAiSql` + Context `listRegisteredSql` · 기존(반영됨) 점프(유사 단정 없음)
+- litmus v=161
+Verification: Rhino-safe ES5. HUMAN — Repository+Context+Studio.jssp+StudioJs 재배포 · URL `v=161` · 새 SQL→Program→Campaign→WKF · 기존 SQL 클릭 점프.
+Changed files: new_ver/js/testWooRepository.js, new_ver/jssp/testWooAiStudioContext.jssp, testWooAiStudioJs.jssp, testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/{00_INDEX,01_진행판,21_SQLFirst_R차수_실행가이드,23_SQLFirst_AI명령문}.md, docs/log/log.md
+
+226. 2026-08-13 R4 SQL목록 — [등록]≠WKF선행 (v=160)
+Purpose: 08-12 SQL-First(조건→SQL목록→프로그램/WKF)는 정본에 있었으나 코드 `register()`가 WKF 필수. 가이드 폐기 아님 — R4 미착수+21 DoD가 레이아웃만 적힘.
+Changes:
+- [등록] WKF 없으면 `_enterSqlList` (ST1/ST2) · Register.jssp 호출 안 함
+- ST0 폴더 선로드 제거 · 브레드크럼 조건>SQL>Program… · “이 새 SQL로 진행”→ST3
+- navToProgram/goBack은 확정 SQL 유지 · litmus v=160
+- `21` R4 DoD·`27` D-1 구현지연 주석 · 진행판 R4 [~]
+Verification: Rhino-safe ES5. HUMAN — Studio.jssp+StudioJs 재배포 후 URL `v=160` · 동일 NL [생성]→[등록]→우측 SQL 목록(WKF 에러 없음).
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/{00_INDEX,01_진행판,21_SQLFirst_R차수_실행가이드,23_SQLFirst_AI명령문,27_스펙드리프트}.md, docs/log/log.md
+
+225. 2026-08-13 smoke 9·9c — library hit·invoke 캐시 정합
+Purpose: FragContract 배포 후 smoke가 #169 정상 동작(library_cache_hit·캐시 미차감)을 FAIL로 오인.
+Changes:
+- 9: `library_cache_hit` → PASS (#169 서가 우선)
+- 9c: list_schemas `limit` 변형으로 캐시 미스 소진 후 phase 상한 검증
+Verification: Rhino. HUMAN — testWooSmoke.js 재배포 후 WKF smoke 재실행.
+Changed files: new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+224. 2026-08-12 #172 FragContract 공유 계약 미들웨어
+Purpose: 축 추가마다 StageA/Feasibility/Dedup/Foundry가 연쇄 깨지던 계약 복제를 testWoo.fragContract로 수렴.
+Changes:
+- 신규 testWooFragContract.js — axis·matchProfile·buildIndexFields·sampleBindSql·libraryHitPredicate·resolveNlParams·errorCodes
+- Fragments/Feasibility/Foundry/Dedup/Compiler 위임 · Dedup peer `@param_domain` 로드
+- reuse_after_publish = libraryHitPredicate · loadLibrary 선행(Batch/DryRun/Smoke/Generate/Register/Validate/Match)
+- smoke 1b.fragContract (joindate 축·bind·index) · upgrade_plan/36 · pipeline-contracts 표
+Verification: Rhino. HUMAN — FragContract 먼저 배포 후 계열 JS·JSSP · smoke 1b · 가입일 NL 재생성.
+Changed files: new_ver/js/testWooFragContract.js, testWooFragments.js, testWooFeasibility.js, testWooFoundry.js, testWooDedup.js, testWooCompiler.js, new_ver/workflow/*, new_ver/tools/testWooSmoke.js, new_ver/jssp/testWooAi*.jssp, docs/report/upgrade_plan/36_*, 00_INDEX, 01_진행판, 00_ReportIndex, pipeline-contracts.md, docs/log/log.md
+
+223. 2026-08-12 #170-P2 — Stage A 본문토큰 병합·category 필터 제거
+Purpose: joindate frag 생성 후에도 unmatched「가입한지 1년 이내」. Pass0 searchKeywords만 쓰거나 category=foundry≠hint other 필터로 미스.
+Changes:
+- Fragments: keywords=searchKeywords∪본문 토큰(공백 유지+compact). category hint는 WHERE 제거·점수만.
+- Foundry synonyms에 `_bucket.nlMap` 키 포함. 상대일자 AddDays+{{param}} 프롬프트.
+- Dedup sampleBind: int/number 타입은 0 (consent `__sample__` PG 오류 방지).
+Verification: Rhino. HUMAN — Fragments(+Foundry) 배포 후 동일 NL [생성] → joindate Stage A 히트.
+Changed files: new_ver/js/testWooFragments.js, new_ver/js/testWooFoundry.js, new_ver/js/testWooDedup.js, docs/log/log.md
+
+222. 2026-08-12 #168-B Generate 값 바인딩 · 템플릿 계약
+Purpose: gender 생성 후 Generate가 `unresolved {{param}}` age로 실패. 원인=템플릿 계약을 최종 SQL처럼 검사 + Pass1 params 미기입.
+Changes:
+- Gates: fragmentSqlContract가 {{param}} 허용. 필수 param은 sql_text placeholder만.
+- Compiler `bindPlanParams`: NL/_bucket/nlMap → plan.params. compile 시 호출.
+- Pass1 프롬프트·selectPlan 후 bind. Dedup 잔여 {{ 강제 치환.
+- 문서 `35_Generate_값바인딩_168B.md`.
+Verification: Rhino. HUMAN — 동일 NL 재생성 시 age/gender 리터럴 SQL.
+Changed files: new_ver/js/testWooGates.js, new_ver/js/testWooCompiler.js, new_ver/js/testWooLlm.js, new_ver/js/testWooDedup.js, docs/report/upgrade_plan/35_Generate_값바인딩_168B.md, docs/report/upgrade_plan/{00_INDEX,01_진행판}.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+221. 2026-08-12 #170-P1 — 축정합 library hit·Stage A 대소문자
+Purpose: 1~2차 Done+무생성인데 unmatched「남성」— age synonyms 오염으로 키워드 커버가 gender를 삼킴. 3차 unmatched「y요금제」— PG LIKE 대소문자로 plan 미스.
+Changes:
+- Feasibility `axesCompatible` · libraryCover에 축 정합 필수. 도메인 매칭 대소문자 무시.
+- Foundry `_coversSlot`도 축 정합. publish synonyms에 nlMap 키(+lower) 추가.
+- Fragments: LIKE 토큰 대소문자 변형 · param_domain 검색/스코어.
+- Studio 오안내(Fragments 배포) 문구 수정.
+Verification: Rhino OK. HUMAN — 「20대 남성」후 gender frag 생성 · 「y요금제」Stage A 히트.
+Changed files: new_ver/js/testWooFeasibility.js, new_ver/js/testWooFoundry.js, new_ver/js/testWooFragments.js, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
+
+220. 2026-08-12 #170 Pass0 슬롯 원자 분할 (normalizeAtomicSlots)
+Purpose: 복합 슬롯(20대 남성)이 Foundry/서가 재사용 전제를 깨는 제품 경로를 차단. LLM 프롬프트만 믿지 않고 결정적 정규화.
+Changes:
+- Pass0 프롬프트: 축1슬롯1 강제 · “MAY keep one slot” 삭제.
+- `normalizeAtomicSlots`: region/plan/age/gender 추출 · 30대50대→age 1슬롯 · 잔여 other 유지.
+- generatePlan `unmatchedSlots` · Generate 큐잉 · Foundry `_normalizeSlots` 동일 규칙.
+- 문서 `34_Pass0_슬롯원자분할_170.md`.
+Verification: 로컬 CASE 서울/Z/20대/남성 · Y요금제/30대~50대/홈페이지. HUMAN V1~V4.
+Changed files: new_ver/js/testWooLlm.js, new_ver/js/testWooFoundry.js, new_ver/jssp/testWooAiGenerate.jssp, docs/report/upgrade_plan/34_Pass0_슬롯원자분할_170.md, docs/report/upgrade_plan/{00_INDEX,01_진행판}.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+219. 2026-08-12 #169-P1 — 다중 JSON 파싱·dedup {{param}} 바인딩
+Purpose: gender 미생성 루프 — LLM이 age+gender를 한 응답에 붙여 first{…last} 파싱 실패→재시도→age만 near-dedup. dedup이 {{param}} 그대로 실행해 diff=-1을 near로 위장.
+Changes:
+- Foundry: 균형 JSON 다중 추출 → 슬롯 축 힌트·미존재 frag 우선 선택. 단일 힌트와 축 불일치 시 shape 재시도. 프롬프트/피드백에 ONE JSON 강제.
+- Dedup: probe/L3 전 sampleBind. bestDiff<0 → novel(near 위장 금지).
+Verification: Rhino syntax. HUMAN — 동일 NL 후 woo__customer__gender Active·unmatched에 남성 없음.
+Changed files: new_ver/js/testWooFoundry.js, new_ver/js/testWooDedup.js, docs/log/log.md
 
 218. 2026-08-12 #169-P0 — library hit 타축 삼킴(단일축+_source) 차단
 Purpose: 2회차 동일 NL에서 age library_cache_hit 후 gender 미생성·Stage A unmatched「남성」. 원인=libraryLookup이 키워드 커버 없이 단일축+_source만으로 히트.

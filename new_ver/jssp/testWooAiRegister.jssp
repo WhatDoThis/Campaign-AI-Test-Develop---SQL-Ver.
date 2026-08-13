@@ -35,11 +35,13 @@ try {
   if (!p.plan) throw new Error("Register: plan missing");
 
   loadLibrary("woo:testWooConfig.js");
+  loadLibrary("woo:testWooFragContract.js");
   loadLibrary("woo:testWooFragments.js");
   loadLibrary("woo:testWooCompiler.js");
   loadLibrary("woo:testWooGates.js");
   loadLibrary("woo:testWooLifecycle.js");
   loadLibrary("woo:testWooRepository.js");
+  twRequireLib("woo:testWooFragContract.js", (typeof testWoo !== "undefined") && testWoo.fragContract);
   twRequireLib("woo:testWooFragments.js", (typeof testWoo !== "undefined") && testWoo.fragments);
   twRequireLib("woo:testWooCompiler.js", (typeof testWoo !== "undefined") && testWoo.compiler);
   twRequireLib("woo:testWooGates.js", (typeof testWoo !== "undefined") && testWoo.gates);

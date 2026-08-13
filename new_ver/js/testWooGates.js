@@ -4,6 +4,7 @@
  * litmus 동기 __v=159 (#160 배포정합).
  * CNF plan·fragment sql_text·param_domain 최소 검증.
  * Stage A 후보 밖 fragment 거절은 LLM Pass1 전용.
+ * #168-B: fragmentSqlContract는 {{param}} 템플릿 허용(치환 전). 최종 SQL만 unresolved 금지.
  *
  * [Main Functions]
  * ===========
@@ -27,12 +28,15 @@ testWoo.gates = (function () {
   }
 
   // 1. [G1] syntax
-  function g1Syntax(sql) {
+  // opts.allowParamPlaceholders: fragment 템플릿(sql_text) 검사용 — {{param}} 허용
+  function g1Syntax(sql, opts) {
+    opts = opts || {};
     var raw = String(sql || "");
     if (/"/.test(raw)) return _fail("G1", "quoted identifiers (\") forbidden");
     var s = _stripSqlNoise(raw);
     if (/<%|%>/.test(s)) return _fail("G1", "JST token (<% %>) found");
-    if (/\{\{/.test(s)) return _fail("G1", "unresolved {{param}} token");
+    if (!opts.allowParamPlaceholders && /\{\{/.test(s))
+      return _fail("G1", "unresolved {{param}} token");
     if (s.indexOf(";") >= 0) return _fail("G1", "semicolon forbidden");
     if (/\b(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|MERGE)\b/i.test(s))
       return _fail("G1", "DDL/DML forbidden");
@@ -41,15 +45,19 @@ testWoo.gates = (function () {
   }
 
   // 2. fragment sql_text 계약 — SELECT 리스트가 grain 컬럼 하나 (등록 전·컴파일 시)
+  // #167/#168-B: 저장본은 {{param}} 템플릿. 치환 전 계약 검사에서는 placeholder 허용.
   function fragmentSqlContract(sqlText, keyColumn) {
     var s = _stripSqlNoise(String(sqlText || ""));
     if (!String(sqlText || "").replace(/\s+/g, ""))
       return _fail("FRAG", "sql_text empty");
     if (/^\s*WITH\b/i.test(s))
       return _fail("FRAG", "sql_text must not start with WITH (subquery wrap 불가)");
-    var syn = g1Syntax(sqlText);
+    var syn = g1Syntax(sqlText, { allowParamPlaceholders: true });
     if (!syn.ok) return _fail("FRAG", syn.reason);
-    return _checkSelectIsGrain(s, keyColumn);
+    // grain 검사 시 {{param}} 토큰은 식별자가 아니므로 플레이스홀더를 제거한 뒤 본다
+    var sGrain = String(sqlText || "").replace(/\{\{\w+\}\}/g, "0");
+    sGrain = _stripSqlNoise(sGrain);
+    return _checkSelectIsGrain(sGrain, keyColumn);
   }
 
   // 3. CNF plan — active fragment + SCOPE
@@ -123,8 +131,16 @@ testWoo.gates = (function () {
     if (!domainParse.ok) return _fail("PLAN", path + ": param_domain JSON invalid: " + item.fragment);
     var domain = domainParse.value || {};
     var params = item.params || {};
+    // sql_text에 등장하는 {{param}} 만 필수 — planLabel+plan_code 중복 required 오탐 방지
+    var need = {};
+    var sql = String(f.sql_text || "");
+    var re = /\{\{(\w+)\}\}/g;
+    var m;
+    while ((m = re.exec(sql)) != null) need[m[1]] = 1;
     for (var pk in domain) {
       if (!domain.hasOwnProperty(pk)) continue;
+      if (pk.charAt(0) === "_") continue;
+      if (!need[pk]) continue;
       var spec = domain[pk] || {};
       var val = params[pk];
       var missing = (val == null || val === "");

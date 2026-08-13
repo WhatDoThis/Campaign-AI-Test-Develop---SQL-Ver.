@@ -19,6 +19,7 @@
  * - rejectFragment — fragment 거절
  * - completeQueue — 큐 완료 status 기록
  * - listAiSqlByWorkflow — WF별 SQL 목록
+ * - listRecentAiSql — 최근 반영 SQL(목록·분기 B 점프, sql_query 제외)
  * - listAiSqlForMatch — 매칭용 plan_json·sql_query 목록
  * - findAiSqlBySqlHash — sqlContentHash 중복 조회
  * - deleteAiSql — ai_sql 삭제
@@ -346,6 +347,37 @@ testWoo.repo = (function () {
     return rows;
   }
 
+  // 3b. 최근 반영 SQL (ST1 기존 목록 · sql_query/plan 제외)
+  function listRecentAiSql(limit) {
+    var lim = limit != null ? Number(limit) : 10;
+    if (isNaN(lim) || lim < 1) lim = 10;
+    if (lim > 50) lim = 50;
+    var q = xtk.queryDef.create(
+      <queryDef schema={SQL_SCHEMA} operation="select" lineCount={String(lim)}>
+        <select>
+          <node expr="@id"/><node expr="@title"/><node expr="@status"/>
+          <node expr="@nl_request"/><node expr="@workflow_name"/>
+          <node expr="@creation_date"/>
+        </select>
+        <orderBy>
+          <node expr="@creation_date" sortDesc="true"/>
+        </orderBy>
+      </queryDef>);
+    var res = q.ExecuteQuery();
+    var rows = [];
+    for each (var r in res.testWooAiSql) {
+      rows.push({
+        id: Number(r.@id),
+        title: String(r.@title || ""),
+        status: String(r.@status || ""),
+        nl_request: String(r.@nl_request || ""),
+        workflow_name: String(r.@workflow_name || ""),
+        creation_date: String(r.@creation_date || "")
+      });
+    }
+    return rows;
+  }
+
   // 4. ai_sql_id 이력 삭제 (Studio 목록 · WF 바인딩은 호출측에서 정리)
   function deleteAiSql(id) {
     var n = Number(id);
@@ -498,6 +530,7 @@ testWoo.repo = (function () {
     rejectFragment: rejectFragment,
     completeQueue: completeQueue,
     listAiSqlByWorkflow: listAiSqlByWorkflow,
+    listRecentAiSql: listRecentAiSql,
     listAiSqlForMatch: listAiSqlForMatch,
     findAiSqlBySqlHash: findAiSqlBySqlHash,
     deleteAiSql: deleteAiSql,
