@@ -1,5 +1,7 @@
 # #168-B — Generate 값 바인딩 (param_domain → plan.params)
 
+> **상태: `[ ]` 재개.** 템플릿 계약(`{{param}}`)은 유지.  
+> **#174 영향:** 바인딩 입력이 KO nlMap만이 아니라 EN 매칭 결과. `unresolved`면 SQL 생성 안 함. 번역 문자열을 `db` 대신 넣지 말 것. 이 문서를 닫으면 진행판 `[x]` 복귀.  
 > frag SQL은 `{{param}}` 템플릿. 컴파일 직전에 NL+`param_domain`으로 **결정적** 치환.  
 > Pass1 LLM params만 믿지 않는다.
 
@@ -33,3 +35,11 @@ gender frag 생성·triage feasible는 정상. **마지막 컴파일 단** 실�
 
 동일 NL 재생성 → SQL에 `iAge >= 20 AND iAge < 30`, `sGender = 'M'` 등 리터럴.  
 `unresolved {{param}}` 없음.
+
+## #174에서 닫을 것
+
+| 항목 | 담당 |
+|---|---|
+| params ← M1/M2 히트의 `db` 값만 | #174-4 |
+| `unresolved` 시 SQL 생성 금지 · Studio surface 표시 | #174-4 · V5 |
+| 번역 `en_literal`을 WHERE에 직접 삽입 | **금지** |

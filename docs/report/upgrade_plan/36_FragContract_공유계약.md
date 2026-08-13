@@ -1,7 +1,7 @@
 # #172 — FragContract 공유 계약
 
-> Foundry / Fragments / Feasibility / Dedup / Compiler가 복제하던  
-> **슬롯↔색인↔매칭↔바인딩** 규칙을 `testWoo.fragContract` 한곳으로 수렴한다.  
+> **상태: `[ ]` 재개.** 모듈 한곳 수렴은 유지. 매칭 좌표계가 KO 표층 → M1/M2/M3.  
+> **#174 영향:** `domainMatchSlot`에 EN `en[]`·concept. JOSA/NOISE는 5단계까지 병존(증식 금지). 한국어 값/컬럼 하드코딩 grep 0은 5단계 후. 이 문서를 닫으면 진행판 `[x]` 복귀.  
 > Cube/MetricFlow급 시맨틱 레이어는 비채택(ACC Rhino).
 
 ---
@@ -75,3 +75,12 @@ Stage A / Dedup / Feasibility에 **축별 패치 금지**.
 - MetricFlow/Cube 이식
 - Foundry 큐/WF 라이프사이클 재설계
 - Pass0 프롬프트만으로 계약 대체
+
+## 7. #174에서 닫을 것
+
+| 항목 | 담당 |
+|---|---|
+| 매칭 순서 M1 원문 → M2 en[] → M3 concept+kind | #174-4 |
+| `unresolved` reason 3종 · Studio 표시 | #174-4 |
+| 축 regex에 한국어 값/지역명 추가 | **금지** (R1) |
+| JOSA_TAIL / NOISE_WORD / stemToken / isNoiseResidue 삭제 | #174-5 (V1~V5 후만) |

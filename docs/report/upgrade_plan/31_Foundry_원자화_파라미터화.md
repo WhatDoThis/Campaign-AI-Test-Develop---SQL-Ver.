@@ -1,6 +1,7 @@
 # #167 — Foundry fragment 원자화 · 파라미터화
 
-> **이 문서가 정답이다.** 코드가 어긋나면 코드를 고친다.  
+> **이 문서가 축 헌법(P1~P5)의 정답이다.** 코드가 어긋나면 코드를 고친다.  
+> **#174 영향:** 헌법 `[x]` 유지. `param_domain` 값 형상 `{db, en[]}` 과 `_source.concept` 는 `#174-3`에서 확장. nlMap 수기 주좌표계는 **폐기(전략)** · 키 삭제는 금지.  
 > AI가 HUMAN 검증을 PASS로 자체 처리하지 않음.
 
 ---
@@ -32,7 +33,7 @@ woo__customer__gender     … WHERE sGender = {{gender}}
 | P1 | frag 1건 = 조건 축 1개 = **참조 컬럼 1개** |
 | P2 | AND 판정 = **컬럼 개수**. 같은 컬럼 범위 AND 허용 · 다른 컬럼 AND 금지 |
 | P3 | 값은 name에 굽지 말고 `params` / `param_domain`. name=`woo__<table>__<axis>` |
-| P4 | `param_domain` = NL표현→컬럼값 **값 사전** (없으면 바인딩이 매번 LLM 즉흥) |
+| P4 | `param_domain` = 값 사전. `#174-3` 이후 `{db, en[]}` 병존 · 바인딩은 `db`만. nlMap 키 삭제 금지 |
 | P5 | 축 간 AND 결합은 **Generate 조립** 책임. frag SQL에 넣지 않음 |
 
 ### P2 예시
@@ -85,7 +86,8 @@ woo__customer__gender     … WHERE sGender = {{gender}}
 }
 ```
 
-축 name이 이미 있으면 **INSERT 없이** `nlMap`/`enum` merge (기존 키 덮어쓰기 금지).
+축 name이 이미 있으면 **INSERT 없이** `nlMap`/`enum` merge (기존 키 덮어쓰기 금지).  
+`#174-3` 이후 값 항목은 `{ "db": <원본>, "en": ["별칭",…] }` 병존. 바인딩은 `db`만 사용.
 
 ---
 
@@ -111,3 +113,13 @@ woo__customer__gender     … WHERE sGender = {{gender}}
 | V5 | `iAge >= :a AND iAge < :b` | **통과** (같은 컬럼 범위) |
 
 V2가 핵심 합격선이다.
+
+---
+
+## 7. #174에서 닫을 것
+
+| 항목 | 담당 |
+|---|---|
+| 값 = `{db, en[]}` · range 버킷 EN 별칭 | #174-3 |
+| `_source.concept` / `enRefreshedAt` / `enModel` | #174-3 |
+| nlMap 키 삭제 | **금지** (하위호환) |

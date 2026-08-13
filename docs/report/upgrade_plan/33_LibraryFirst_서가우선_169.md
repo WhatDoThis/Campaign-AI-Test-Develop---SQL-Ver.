@@ -1,7 +1,7 @@
 # #169 — Library-First (서가 우선)
 
 > Active/`_source` frag가 있으면 **스키마 툴 0회**.  
-> Triage가 서가를 안 읽고 `search_columns`만 태우던 실패를 막는다.  
+> **#174 영향:** 서가 우선 `[x]` 유지. `#169-P0` “슬롯 한국어 ⊂ nlMap 키”만의 히트는 EN 슬롯에서 미스 → `#174-4`에서 M2/concept 정합으로 보강.  
 > #168-A 스냅샷(도메인 수집)은 전제 · #168-B·#170은 범위 밖.
 
 ---
@@ -32,7 +32,8 @@
 - 컬럼명·enum 하드코딩 금지(스키마 메타·frag `_source`만)
 - `ok:true` ≠ found — `resultCount`/`valueProbes`로 판정
 - 2회차(V1): 동일 축·값 변형 NL → **신규 frag 0** · **스키마 툴 0**
-- **#169-P0:** 단일축+`_source`만으로 히트 금지. 키워드 AND 커버 **또는** `param_domain` 값(nlMap/bucket)이 슬롯 텍스트에 있을 때만 히트 (타축 삼킴 차단)
+- **#169-P0:** 단일축+`_source`만으로 히트 금지. 키워드 AND 커버 **또는** `param_domain` 값(nlMap/bucket)이 슬롯 텍스트에 있을 때만 히트 (타축 삼킴 차단)  
+  → `#174-4` 이후: M1 원문 **또는** M2 `en[]` **또는** concept 정합. “한국어 키 ⊂ 슬롯”만으로 신규 frag 금지 유지.
 
 ---
 

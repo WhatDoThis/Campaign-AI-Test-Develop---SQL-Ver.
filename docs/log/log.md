@@ -1,6 +1,7 @@
 # Log
 
 ## Log Index
+236. 2026-08-13 #174 EN-Pivot 로드맵 반영 · #170/#168-B/#172 재개
 235. 2026-08-13 카탈로그 렉시콘 분할 · Stage A 매칭 방향 정정
 234. 2026-08-13 Pass0 청중명사(고객) 슬롯 제거
 233. 2026-08-13 libVersions expectedByMod heal 버전 정합 (v=164)
@@ -238,6 +239,17 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+236. 2026-08-13 #174 EN-Pivot 로드맵 반영 · #170/#168-B/#172 재개
+Purpose: 08-13 원문(번역 기반 param 추출)을 고도화 정본에 넣고, 조사/어미 사전 증식 경로를 폐기하며, 수정이 필요한 완료 차수를 미완료로 되돌린다.
+Changes:
+- 신규 `37_ENPivot_CanonicalLayer_174.md` — 0~5단계 · M1/M2/M3 · 5단계 선삭제 금지 · V7은 부록
+- 트랙 A(추출 #174 최우선) / 트랙 B(SQL-First 셸) 분리. R6 추출 우회 금지
+- 재개: #170 Pass0 · #168-B 바인딩 · #172 매칭. 유지: #164/#167헌법/#168-A/#169
+- 폐기(전략): JOSA/NOISE 증식, #170 S5 KO 축힌트 주경로, nlMap 수기 주좌표계
+- 드리프트 D-5 · 추적표 EP-1~EP-8 · 관리자 원문 08-13 확정 설계 블록
+Verification: 문서만. 코드 변경 없음. 다음 Chat = #174 0단계 조사(D1~D5).
+Changed files: docs/report/upgrade_plan/00_INDEX.md, 01_진행판.md, 16_고도화_추적표_포인터.md, 19_SQLFirst_여정정본.md, 20_전환_자산판정표.md, 21_SQLFirst_R차수_실행가이드.md, 23_SQLFirst_AI명령문.md, 27_스펙드리프트.md, 30_Foundry_슬롯삼킴_P0.md, 31_Foundry_원자화_파라미터화.md, 32_필드도메인_자동판정_168A.md, 33_LibraryFirst_서가우선_169.md, 34_Pass0_슬롯원자분할_170.md, 35_Generate_값바인딩_168B.md, 36_FragContract_공유계약.md, 37_ENPivot_CanonicalLayer_174.md, [별도]_고도화_개발아이디어_관리자작성본.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
 
 235. 2026-08-13 카탈로그 렉시콘 분할 · Stage A 매칭 방향 정정
 Purpose: `인천에 사는`이 region nlMap의 `인천`과 안 붙음. Stage A는 토큰⊂카탈로그라 `인천에`를 찾고, 실제 값은 카탈로그 키⊂문장이다. Pass0 문구 패치로는 조사·대소문자·슬롯 경계가 계속 샌다.
