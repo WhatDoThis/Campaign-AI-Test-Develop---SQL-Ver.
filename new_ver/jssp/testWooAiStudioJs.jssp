@@ -1,6 +1,6 @@
 <%/*
  * testWooAiStudioJs.jssp (Studio 클라이언트 JS 서빙)
- * new_ver/html/testWooAiStudio.js 와 동기 유지 · v=164 · 뒤로가기 캐시 유지.
+ * new_ver/html/testWooAiStudio.js 와 동기 유지 · v=166 · unresolved 3종.
  */
 response.setContentType("text/javascript;charset=utf-8");
 try {
@@ -739,8 +739,24 @@ try {
           );
           if (res.unmatched && res.unmatched.length) {
             $("hint").className = "banner warn";
-            // unmatched = Stage A \uD504\uB798\uADF8\uBA3C\uD2B8 \uBBF8\uBC1C\uACAC (\uCC3D\uC791 SQL/\uC870\uAC74 \uAE08\uC9C0)
-            if (afterFoundry || res.afterFoundry) {
+            if (res.unresolved && res.unresolved.length) {
+              var _ub = [];
+              var _ui, _uu, _ur, _us;
+              for (_ui = 0; _ui < res.unresolved.length; _ui++) {
+                _uu = res.unresolved[_ui] || {};
+                _us = String(_uu.surface || "");
+                _ur = String(_uu.reason || "");
+                if (_ur === "value_not_in_domain")
+                  _ub.push("값 '" + _us + "'이(가) 도메인에 없습니다");
+                else if (_ur === "ambiguous")
+                  _ub.push("값 '" + _us + "'이(가) 여러 값과 맞습니다. 다시 입력해 주세요");
+                else
+                  _ub.push("조건을 해석할 축을 찾지 못했습니다: " + _us);
+              }
+              $("hint").textContent = _ub.join(" | ");
+            } else if (res.retryInput) {
+              $("hint").textContent = res.unmatched.join(" ");
+            } else if (afterFoundry || res.afterFoundry) {
               $("hint").textContent =
                 "\uB77C\uC774\uBE0C\uB7EC\uB9AC\uC5D0 \uD574\uB2F9 \uCD95 fragment\uAC00 \uC5C6\uAC70\uB098 Stage A\uAC00 \uC544\uC9C1 \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. " +
                 "\uC2AC\uB86F: " + res.unmatched.join(" | ") +
@@ -831,10 +847,11 @@ try {
           if (!res || !res.plan || !_planHasFragments(res.plan)) {
             if (res && res.unmatched && res.unmatched.length) {
               $("hint").className = "banner warn";
-              $("hint").textContent =
-                "\uB9E4\uCE6D \uC2E4\uD328(\uD0D0\uC0C9 \uBD88\uAC00): \uB77C\uC774\uBE0C\uB7EC\uB9AC\uC5D0 \uD574\uB2F9 fragment\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. " +
-                "\uC2AC\uB86F: " +
-                res.unmatched.join(" | ");
+              $("hint").textContent = res.retryInput
+                ? res.unmatched.join(" ")
+                : ("\uB9E4\uCE6D \uC2E4\uD328(\uD0D0\uC0C9 \uBD88\uAC00): \uB77C\uC774\uBE0C\uB7EC\uB9AC\uC5D0 \uD574\uB2F9 fragment\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. " +
+                  "\uC2AC\uB86F: " +
+                  res.unmatched.join(" | "));
             } else {
               showErr(_errText(res) || "plan_only failed");
             }

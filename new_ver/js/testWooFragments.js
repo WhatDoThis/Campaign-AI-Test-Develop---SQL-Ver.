@@ -1,7 +1,7 @@
 /*
  * testWooFragments.js (Fragment Stage A 검색)
  * ==================================================
- * litmus 동기 __v=163 (렉시콘 카드·축 폴백 항상 합침).
+ * litmus 동기 __v=165 (#174-4 M3 heal 시 param_domain 저장).
  * 슬롯별 후보 fragment 메타 검색. sql_text 일괄 로드 금지.
  * LIKE는 재호출망. 확정은 카탈로그 값⊂슬롯 + 축 identity.
  *
@@ -14,6 +14,7 @@
  * - searchSlots — Pass0/렉시콘 slots[] 일괄 Stage A
  * - listLexiconCards — active 메타(sql_text 없음) 렉시콘용
  * - healDomain — 별칭·params를 param_domain에 merge하고 색인 갱신
+ * - saveParamDomain — param_domain JSON만 저장(_negative·healAt)
  * - listCategories — Catalog용 category 목록
  * - clearCache — getByName 캐시 비우기
  *
@@ -189,6 +190,15 @@ testWoo.fragments = (function () {
         }
       } catch (eR) { /* keep snapshot */ }
     }
+    if (testWoo.enPivot && testWoo.enPivot.enrichDomainEn) {
+      try {
+        var enr = testWoo.enPivot.enrichDomainEn(domain);
+        if (enr && enr.domain) {
+          domain = enr.domain;
+          if (enr.changed) snapChanged = true;
+        }
+      } catch (eEn) { /* keep domain */ }
+    }
     var chk = { ok: true };
     if (params && typeof params === "object")
       chk = fc.validateBind(domain, params);
@@ -249,6 +259,24 @@ testWoo.fragments = (function () {
     return { ok: true, changed: true, domain: next };
   }
 
+  function saveParamDomain(fragRow, domain) {
+    if (!fragRow || !fragRow.id) return { ok: false, reason: "frag missing" };
+    if (!domain) return { ok: false, reason: "domain missing" };
+    var domainJson;
+    try { domainJson = JSON.stringify(domain); }
+    catch (eJ) { return { ok: false, reason: String(eJ.message || eJ) }; }
+    try {
+      var doc = <testWooAiFragment xtkschema={SCHEMA} _operation="update"/>;
+      doc.@id = Number(fragRow.id);
+      doc.@param_domain = domainJson;
+      xtk.session.Write(doc);
+      clearCache();
+    } catch (eW) {
+      return { ok: false, reason: String(eW.message || eW) };
+    }
+    return { ok: true, domain: domain };
+  }
+
   // 4. Stage A — 다슬롯
   function searchSlots(slots, topN, statuses) {
     var out = [];
@@ -259,6 +287,10 @@ testWoo.fragments = (function () {
         id: s.id, text: s.text, hintedCategory: s.hintedCategory || "",
         searchKeywords: s.searchKeywords || [],
         resolvedName: s.resolvedName || "",
+        concept: s.concept || null,
+        en_literal: s.en_literal || "",
+        kind: s.kind || "",
+        polarity: s.polarity || "",
         candidates: searchBySlot(s, topN, statuses)
       });
     }
@@ -472,8 +504,9 @@ testWoo.fragments = (function () {
     searchSlots: searchSlots,
     listLexiconCards: listLexiconCards,
     healDomain: healDomain,
+    saveParamDomain: saveParamDomain,
     listCategories: listCategories,
     clearCache: clearCache
   };
 })();
-testWoo.fragments.__v = "163";
+testWoo.fragments.__v = "165";

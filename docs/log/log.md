@@ -1,6 +1,13 @@
 # Log
 
 ## Log Index
+243. 2026-08-13 Generate Rhino strict — for 안 function 선언 제거
+242. 2026-08-13 #174-4 M1→M2→M3 매칭 · unresolved · `_negative`
+241. 2026-08-13 #174-3 도메인 EN 사전화 · {db,en[]} · bind=db
+240. 2026-08-13 #174-2 패치 — 전체 NL 번역 필수 · M1 스킵 폐기 · retryInput
+239. 2026-08-13 #174-2 EN Pivot 추출 · M1 스킵·NL 캐시·concept 불변
+238. 2026-08-13 #174-1 Foundry 다중 JSON 첫 채택 · extra_fragment_dropped
+237. 2026-08-13 #174 문서 패치 P1~P5 (번역 스킵·V0·concept 불변·R6 게이트)
 236. 2026-08-13 #174 EN-Pivot 로드맵 반영 · #170/#168-B/#172 재개
 235. 2026-08-13 카탈로그 렉시콘 분할 · Stage A 매칭 방향 정정
 234. 2026-08-13 Pass0 청중명사(고객) 슬롯 제거
@@ -239,6 +246,78 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+243. 2026-08-13 Generate Rhino strict — for 안 function 선언 제거
+Purpose: ACC Rhino strict 모드에서 for 루프 안의 function 선언이 Generate를 죽였다.
+Changes:
+- `_attachLexiconCandidates`의 `addHit`를 함수 본문 최상위로 이동
+- llm __v=168 · StudioContext expected llm=168
+Verification: HUMAN — `woo:testWooLlm.js` 재등록. Generate 재시도. Context.jssp는 mismatch 표시용(선택).
+Changed files: new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+242. 2026-08-13 #174-4 M1→M2→M3 매칭 · unresolved · `_negative`
+Purpose: 번역 슬롯을 원문(M1)→en[](M2)→concept(M3) 순으로 붙이고, 값이 없으면 컬럼 heal 후 abstain한다. Foundry로 쓰레기 축을 만들지 않는다.
+Changes:
+- `matchEnPivotSlot`: M1 domainMatchSlot → M2 en_literal⊂en[] → M3 concept+kind. 다중 db는 ambiguous
+- M3 miss: `refreshDomain`+`enrichDomainEn` 1회(쿨다운 10분) → 재매칭. 실패 시 `_negative[값]` TTL 1일
+- Generate `unresolved[]` reason 3종만. Studio는 원문 surface 표시. 큐/SQL 없음
+- EnPivot 슬롯은 KO 축 재분할 건너뜀. smoke 1g (비과금)
+- __v: fragContract=166 llm=167 enPivot=168 fragments=165 Studio v=166
+Verification: HUMAN — 아래 배포 목록. smoke 1g.enMatch PASS. V0~V5는 배포 후. 5단계 선삭제 금지.
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/js/testWooFragments.js, new_ver/js/testWooEnPivot.js, new_ver/jssp/testWooAiGenerate.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/html/testWooAiStudio.js, new_ver/tools/testWooSmoke.js, docs/report/upgrade_plan/37_ENPivot_CanonicalLayer_174.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/23_SQLFirst_AI명령문.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, .cursor/skills/campaign-ai-studio/SKILL.md, .cursor/skills/campaign-ai-studio/pipeline-contracts.md, docs/log/log.md
+
+241. 2026-08-13 #174-3 도메인 EN 사전화 · {db,en[]} · bind=db
+Purpose: 컬럼 값 전체를 한 번 번역해 EN 매칭 사전을 만들고, WHERE에는 원본 db만 쓴다.
+Changes:
+- `enrichDomainEn`: pending nlMap/_bucket 키 1콜 번역 → `{db, en[]}`. concept 불변. 실패 시 원본 유지
+- Foundry `_attachDomainSnapshot`·Fragments `healDomain`에서 호출
+- `entryDb`로 sampleBind/resolveNlParams/domainMatchSlot이 객체를 바인딩하지 않음
+- merge `_source.concept` 보존. smoke 1f (비과금)
+- __v: enPivot=167 fragContract=165 fragments=164 foundry=162
+Verification: HUMAN — 아래 배포 목록. smoke 1f.domainEn PASS. 신규/heal frag의 param_domain에 en[] · SQL은 db.
+Changed files: new_ver/js/testWooEnPivot.js, new_ver/js/testWooFragContract.js, new_ver/js/testWooFoundry.js, new_ver/js/testWooFragments.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/report/upgrade_plan/37_ENPivot_CanonicalLayer_174.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/23_SQLFirst_AI명령문.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+240. 2026-08-13 #174-2 패치 — 전체 NL 번역 필수 · M1 스킵 폐기 · retryInput
+Purpose: 조사/청중명사로 번역을 건너뛰면 오타(셔율·10데)를 놓친다. 번역이 의미를 살린 뒤에야 사용자가 결과를 판단할 수 있다.
+Changes:
+- extractSlots: 전체 NL 1콜이 기본. JOSA/NOISE·M1 커버로 스킵하지 않음
+- 동일 문자열 해시 캐시만 0콜(이미 번역한 재사용). 실패는 캐시하지 않음
+- 추출 실패 → retryInput, Pass0/Foundry 우회 금지. Studio는 재입력 안내
+- M1은 매칭 층으로 유지(scanM1). smoke 1e는 캐시 시드(비과금)
+- enPivot/llm __v=166 · Studio litmus v=165
+Verification: HUMAN — EnPivot+Llm+Generate+StudioContext+Studio.jssp/Js 재등록. URL v=165. smoke 1e. 오타 NL은 번역 후 슬롯, 해석 불가면 재입력(큐 없음).
+Changed files: new_ver/js/testWooEnPivot.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiGenerate.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/tools/testWooSmoke.js, docs/report/upgrade_plan/37_ENPivot_CanonicalLayer_174.md, docs/report/upgrade_plan/01_진행판.md, .cursor/skills/campaign-ai-studio/SKILL.md, .cursor/skills/campaign-ai-studio/pipeline-contracts.md, docs/log/log.md
+
+239. 2026-08-13 #174-2 EN Pivot 추출 · M1 스킵·NL 캐시·concept 불변
+Purpose: 추출 주경로를 한국어 Pass0에서 EN Pivot으로 옮기되, 카탈로그 원문이 NL을 덮으면 번역 LLM을 0회 호출한다.
+Changes:
+- 신규 `testWooEnPivot.js` (`testWoo.enPivot` __v=165): scanM1 → 잔여만 translateAndExtract 1콜 · NL 해시 캐시 TTL 1일
+- `_source.concept`이 있으면 LLM 제안을 aliases만 적립. surface(원문)를 pipeline `text`로 유지
+- `generatePlan`은 EnPivot 성공(m1/cache/llm) 시 Pass0 생략. 실패 시에만 잔여 Pass0
+- smoke 1e (비과금). llm __v=165. expectedByMod llm=165 enPivot=165
+Verification: HUMAN — **신규** `woo:testWooEnPivot.js` 등록 후 Generate/StudioContext/Llm/Smoke 재등록. smoke 1e.enPivot PASS. 서버 로그 skip=m1 또는 cache_hit.
+Changed files: new_ver/js/testWooEnPivot.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiGenerate.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, new_ver/workflow/testWooFoundryBatch.js, new_ver/workflow/testWooFoundryDryRun.js, new_ver/workflow/testWooGoldenRun.js, .cursor/skills/campaign-ai-studio/SKILL.md, .cursor/skills/campaign-ai-studio/pipeline-contracts.md, docs/report/upgrade_plan/37_ENPivot_CanonicalLayer_174.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/23_SQLFirst_AI명령문.md, docs/report/upgrade_plan/34_Pass0_슬롯원자분할_170.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+238. 2026-08-13 #174-1 Foundry 다중 JSON 첫 채택 · extra_fragment_dropped
+Purpose: gender 실종 원인인 다중 JSON 파싱을 V0 계약에 맞춤. 2개 이상이면 죽이지 않고 첫 객체 채택, 나머지는 미처리 슬롯으로 큐에 되돌린다.
+Changes:
+- `_parseFragmentJson`: objs[0] 채택. 축 mismatch throw 제거. 로그 `extra_fragment_dropped`
+- `generateFragmentForSlot` extraSlots 반환 · `processQueueItem` pending merge
+- 프롬프트: 산문/표/경고/두 번째 JSON 금지
+- smoke 1d V0 유닛. foundry __v=161 · expectedByMod foundry=161
+Verification: HUMAN — woo:testWooFoundry.js + StudioContext.jssp 재등록. smoke 1d.parseMultiJson PASS. 서버 로그 extra_fragment_dropped.
+Changed files: new_ver/js/testWooFoundry.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/report/upgrade_plan/37_ENPivot_CanonicalLayer_174.md, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+237. 2026-08-13 #174 문서 패치 P1~P5 (번역 스킵·V0·concept 불변·R6 게이트)
+Purpose: 검수 결함 5건을 0단계 착수 전 문서 37에 고정. V3 번역 0회가 설계상 불가능했던 구멍(캐시 미정의)과 1단계 스킵 분기·concept 분기·V6/5단계 순환·R6 조기 착수를 막는다.
+Changes:
+- P1: M1 선 스캔 + NL 해시 캐시(TTL 1일). V3는 이 게이트로 달성
+- P2: V0 신설. D3=#219이면 1단계 코드 수정 없이 V0만
+- P3: concept은 schema+xpath 최초 1회 불변. 다른 제안은 conceptAliases[]
+- P4: 합격 순서 V0~V5 → 5단계 → V6
+- P5: R6은 #174-4 후. testWooLlm.js 수정 허용 목록 포함
+Verification: 문서만. 코드 없음. 다음 = #174 0단계 D1~D5.
+Changed files: docs/report/upgrade_plan/37_ENPivot_CanonicalLayer_174.md, docs/log/log.md
 
 236. 2026-08-13 #174 EN-Pivot 로드맵 반영 · #170/#168-B/#172 재개
 Purpose: 08-13 원문(번역 기반 param 추출)을 고도화 정본에 넣고, 조사/어미 사전 증식 경로를 폐기하며, 수정이 필요한 완료 차수를 미완료로 되돌린다.

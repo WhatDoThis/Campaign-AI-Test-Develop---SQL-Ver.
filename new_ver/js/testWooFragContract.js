@@ -4,7 +4,7 @@
  * Stage A / libraryLookup / Foundry publish / Dedup / Compiler가
  * 각자 복제하던 축·색인·커버·샘플바인딩을 한곳에서 제공한다.
  * 같은 tags/name 축 frag는 값 사전 공백이어도 재사용하고, 별칭은 검증 후 merge한다.
- * NL 매칭은 카탈로그 키⊂문장(렉시콘 분할). LIKE 토큰⊂필드만으로는 조사 붙은 말을 못 찾는다.
+ * NL 매칭은 M1 원문⊂문장 → M2 en[] → M3 concept. {db,en} 바인딩은 db만. litmus __v=166.
  *
  * [Main Functions]
  * ===========
@@ -14,7 +14,9 @@
  * - keywordsFromSlot — Stage A 토큰(+조사 어간·축 태그). 기능어는 LIKE에 안 넣음
  * - collectLexicon / splitByLexicon / mergeLexiconSlots — 카탈로그 값⊂NL 분할
  * - stemToken / isNoiseResidue — 한국어 조사·청중명사
- * - normalizeParamDomain / domainMatchSlot — 도메인 정규화·값 매칭(카탈로그 키⊂슬롯)
+ * - normalizeParamDomain / domainMatchSlot / entryDb — 도메인 정규화·값 매칭·{db,en} 원본
+ * - matchEnPivotSlot / conceptOf / kindCompatible — M1→M2→M3 매칭
+ * - isNegative / markNegative / inHealCooldown / stampHeal — _negative·heal 쿨다운
  * - validateBind / attachAlias / mergeParamDomainJson — 바인딩 검증·별칭 보완·도메인 merge
  * - sampleBindSql — {{param}} 검증/Dedup용 샘플 치환(유일 구현)
  * - coversSlot / libraryHitPredicate — 재사용·서가 히트(축 identity, 값 미등재≠신규)
@@ -280,13 +282,14 @@ testWoo.fragContract = (function () {
       });
     }
     function addMap(map, card) {
-      var nk, nv;
+      var nk, nv, dbv;
       if (!map || typeof map !== "object") return;
       for (nk in map) {
         if (!map.hasOwnProperty(nk)) continue;
         add(nk, card);
         nv = map[nk];
-        if (nv != null && typeof nv !== "object") add(String(nv), card);
+        dbv = entryDb(nv);
+        if (dbv != null && typeof dbv !== "object") add(String(dbv), card);
       }
     }
     var ci, card, domain, k, spec, ei, syn, si, synParts;
@@ -572,6 +575,16 @@ testWoo.fragContract = (function () {
     return false;
   }
 
+  function _isEnPair(v) {
+    return !!(v && typeof v === "object" && !_isArray(v) &&
+      (v.db != null || _isArray(v.en)));
+  }
+
+  function entryDb(v) {
+    if (_isEnPair(v) && v.db != null) return v.db;
+    return v;
+  }
+
   function domainMatchSlot(domainRaw, slotText) {
     var domain = normalizeParamDomain(domainRaw);
     if (!domain) return null;
@@ -583,12 +596,13 @@ testWoo.fragContract = (function () {
       if (k.charAt(0) === "_") continue;
       var spec = domain[k] || {};
       var map = spec.nlMap;
-      var nk;
+      var nk, dbv;
       if (map && typeof map === "object") {
         for (nk in map) {
           if (!map.hasOwnProperty(nk)) continue;
-          if (_ciHas(text, nk) || _ciHas(text, map[nk])) {
-            return { param: k, nl: String(nk), value: map[nk] };
+          dbv = entryDb(map[nk]);
+          if (_ciHas(text, nk) || (dbv != null && typeof dbv !== "object" && _ciHas(text, dbv))) {
+            return { param: k, nl: String(nk), value: dbv != null ? dbv : map[nk] };
           }
         }
       }
@@ -605,10 +619,188 @@ testWoo.fragContract = (function () {
       for (nk in bm) {
         if (!bm.hasOwnProperty(nk)) continue;
         if (_ciHas(text, nk))
-          return { param: "_bucket", nl: String(nk), value: bm[nk] };
+          return { param: "_bucket", nl: String(nk), value: entryDb(bm[nk]) };
       }
     }
     return null;
+  }
+
+  var HEAL_COOLDOWN_MS = 600000;
+  var NEGATIVE_TTL_MS = 86400000;
+
+  function _healCooldownMs() {
+    try {
+      var env = testWoo.env && testWoo.env.getEnv ? testWoo.env.getEnv() : null;
+      var t = env && env.triage;
+      if (t && t.healCooldownMs != null) {
+        var n = Number(t.healCooldownMs);
+        if (!isNaN(n) && n >= 0) return n;
+      }
+    } catch (eC) { /* default */ }
+    return HEAL_COOLDOWN_MS;
+  }
+
+  function _negativeTtlMs() {
+    try {
+      var env = testWoo.env && testWoo.env.getEnv ? testWoo.env.getEnv() : null;
+      var t = env && env.triage;
+      if (t && t.negativeTtlMs != null) {
+        var n = Number(t.negativeTtlMs);
+        if (!isNaN(n) && n >= 0) return n;
+      }
+    } catch (eT) { /* default */ }
+    return NEGATIVE_TTL_MS;
+  }
+
+  function conceptOf(domainRaw) {
+    var domain = normalizeParamDomain(domainRaw);
+    var src = domain && domain._source;
+    return src && src.concept ? String(src.concept) : "";
+  }
+
+  function _domainKind(domain) {
+    var src = domain && domain._source;
+    var t = src ? String(src.tier || src.kind || "").toLowerCase() : "";
+    if (t === "enum" || t === "categorical") return "categorical";
+    if (t === "range") return "range";
+    if (t === "boolean") return "boolean";
+    if (domain && domain._bucket) return "range";
+    return "categorical";
+  }
+
+  function kindCompatible(slotKind, domainRaw) {
+    var sk = String(slotKind || "other").toLowerCase();
+    var dk = _domainKind(normalizeParamDomain(domainRaw));
+    if (!sk || sk === "other") return true;
+    return sk === dk;
+  }
+
+  function _dbKey(db) {
+    if (db != null && typeof db === "object") {
+      try { return JSON.stringify(db); } catch (eJ) { return String(db); }
+    }
+    return String(db);
+  }
+
+  function _enList(v) {
+    if (_isEnPair(v) && _isArray(v.en)) return v.en;
+    return null;
+  }
+
+  function _enHit(entry, lit) {
+    var ens = _enList(entry);
+    var n = _norm(lit);
+    if (!ens || !n || n.length < 2) return false;
+    var i, e;
+    for (i = 0; i < ens.length; i++) {
+      e = _norm(ens[i]);
+      if (!e || e.length < 2) continue;
+      if (n === e || n.indexOf(e) >= 0 || e.indexOf(n) >= 0) return true;
+    }
+    return false;
+  }
+
+  function _walkNlMaps(domain, fn) {
+    var k, spec, map, nk;
+    for (k in domain) {
+      if (!domain.hasOwnProperty(k)) continue;
+      if (k.charAt(0) === "_") continue;
+      spec = domain[k] || {};
+      map = spec.nlMap;
+      if (!map || typeof map !== "object") continue;
+      for (nk in map) {
+        if (!map.hasOwnProperty(nk)) continue;
+        fn(k, String(nk), map[nk]);
+      }
+    }
+    if (domain._bucket && domain._bucket.nlMap) {
+      map = domain._bucket.nlMap;
+      for (nk in map) {
+        if (!map.hasOwnProperty(nk)) continue;
+        fn("_bucket", String(nk), map[nk]);
+      }
+    }
+  }
+
+  function matchEnPivotSlot(domainRaw, slot) {
+    var domain = normalizeParamDomain(domainRaw);
+    var empty = { layer: null, param: "", nl: "", value: null, ambiguous: false, hits: [] };
+    if (!domain || !slot) return empty;
+    var surface = String(slot.surface || slot.text || "");
+    var enLit = String(slot.en_literal || "");
+    var concept = String(slot.concept || "");
+    var kind = String(slot.kind || "");
+    var m1 = surface ? domainMatchSlot(domain, surface) : null;
+    if (m1)
+      return {
+        layer: "M1", param: m1.param, nl: m1.nl || "", value: m1.value,
+        ambiguous: false, hits: [m1]
+      };
+    var hits = [];
+    var seen = {};
+    _walkNlMaps(domain, function (param, nl, entry) {
+      if (!_enHit(entry, enLit) && !_enHit(entry, surface)) return;
+      var db = entryDb(entry);
+      var key = param + "|" + _dbKey(db);
+      if (seen[key]) return;
+      seen[key] = 1;
+      hits.push({ param: param, nl: nl, value: db });
+    });
+    if (hits.length === 1)
+      return {
+        layer: "M2", param: hits[0].param, nl: hits[0].nl, value: hits[0].value,
+        ambiguous: false, hits: hits
+      };
+    if (hits.length > 1)
+      return {
+        layer: "M2", param: "", nl: "", value: null,
+        ambiguous: true, hits: hits
+      };
+    var locked = conceptOf(domain);
+    if (concept && locked && concept === locked && kindCompatible(kind, domain))
+      return {
+        layer: "M3", param: "", nl: "", value: null,
+        ambiguous: false, hits: [], concept: locked, kindOk: true
+      };
+    return empty;
+  }
+
+  function isNegative(domainRaw, key, nowMs) {
+    var domain = normalizeParamDomain(domainRaw);
+    var neg = domain && domain._negative;
+    if (!neg || typeof neg !== "object") return false;
+    var k = String(key || "");
+    if (!k || neg[k] == null) return false;
+    var ts = Number(neg[k]);
+    if (isNaN(ts)) return false;
+    var now = nowMs != null ? Number(nowMs) : new Date().getTime();
+    return (now - ts) < _negativeTtlMs();
+  }
+
+  function markNegative(domainRaw, key, nowMs) {
+    var domain = normalizeParamDomain(domainRaw);
+    var k = String(key || "");
+    if (!k) return domain;
+    if (!domain._negative || typeof domain._negative !== "object") domain._negative = {};
+    domain._negative[k] = nowMs != null ? Number(nowMs) : new Date().getTime();
+    return domain;
+  }
+
+  function inHealCooldown(domainRaw, nowMs) {
+    var domain = normalizeParamDomain(domainRaw);
+    var src = domain && domain._source;
+    if (!src || src.healAt == null) return false;
+    var ts = Number(src.healAt);
+    if (isNaN(ts)) return false;
+    var now = nowMs != null ? Number(nowMs) : new Date().getTime();
+    return (now - ts) < _healCooldownMs();
+  }
+
+  function stampHeal(domainRaw, nowMs) {
+    var domain = normalizeParamDomain(domainRaw);
+    if (!domain._source || typeof domain._source !== "object") domain._source = {};
+    domain._source.healAt = nowMs != null ? Number(nowMs) : new Date().getTime();
+    return domain;
   }
 
   function _isSingleAxisCached(card, domain) {
@@ -657,7 +849,7 @@ testWoo.fragContract = (function () {
       if (map && typeof map === "object") {
         for (nk in map) {
           if (!map.hasOwnProperty(nk)) continue;
-          nv = map[nk];
+          nv = entryDb(map[nk]);
           if (nv != null && typeof nv !== "object") return _sqlLit(nv);
         }
       }
@@ -666,7 +858,7 @@ testWoo.fragContract = (function () {
       if (domain._bucket && domain._bucket.nlMap) {
         for (bk in domain._bucket.nlMap) {
           if (!domain._bucket.nlMap.hasOwnProperty(bk)) continue;
-          b = domain._bucket.nlMap[bk];
+          b = entryDb(domain._bucket.nlMap[bk]);
           if (b && b[key] != null && typeof b[key] !== "object")
             return _sqlLit(b[key]);
         }
@@ -702,7 +894,7 @@ testWoo.fragContract = (function () {
         if (!_ciHas(hay, bk)) continue;
         if (String(bk).length >= String(bestB).length) {
           bestB = String(bk);
-          bestBv = bm[bk];
+        bestBv = entryDb(bm[bk]);
         }
       }
       if (bestBv && typeof bestBv === "object") {
@@ -726,10 +918,10 @@ testWoo.fragContract = (function () {
       var bestV = null;
       for (var nk in map) {
         if (!map.hasOwnProperty(nk)) continue;
-        if (!_ciHas(hay, nk) && !_ciHas(hay, map[nk])) continue;
+        if (!_ciHas(hay, nk) && !_ciHas(hay, entryDb(map[nk]))) continue;
         if (String(nk).length >= String(bestK).length) {
           bestK = String(nk);
-          bestV = map[nk];
+          bestV = entryDb(map[nk]);
         }
       }
       if (bestV != null && typeof bestV !== "object")
@@ -902,8 +1094,26 @@ testWoo.fragContract = (function () {
       base[k] = specB;
     }
     if (inc._source && typeof inc._source === "object") {
+      var prevSrc = base._source && typeof base._source === "object" ? base._source : {};
       base._source = inc._source;
+      if (prevSrc.concept) base._source.concept = prevSrc.concept;
+      if (prevSrc.conceptAliases) base._source.conceptAliases = prevSrc.conceptAliases;
+      if (prevSrc.enRefreshedAt) base._source.enRefreshedAt = prevSrc.enRefreshedAt;
+      if (prevSrc.enModel) base._source.enModel = prevSrc.enModel;
+      if (prevSrc.healAt != null && base._source.healAt == null)
+        base._source.healAt = prevSrc.healAt;
       changed = true;
+    }
+    if (inc._negative && typeof inc._negative === "object") {
+      if (!base._negative || typeof base._negative !== "object") base._negative = {};
+      var nkNeg;
+      for (nkNeg in inc._negative) {
+        if (!inc._negative.hasOwnProperty(nkNeg)) continue;
+        if (base._negative[nkNeg] == null) {
+          base._negative[nkNeg] = inc._negative[nkNeg];
+          changed = true;
+        }
+      }
     }
     return { changed: changed, json: JSON.stringify(base), domain: base };
   }
@@ -957,6 +1167,13 @@ testWoo.fragContract = (function () {
     keywordsFromSlot: keywordsFromSlot,
     normalizeParamDomain: normalizeParamDomain,
     domainMatchSlot: domainMatchSlot,
+    matchEnPivotSlot: matchEnPivotSlot,
+    conceptOf: conceptOf,
+    kindCompatible: kindCompatible,
+    isNegative: isNegative,
+    markNegative: markNegative,
+    inHealCooldown: inHealCooldown,
+    stampHeal: stampHeal,
     validateBind: validateBind,
     attachAlias: attachAlias,
     mergeParamDomainJson: mergeParamDomainJson,
@@ -964,7 +1181,8 @@ testWoo.fragContract = (function () {
     libraryHitPredicate: libraryHitPredicate,
     sampleBindSql: sampleBindSql,
     resolveNlParams: resolveNlParams,
+    entryDb: entryDb,
     scoreCard: scoreCard
   };
 })();
-testWoo.fragContract.__v = "164";
+testWoo.fragContract.__v = "166";

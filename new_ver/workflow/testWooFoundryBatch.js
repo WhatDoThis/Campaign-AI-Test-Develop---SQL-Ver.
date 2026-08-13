@@ -10,6 +10,7 @@ loadLibrary("woo:testWooFragContract.js");
 loadLibrary("woo:testWooDedup.js");
 loadLibrary("woo:testWooToolkit.js");
 loadLibrary("woo:testWooFeasibility.js");
+loadLibrary("woo:testWooEnPivot.js");
 loadLibrary("woo:testWooLlm.js");
 loadLibrary("woo:testWooGates.js");
 loadLibrary("woo:testWooFragments.js");

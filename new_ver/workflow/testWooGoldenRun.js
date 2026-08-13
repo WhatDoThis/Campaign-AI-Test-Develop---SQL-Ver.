@@ -4,6 +4,7 @@
 loadLibrary("woo:testWooConfig.js");
 loadLibrary("woo:testWooFragContract.js");
 loadLibrary("woo:testWooFragments.js");
+loadLibrary("woo:testWooEnPivot.js");
 loadLibrary("woo:testWooLlm.js");
 loadLibrary("woo:testWooCompiler.js");
 loadLibrary("woo:testWooGates.js");

@@ -1,9 +1,9 @@
 # #174 — EN-Pivot Canonical Layer
 
-> **상태:** `[ ]` 미착수 · **다음 = 0단계 조사 (코드 수정 금지)**  
+> **상태:** `[~]` 3단계 repo · **다음 = 4단계 매칭+heal+abstain**  
 > **이 문서가 추출 좌표계의 정답이다.** 코드가 어긋나면 코드를 고친다.  
 > AI가 HUMAN 검증을 PASS로 자체 처리하지 않음.  
-> 5단계(한국어 사전 제거)는 V1~V5 통과 전에 **절대 앞당기지 않는다.**
+> 5단계(한국어 사전 제거)는 V0~V5 통과 전에 **절대 앞당기지 않는다.**
 
 원문: `[별도]_고도화_개발아이디어_관리자작성본.md` 2026-08-13  
 선행 헌법: `#167` 축1=컬럼1 · `#168-A` `_source` · `#169` 서가 우선 · `#172` 공유 모듈  
@@ -17,7 +17,7 @@
 2. **번역의 효용은 “영어가 낫다”가 아니라 형태소 정규화·어간 추출·어절 분리를 공짜로 얻는 것이다.** `JOSA_TAIL`+`NOISE_WORD` 손코딩은 조사·어미 조합이 유한하지 않아 점근적으로 지는 싸움이다. 로그 #234/#235(렉시콘·조사 어간)가 그 증거다.
 3. **양쪽을 영어로 올려 영어 공간에서 만나고, DB 바인딩은 항상 원본 `db` 값이다.** 미지 스키마는 `concept`(영어 canonical)로 같은 축을 만난다. 새 값은 컬럼 단위 heal, 못 풀면 `unresolved`로 명시(조용히 삭제 금지).
 
-V7 비용 실측은 **부록**이다. 차수 합격은 기능(V1~V6)이다.
+V7 비용 실측은 **부록**이다. 차수 합격은 **V0~V5**. V6는 5단계 후만.
 
 ---
 
@@ -32,6 +32,8 @@ V7 비용 실측은 **부록**이다. 차수 합격은 기능(V1~V6)이다.
 | 서울 10대 사람 | Teenagers in Seoul |
 | 서울사는 10대 회원 | Teenage members living in Seoul |
 | 서울살이하는 10대 | Teenagers living in Seoul |
+| 셔율에 거듀하는 10데 (오타) | Teenagers residing in Seoul |
+| 인텬에 사는 냠성 (오타) | Men living in Incheon |
 
 한국어 표층에서 `서울살이하는`을 `서울`로 깎는 사전은 끝이 없다. EN 공간에서는 `Seoul` + `teenagers`로 만난다.
 
@@ -52,14 +54,16 @@ DB 값은 이미 영어인 경우가 많다 (`BASIC` / `PREMIUM` / `STUDENT` / `
 번역과 추출은 **한 콜**로 묶는다. EN 문장은 로그에 남긴다 (디버깅). temperature 0.
 
 ```
-NL "서울살이하는 10대 회원"
-  ↓ translateAndExtract (1콜, structured output)
-{ en:"Teenage members living in Seoul",
+NL "셔율에 거듀하는 10데"
+  ↓ 전체 문장 translateAndExtract (1콜, 필수) · 동일 NL 해시 캐시만 스킵
+{ en:"Teenagers residing in Seoul",
   slots:[
-    {surface:"서울살이하는", concept:"residential_region",
+    {surface:"셔율에 거듀하는", concept:"residential_region",
      en_literal:"Seoul", kind:"categorical"},
-    {surface:"10대",        concept:"age_group",
+    {surface:"10데",        concept:"age_group",
      en_literal:"teenagers", kind:"range"}]}
+  ↓ 실패(slots 없음 / LLM 오류) → 재입력 요청. Pass0·Foundry로 우회하지 않음
+  ↓ 성공 → 사용자가 결과 판단 · M1/M2/M3 매칭(#174-4)
   ↓ param_domain EN 공간 매칭
 region: {"서울":{db:"서울", en:["Seoul"]}}      → 히트
 age:    {"10대":{ageMin:10, ageMax:20, en:["teenager","teens"]}} → 히트
@@ -79,6 +83,7 @@ WHERE sRegion = '서울' AND iAge >= 10 AND iAge < 20
   },
   "_source": {
     "concept": "residential_region",
+    "conceptAliases": [],
     "enRefreshedAt": "ISO-Z",
     "enModel": "…"
   }
@@ -113,14 +118,14 @@ WHERE sRegion = '서울' AND iAge >= 10 AND iAge < 20
        2 EN 추출 (신규 testWooEnPivot.js)
        3 도메인 EN 사전화
        4 매칭+heal+abstain
-       5 한국어 사전 제거 (V1~V5 후만)
+       5 한국어 사전 제거 (V0~V5 후만)
 
 트랙 B · SQL-First 셸 (추출과 병렬 HUMAN · 신규 구현은 A보다 뒤)
   R2 캐시 [x] · R3 상태머신 [x] · R4 SQL목록 [x]
-  R5 매핑 [~] 배포 HUMAN · R6 커밋 · R7 relative · R8 정리
+  R5 매핑 [~] 배포 HUMAN까지 · R6 커밋 · R7 relative · R8 정리
 ```
 
-R5 배포 HUMAN은 막지 않는다. **R6 코드 착수는 #174 0단계 보고 승인 전이라도 가능**하되, 추출 결함(#170/#172 재개분)을 R6으로 우회 구현하지 말 것.
+R5 배포 HUMAN은 막지 않는다. **R6은 #174-4 완료 후 착수.** 그 전 트랙 B는 R5 배포 HUMAN까지. 추출 결함(#170/#172 재개분)을 R6으로 우회 구현하지 말 것.
 
 ---
 
@@ -130,7 +135,7 @@ R5 배포 HUMAN은 막지 않는다. **R6 코드 착수는 #174 0단계 보고 �
 
 | 폐기 대상 | 사유 | 코드 삭제 시점 |
 |---|---|---|
-| `JOSA_TAIL` / `NOISE_WORD` / `stemToken` / `isNoiseResidue` **증식** | 조사·어미는 유한하지 않음. #234/#235가 같은 싸움의 연장 | **5단계** (V1~V5 후). 그 전엔 M1 폴백으로 병존 |
+| `JOSA_TAIL` / `NOISE_WORD` / `stemToken` / `isNoiseResidue` **증식** | 조사·어미는 유한하지 않음. #234/#235가 같은 싸움의 연장 | **5단계** (V0~V5 후). 그 전엔 M1 폴백으로 병존 |
 | `#170` S5 한국어 축 힌트(지역명·성별 리터럴)를 슬롯 분할 **주경로**로 쓰는 것 | R1 위반 · EN `concept`가 대체 | 5단계 |
 | `nlMap` 수기 한→영을 **주 매칭 좌표계**로 유지 | 이미 번역표인데 손쌓기. LLM 번역+#174-3이 대체 | 주경로 즉시 폐기 · 키 삭제는 5단계 이후도 금지(하위호환) |
 | `collectLexicon`/`splitByLexicon`을 조사 정규화의 **영구 해법**으로 확장 | 렉시콘은 M1 보조. EN 추출이 주경로 | 증식 즉시 중지 · 함수 삭제는 5단계 |
@@ -155,7 +160,7 @@ R5 배포 HUMAN은 막지 않는다. **R6 코드 착수는 #174 0단계 보고 �
 |---|---|---|
 | `#170` | Pass0 입력을 `translateAndExtract` 슬롯으로. S1 원자 원칙만 헌법. KO 힌트 분할은 5단계에서 삭제 | V1 동일 slots 5패러프레이즈 |
 | `#168-B` | `plan.params` 입력을 EN 매칭 결과로. `unresolved`면 SQL 생성 안 함(R3) | V2 바인딩 + V5 abstain |
-| `#172` | `domainMatchSlot` → M1→M2→M3. `unresolved` reason 3종. 축 regex에 한국어 값 추가 금지 | V2~V5 · V6 grep 0 |
+| `#172` | `domainMatchSlot` → M1→M2→M3. `unresolved` reason 3종. 축 regex에 한국어 값 추가 금지 | V2~V5. V6 grep은 5단계 후 |
 | `#167` 도메인 | `param_domain` 값 = `{db, en[]}` 병존. `_source.concept` | #174-3 후 V2 |
 | `#169-P0` | 히트 술어가 “슬롯 한국어 ⊂ nlMap 키”만이면 EN 슬롯에서 미스. M2/concept 정합으로 보강 | #174-4 후 V3 library hit |
 
@@ -173,17 +178,30 @@ D1~D5를 파일:함수:라인으로 보고. 확인 못 한 것은 `확인 불가
 |---|---|
 | D1 | `testWooFragContract.js` 전문: `JOSA_TAIL` / `NOISE_WORD` / `stemToken` / `isNoiseResidue` 정의·참조. 한국어 값 리터럴(지역명·성별 등) 또는 컬럼명이 코드에 박힌 곳 전부 |
 | D2 | `testWoo.llm` structured output(tool calling / JSON schema 강제) 지원 여부. 지원 시 호출 시그니처, 아니면 `미지원`만 |
-| D3 | frag 생성 응답 최상위 JSON이 2개 이상일 때 `_fragDocFromLlm` 실제 코드 경로 |
+| D3 | frag 생성 응답 최상위 JSON이 2개 이상일 때 `_fragDocFromLlm` 실제 코드 경로. log #219(#169-P1 다중 JSON 파싱)와 대조 |
 | D4 | `param_domain` heal의 현재 트리거 조건과 갱신 범위 |
 | D5 | 위 보고 전에는 파일 수정 금지 (게이트) |
 
-### 1단계 — 출력 계약 고정 (D2/D3 반영)
+### 1단계 — 출력 계약 고정 (D2/D3 반영) · **repo [`~`]**
+
+D3 결과 log #219(#169-P1 다중 JSON 파싱)로 **이미 구현되어 있으면 1단계는 V0 확인만 하고 코드 수정 없이 종료한다.**  
+D3 실측: `#219`는 축 점수 선택·mismatch throw라 V0 미달 → **스킵 불가. 구현함.** D2 json_schema 미사용 → 스키마 강제 경로 없음.
 
 - fragment 생성은 슬롯 1개당 JSON 1개. 산문/표/경고문 금지를 프롬프트 명시.
-- 최상위 JSON이 2개 이상이면 파싱 실패로 죽이지 말고 **첫 번째 채택** + `extra_fragment_dropped` 로그 + 나머지 축은 미처리 슬롯 반환.
-- structured output 지원 시 스키마 강제 경로 우선.
+- 최상위 JSON이 2개 이상이면 파싱 실패로 죽이지 말고 **첫 번째 채택** + `extra_fragment_dropped` 로그 + 나머지 축은 미처리 슬롯으로 반환.
+- structured output 지원 시 스키마 강제 경로 우선. **현행: 미사용.**
 
-### 2단계 — EN Pivot 추출 (신규 `testWooEnPivot.js`)
+### 2단계 — EN Pivot 추출 (신규 `testWooEnPivot.js`) — **repo 완료** (`__v=165`)
+
+**전체 NL 번역이 기본 (V3의 근거는 캐시만).** 조사/청중명사로 번역을 건너뛰지 않는다. `셔율`/`10데`는 원문 literal ⊂ NL이 실패하지만 번역은 Seoul/teenagers를 살린다. 사용자가 결과를 판단할 수 있어야 한다.
+
+| 조건 | 동작 |
+|---|---|
+| 신규 NL (오타·비문 포함) | **전체 문장** `translateAndExtract` 1콜. M1 커버여부와 무관 |
+| 번역·추출 실패 (slots 없음 / LLM 오류) | `retryInput` — 재입력 요청. Pass0·Foundry 우회 금지 |
+| 동일 NL 정규화 해시 캐시 히트 (TTL 1일) | 번역 호출 **0** (이미 번역한 문장 재사용) |
+
+M1(원문 literal ⊂ NL)은 **매칭 층(#174-4)** 이지 추출 스킵 게이트가 아니다.
 
 `translateAndExtract(nlText, candidateCards)` → 단일 LLM 호출.
 
@@ -193,20 +211,21 @@ D1~D5를 파일:함수:라인으로 보고. 확인 못 한 것은 `확인 불가
 ```
 
 - `concept` = 영어 snake_case canonical. 후보 카드에 concept이 있으면 그중 선택, 없으면 신규 제안 + `is_new:true`.
+- **concept 불변:** `(schema + xpath)` 단위로 최초 1회 확정 후 불변. `_source.concept`이 이미 있으면 LLM 제안을 무시하고 기존 값을 쓴다. 다른 제안은 `_source.conceptAliases[]`에 적립만 (축 분기 금지). 변경은 HUMAN 승인(§7).
 - `en_literal` = 값의 영문 표현. 원문은 `surface`에 보존.
 - 해당 없으면 slots에서 빼지 말고 `concept:null` + `reason` (R3).
-- temperature 0. 실패 시 배치를 죽이지 말고 `slots:[]` + 로그.
+- temperature 0. 실패 시 배치를 죽이지 말고 `retryInput` + 재입력 안내. Pass0로 우회하지 않음.
 
-### 3단계 — 도메인 EN 사전화 (스키마 변경 금지)
+### 3단계 — 도메인 EN 사전화 (스키마 변경 금지) — **repo 완료** (`enPivot=167`)
 
 컬럼당 1회, distinct/enum 값 전체를 한 번에 번역해 `"<원문키>": { "db": <DB값>, "en": ["별칭1","별칭2"] }` 로 저장.
 
 - `en`은 배열. fare/plan 모호성은 둘 다.
 - range tier는 버킷 라벨 번역 (`10대` → `["teenager","teens","10s"]`).
-- `_source`에 `concept`, `enRefreshedAt`, `enModel`.
+- `_source`에 `concept`(불변), `conceptAliases[]`, `enRefreshedAt`, `enModel`.
 - 기존 `nlMap` 키 삭제 금지.
 
-### 4단계 — 매칭 + 자가치유 + abstain
+### 4단계 — 매칭 + 자가치유 + abstain — **repo 완료** (`fragContract=166` · `llm=167`)
 
 위에서 걸리면 종료:
 
@@ -222,32 +241,36 @@ abstain(R3): `unresolved[]` 반환. reason은 `concept_not_found` / `value_not_i
 
 ### 5단계 — 한국어 사전 제거
 
-2~4단계가 V1~V5 통과한 뒤에만 `JOSA_TAIL` / `NOISE_WORD` / `stemToken` / `isNoiseResidue` 및 지역명·성별 하드코딩을 제거한다. **먼저 지우면 실패 원인이 EnPivot인지 KO 사전인지 판별 불가.**
+2~4단계가 **V0~V5** 통과한 뒤에만 `JOSA_TAIL` / `NOISE_WORD` / `stemToken` / `isNoiseResidue` 및 지역명·성별 하드코딩을 제거한다. **먼저 지우면 실패 원인이 EnPivot인지 KO 사전인지 판별 불가.** V6를 맞추려고 5단계를 앞당기지 말 것.
 
 ---
 
 ## 7. 제약
 
-- 수정 허용: `new_ver/js/testWooFoundry.js`, `testWooFragContract.js`, `testWooFragments.js`, 신규 `new_ver/js/testWooEnPivot.js`  
-  (1단계 출력 계약·Pass0 연결이 필요하면 `testWooLlm.js`는 0단계 보고에 명시 후 HUMAN 승인)
+- 수정 허용: `new_ver/js/testWooFoundry.js`, `testWooFragContract.js`, `testWooFragments.js`, `testWooLlm.js`, 신규 `new_ver/js/testWooEnPivot.js`  
+  (`testWooLlm.js`는 #170 재개·`normalizeAtomicSlots` 연결에 필수. 조건부 HUMAN 승인 게이트 아님)
 - ES5 + Rhino (화살표/`let`/`const`/템플릿리터럴/`map`/`forEach` 금지)
 - 외부 번역 API 금지. 기존 연결된 LLM만.
 - 스키마 XML 변경 금지. `param_domain` JSON 안에서만 확장.
 - 컬럼명/스키마명/한국어 값 하드코딩 금지 (5단계 후 grep 0건)
 - 번역 결과를 DB 바인딩에 직접 쓰지 말 것. 바인딩은 항상 `db` 필드의 원본 값.
+- `concept`는 `(schema + xpath)` 최초 확정 후 불변. 축 임의 신설·기존 concept 덮어쓰기 금지. 변경은 HUMAN 승인.
 
 ---
 
 ## 8. 검증
 
+합격 순서: **V0~V5 → 5단계 → V6.** V6를 앞당기려고 5단계를 먼저 수행하는 것을 금지한다.
+
 | ID | 절차 | 합격 |
 |---|---|---|
+| V0 | frag 생성 응답에 최상위 JSON 2개를 강제 주입한 유닛 | 첫 번째 채택 · `extra_fragment_dropped` 로그 1건 · 나머지 축이 미처리 슬롯으로 반환 · 배치 계속 |
 | V1 | "서울에 사는 10대 고객" / "서울에 거주하는 10대들" / "서울 10대 사람" / "서울사는 10대 회원" / "서울살이하는 10대" | 5건 모두 동일 slots(region=서울, age_group=10대). 신규 frag 0 |
 | V2 | "서울에 사는 Z요금제 쓰는 20대 남성 고객" | frag 4개(region/plan/age/gender) Active, JSON parse error 0, unresolved 0 |
-| V3 | V2 재실행 | 신규 0, library hit 4, LLM 번역 호출 0(캐시 히트) |
+| V3 | V2 재실행 (동일 문자열) | 신규 0, library hit 4, LLM 번역 호출 0. **근거: 동일 NL 해시 캐시. M1 스킵 아님** |
 | V4 | DB에 신규 지역값 1건 삽입 후 그 값으로 요청 | `probe_values` 1회 → `param_domain` merge → SQL 생성 성공 |
 | V5 | 존재하지 않는 값("판교요금제") | unresolved 1, reason=`value_not_in_domain`, `_negative` 기록, SQL 생성 안 함 |
-| V6 | grep | 한국어 값 리터럴/컬럼명 하드코딩 0건 (**5단계 후**) |
+| V6 | grep (**5단계 후만 측정**) | 한국어 값 리터럴/컬럼명 하드코딩 0건 |
 
 ### 부록 V7 (게이트 아님)
 
@@ -257,7 +280,7 @@ abstain(R3): `unresolved[]` 반환. reason은 `concept_not_found` / `value_not_i
 
 ## 9. 산출물
 
-0단계 보고(D1~D5) → HUMAN 승인 → 단계별 diff 요약 → V1~V6 결과표 → `docs/log/log.md` (구현 시 해당 번호) · 본 문서 상태 `[x]`.
+0단계 보고(D1~D5) → HUMAN 승인 → 단계별 diff 요약 → V0~V5 결과표 → 5단계 → V6 → `docs/log/log.md` (구현 시 해당 번호) · 본 문서 상태 `[x]`.
 
 재개 차수 `#170`/`#168-B`/`#172`는 각 가이드의 #174 절을 닫은 뒤 `01_진행판.md`에서 `[x]` 복귀.
 
@@ -266,9 +289,9 @@ abstain(R3): `unresolved[]` 반환. reason은 `concept_not_found` / `value_not_i
 ## 10. Chat 한 줄
 
 ```
-차수: #174 0단계 (조사만 · 코드 금지)
-가이드: docs/report/upgrade_plan/37_ENPivot_CanonicalLayer_174.md
-선행: #167/#168-A/#169 헌법 유지 · #170/#168-B/#172 는 재개 상태(닫지 말 것)
-모드: 조사 D1~D5 → 보고는 결론 3줄 우선, 근거 표는 그 아래. 확인 불가면 '확인 불가'만.
-금지: 파일 수정 · 5단계 선삭제 · 스키마 XML · 외부 번역 API · 번역값을 DB 바인딩 · V7을 게이트로 승격
+차수: #174 HUMAN V0~V5
+가이드: docs/report/upgrade_plan/37_ENPivot_CanonicalLayer_174.md §8
+선행: #174-4 repo · smoke 1g.enMatch · ACC 배포
+모드: 검증 · V0~V5 PASS 후에만 5단계(KO 사전 삭제)
+금지: 5단계 선삭제 · 번역값을 DB 바인딩 · R6을 V0~V5 전에 착수
 ```

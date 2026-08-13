@@ -1,9 +1,8 @@
 /*
  * testWooLlm.js (LLM Pass0·Pass1 파이프라인)
  * ==================================================
- * litmus 동기 __v=164 (카탈로그 렉시콘 분할).
- * Pass0: NL→slots. 그 전에 라이브러리 nlMap/enum 값으로 슬롯을 확정한다.
- * Pass1: Stage A 후보만 보고 CNF plan 생성.
+ * litmus 동기 __v=168 (#174-4 Rhino: for 안 function 선언 금지).
+ * EnPivot(전체 문장 1콜, 캐시만 스킵) 후 Pass1. 추출 실패 시 재입력(Pass0 우회 금지).
  * 최종 SQL은 쓰지 않음. 동기 HttpClientRequest만 사용.
  *
  * [Main Functions]
@@ -11,7 +10,9 @@
  * - decomposeSlots — Pass0 NL→slots JSON(+원자 분할)
  * - normalizeAtomicSlots — 복합 슬롯→축별 슬롯(결정적, LLM 무관)
  * - selectPlan — Pass1 후보→CNF plan JSON
- * - generatePlan — 렉시콘 분할→Pass0→StageA→Pass1(+params 수리·domain heal)
+ * - generatePlan — EnPivot→M1/M2/M3 매칭→Pass1. retryInput·unresolved 시 SQL 없음
+ * - chat — 동기 chat/completions (EnPivot translateAndExtract)
+ * - parseJson — LLM 봉투→JSON 객체
  * - postChat — chat/completions 호출·오류 메타 부착
  * - postEmbedding — embeddings 호출·오류 메타 부착
  * - explainDedupDiff — dedup near 차이 설명(판정 무관)
@@ -20,8 +21,9 @@
  * [Dependencies]
  * =========
  * - testWoo.cfg.getConfig — apiKey·model·endpoint·provider
- * - testWoo.fragments.searchSlots·listLexiconCards·healDomain — Stage A · 값사전
- * - testWoo.fragContract.splitByLexicon·validateBind — 카탈로그 값⊂NL · 바인딩
+ * - testWoo.enPivot.extractSlots·toPipelineSlots — 전체 NL 번역 (load 선행)
+ * - testWoo.fragments.searchSlots·listLexiconCards·healDomain·saveParamDomain
+ * - testWoo.fragContract.matchEnPivotSlot·validateBind — M1/M2/M3 · 바인딩
  * - HttpClientRequest + MemoryBuffer — serverConf urlPermission 필요
  * - Foundry `_normalizeSlots` — normalizeAtomicSlots 재사용
  *
@@ -31,6 +33,9 @@
  * - HttpClientRequest.wait 금지 · Rhino map/forEach/filter 금지
  * - #170: 슬롯 1개 = 조건 축 1개. 연령 다중 밴드(30대 50대)는 age 슬롯 1개로 유지
  * - 같은 tags/name 축 frag가 있으면 unmatched→Foundry 신규 생성 금지. 값은 heal
+ * - unresolved(concept_not_found|value_not_in_domain|ambiguous) → Foundry 큐 금지
+ * - EnPivot 슬롯(concept/en_literal)은 KO 축 재분할을 건너뜀
+ * - Rhino strict: function 선언은 함수 본문 최상위만. for/if 안 금지
  */
 var testWoo = testWoo || {};
 testWoo.llm = (function () {
@@ -163,8 +168,26 @@ testWoo.llm = (function () {
     var base = {
       hintedCategory: slot && slot.hintedCategory ? String(slot.hintedCategory) : "",
       searchKeywords: (slot && slot.searchKeywords) ? slot.searchKeywords : [],
-      resolvedName: slot && slot.resolvedName ? String(slot.resolvedName) : ""
+      resolvedName: slot && slot.resolvedName ? String(slot.resolvedName) : "",
+      concept: slot && slot.concept ? slot.concept : null,
+      en_literal: slot && slot.en_literal ? String(slot.en_literal) : "",
+      kind: slot && slot.kind ? String(slot.kind) : "",
+      polarity: slot && slot.polarity ? String(slot.polarity) : ""
     };
+    if (base.concept || base.en_literal) {
+      if (_isNoiseResidue(text) && !base.concept) return [];
+      return [{
+        text: text,
+        hintedCategory: base.hintedCategory || "",
+        searchKeywords: base.searchKeywords.length ?
+          base.searchKeywords : _slotKeywords(text, maxTok),
+        resolvedName: base.resolvedName,
+        concept: base.concept,
+        en_literal: base.en_literal,
+        kind: base.kind,
+        polarity: base.polarity
+      }];
+    }
     var age = _extractAgePhrase(text);
     var gender = _extractGenderPhrase(text);
     var plan = _extractPlanPhrase(text);
@@ -264,7 +287,11 @@ testWoo.llm = (function () {
           text: p.text,
           hintedCategory: p.hintedCategory || "",
           searchKeywords: p.searchKeywords || [],
-          resolvedName: p.resolvedName || ""
+          resolvedName: p.resolvedName || "",
+          concept: p.concept || null,
+          en_literal: p.en_literal || "",
+          kind: p.kind || "",
+          polarity: p.polarity || ""
         });
       }
     }
@@ -414,24 +441,243 @@ testWoo.llm = (function () {
   function _attachLexiconCandidates(slotCandidates, pack) {
     if (!slotCandidates || !pack || !pack.cards || !pack.cards.length) return slotCandidates;
     var fc = testWoo.fragContract;
-    var si, ci, sc, card, hits, name;
+    var si, ci, sc, card, hits, name, srcConcept, seen, hi, m;
+    function addHit(c) {
+      if (!c || !c.name || seen[c.name]) return;
+      seen[c.name] = 1;
+      hits.push(c);
+    }
     for (si = 0; si < slotCandidates.length; si++) {
       sc = slotCandidates[si];
-      if (sc.candidates && sc.candidates.length) continue;
       hits = [];
+      seen = {};
+      if (sc.candidates) {
+        for (hi = 0; hi < sc.candidates.length; hi++) addHit(sc.candidates[hi]);
+      }
       name = String(sc.resolvedName || "");
       for (ci = 0; ci < pack.cards.length; ci++) {
         card = pack.cards[ci];
         if (!card) continue;
-        if (name && String(card.name) === name) { hits.push(card); continue; }
+        if (name && String(card.name) === name) { addHit(card); continue; }
         if (!fc) continue;
+        srcConcept = fc.conceptOf ? fc.conceptOf(card.param_domain) : "";
+        if (sc.concept && srcConcept && String(sc.concept) === srcConcept &&
+            fc.axesCompatible(card, sc)) {
+          addHit(card);
+          continue;
+        }
+        if (fc.matchEnPivotSlot) {
+          m = fc.matchEnPivotSlot(card.param_domain, sc);
+          if (m && m.layer && fc.axesCompatible(card, sc)) {
+            addHit(card);
+            continue;
+          }
+        }
         if (fc.domainMatchSlot && fc.domainMatchSlot(card.param_domain, sc.text) &&
             fc.axesCompatible(card, sc))
-          hits.push(card);
+          addHit(card);
       }
       if (hits.length) sc.candidates = hits;
     }
     return slotCandidates;
+  }
+
+  function _negKey(sc) {
+    var t = String((sc && (sc.text || sc.surface)) || "");
+    if (t) return t;
+    return String((sc && sc.en_literal) || "");
+  }
+
+  function _unresolvedItem(sc, reason, extra) {
+    extra = extra || {};
+    return {
+      surface: String((sc && (sc.text || sc.surface)) || ""),
+      reason: String(reason || "concept_not_found"),
+      concept: (sc && sc.concept) ? String(sc.concept) : "",
+      en_literal: (sc && sc.en_literal) ? String(sc.en_literal) : "",
+      fragment: extra.fragment ? String(extra.fragment) : ""
+    };
+  }
+
+  function _unresolvedTexts(items) {
+    var out = [];
+    var i, u, r, s;
+    for (i = 0; i < (items || []).length; i++) {
+      u = items[i] || {};
+      s = String(u.surface || "");
+      r = String(u.reason || "");
+      if (r === "value_not_in_domain")
+        out.push("값 '" + s + "'이(가) 도메인에 없습니다");
+      else if (r === "ambiguous")
+        out.push("값 '" + s + "'이(가) 여러 값과 맞습니다");
+      else
+        out.push("조건을 해석할 축을 찾지 못했습니다: " + s);
+    }
+    return out;
+  }
+
+  function _saveSlotDomain(card, domain) {
+    if (!card || !card.name || !testWoo.fragments) return;
+    if (!testWoo.fragments.saveParamDomain && !testWoo.fragments.getByName) return;
+    var row = null;
+    try { row = testWoo.fragments.getByName(String(card.name)); }
+    catch (eG) { return; }
+    if (!row || !row.id) return;
+    try {
+      if (testWoo.fragments.saveParamDomain)
+        testWoo.fragments.saveParamDomain(row, domain);
+    } catch (eS) {
+      try {
+        logWarning("[testWoo.llm.saveParamDomain] " + String(eS.message || eS));
+      } catch (eL) { /* non-ACC */ }
+    }
+  }
+
+  function _healSlotValue(sc, card) {
+    var fc = testWoo.fragContract;
+    var domain = fc.normalizeParamDomain(card.param_domain);
+    var key = _negKey(sc);
+    var now = new Date().getTime();
+    if (fc.isNegative && fc.isNegative(domain, key, now))
+      return { ok: false, skip: "negative", domain: domain };
+    if (fc.inHealCooldown && fc.inHealCooldown(domain, now))
+      return { ok: false, skip: "cooldown", domain: domain };
+    if (fc.stampHeal) domain = fc.stampHeal(domain, now);
+    if (testWoo.toolkit && testWoo.toolkit.refreshDomain) {
+      try {
+        var rr = testWoo.toolkit.refreshDomain(domain);
+        if (rr && rr.ok && rr.domain) domain = rr.domain;
+      } catch (eR) { /* stale snapshot */ }
+    }
+    if (testWoo.enPivot && testWoo.enPivot.enrichDomainEn) {
+      try {
+        var enr = testWoo.enPivot.enrichDomainEn(domain);
+        if (enr && enr.domain) domain = enr.domain;
+      } catch (eE) { /* keep domain */ }
+    }
+    var hit = fc.matchEnPivotSlot ? fc.matchEnPivotSlot(domain, sc) : null;
+    if (hit && (hit.layer === "M1" || hit.layer === "M2") && !hit.ambiguous) {
+      card.param_domain = domain;
+      _saveSlotDomain(card, domain);
+      return { ok: true, match: hit, domain: domain, card: card };
+    }
+    if (fc.markNegative) domain = fc.markNegative(domain, key, now);
+    card.param_domain = domain;
+    _saveSlotDomain(card, domain);
+    return { ok: false, skip: "miss", match: hit, domain: domain };
+  }
+
+  function _collectSlotCards(sc, pack) {
+    var cards = [];
+    var seen = {};
+    function add(c) {
+      if (!c || !c.name || seen[c.name]) return;
+      seen[c.name] = 1;
+      cards.push(c);
+    }
+    var i;
+    if (sc && sc.candidates) {
+      for (i = 0; i < sc.candidates.length; i++) add(sc.candidates[i]);
+    }
+    if (pack && pack.cards) {
+      for (i = 0; i < pack.cards.length; i++) add(pack.cards[i]);
+    }
+    return cards;
+  }
+
+  function _matchedSlot(sc, card, match) {
+    var name = card ? String(card.name || "") : String(sc.resolvedName || "");
+    return {
+      id: sc.id,
+      text: sc.text,
+      hintedCategory: sc.hintedCategory || "",
+      searchKeywords: sc.searchKeywords || [],
+      resolvedName: name,
+      concept: sc.concept || null,
+      en_literal: sc.en_literal || "",
+      kind: sc.kind || "",
+      polarity: sc.polarity || "",
+      match: match || null,
+      candidates: card ? [card] : (sc.candidates || [])
+    };
+  }
+
+  function _resolveEnPivotSlot(sc, pack, skipPass0) {
+    var fc = testWoo.fragContract;
+    if (!fc || !fc.matchEnPivotSlot)
+      return { kind: "empty" };
+    var cards = _collectSlotCards(sc, pack);
+    var m1 = [];
+    var m2 = [];
+    var m2Amb = [];
+    var m3 = [];
+    var i, card, m;
+    for (i = 0; i < cards.length; i++) {
+      card = cards[i];
+      m = fc.matchEnPivotSlot(card.param_domain, sc);
+      if (!m || !m.layer) continue;
+      if (m.layer === "M1") m1.push({ card: card, match: m });
+      else if (m.layer === "M2" && m.ambiguous) m2Amb.push({ card: card, match: m });
+      else if (m.layer === "M2") m2.push({ card: card, match: m });
+      else if (m.layer === "M3") m3.push({ card: card, match: m });
+    }
+    if (m1.length)
+      return { kind: "matched", slot: _matchedSlot(sc, m1[0].card, m1[0].match) };
+    if (m2.length === 1 && !m2Amb.length)
+      return { kind: "matched", slot: _matchedSlot(sc, m2[0].card, m2[0].match) };
+    if (m2.length > 1 || m2Amb.length)
+      return {
+        kind: "unresolved",
+        item: _unresolvedItem(sc, "ambiguous", {
+          fragment: (m2[0] || m2Amb[0]).card.name
+        })
+      };
+    if (m3.length) {
+      var healed = _healSlotValue(sc, m3[0].card);
+      if (healed && healed.ok)
+        return { kind: "matched", slot: _matchedSlot(sc, m3[0].card, healed.match) };
+      return {
+        kind: "unresolved",
+        item: _unresolvedItem(sc, "value_not_in_domain", {
+          fragment: m3[0].card.name
+        })
+      };
+    }
+    if (skipPass0 && !sc.concept)
+      return { kind: "unresolved", item: _unresolvedItem(sc, "concept_not_found") };
+    return { kind: "empty" };
+  }
+
+  function _applyMatchParams(plan, matchedSlots) {
+    if (!plan || !matchedSlots) return;
+    var byName = {};
+    var i, sc, name, m;
+    for (i = 0; i < matchedSlots.length; i++) {
+      sc = matchedSlots[i];
+      m = sc && sc.match;
+      if (!m || (m.layer !== "M1" && m.layer !== "M2") || m.value == null) continue;
+      name = String(sc.resolvedName || "");
+      if (!name && sc.candidates && sc.candidates[0])
+        name = String(sc.candidates[0].name || "");
+      if (name) byName[name] = m;
+    }
+    _walkFragments(plan, function (item) {
+      if (!item || !item.fragment) return;
+      m = byName[String(item.fragment)];
+      if (!m) return;
+      if (!item.params || typeof item.params !== "object") item.params = {};
+      if (m.value != null && typeof m.value === "object" && !_isArray(m.value)) {
+        var k;
+        for (k in m.value) {
+          if (!m.value.hasOwnProperty(k)) continue;
+          if (item.params[k] == null || item.params[k] === "")
+            item.params[k] = m.value[k];
+        }
+      } else if (m.param && m.param !== "_bucket") {
+        if (item.params[m.param] == null || item.params[m.param] === "")
+          item.params[m.param] = m.value;
+      }
+    });
   }
 
   // 3. full pipeline helper
@@ -440,13 +686,47 @@ testWoo.llm = (function () {
     var lexSlots = [];
     if (pack.lex && pack.lex.length && testWoo.fragContract.splitByLexicon)
       lexSlots = testWoo.fragContract.splitByLexicon(nlRequest, pack.lex) || [];
+    var pivot = null;
+    var pivotSlots = [];
+    var skipPass0 = false;
+    var skipReason = "";
+    if (testWoo.enPivot && testWoo.enPivot.extractSlots) {
+      try { pivot = testWoo.enPivot.extractSlots(nlRequest, pack.cards || []); }
+      catch (eP) {
+        logWarning("[testWoo.llm.generatePlan] enPivot failed: " +
+          String(eP.message || eP));
+        pivot = { en: "", slots: [], meta: { skipReason: "llm_fail", retryInput: true } };
+      }
+    }
+    if (pivot && testWoo.enPivot.toPipelineSlots)
+      pivotSlots = testWoo.enPivot.toPipelineSlots(pivot.slots || []) || [];
+    skipReason = pivot && pivot.meta ? String(pivot.meta.skipReason || "") : "";
+    if (pivot && pivot.meta && pivot.meta.retryInput) {
+      return {
+        grainKey: "",
+        include: [],
+        exclude: [],
+        retryInput: true,
+        unmatched: ["조건을 해석하지 못했습니다. 문장을 다시 입력해 주세요."],
+        unmatchedSlots: [],
+        matchedSlots: [],
+        _meta: { slots: [], slotCandidates: [], stage: "enPivot_retry",
+          enPivot: skipReason, en: pivot.en || "" }
+      };
+    }
+    if (pivotSlots.length && (skipReason === "cache" || skipReason === "llm"))
+      skipPass0 = true;
     var llmSlots = [];
-    try {
-      llmSlots = decomposeSlots(nlRequest) || [];
-    } catch (e0) {
-      logWarning("[testWoo.llm.generatePlan] Pass0 failed — lexicon slots only: " +
-        String(e0.message || e0));
-      llmSlots = [];
+    if (skipPass0) {
+      llmSlots = pivotSlots;
+    } else if (!testWoo.enPivot) {
+      try {
+        llmSlots = decomposeSlots(nlRequest) || [];
+      } catch (e0) {
+        logWarning("[testWoo.llm.generatePlan] Pass0 failed — lexicon only: " +
+          String(e0.message || e0));
+        llmSlots = [];
+      }
     }
     var slots = llmSlots;
     if (testWoo.fragContract && testWoo.fragContract.mergeLexiconSlots)
@@ -455,15 +735,27 @@ testWoo.llm = (function () {
     slots = normalizeAtomicSlots(slots);
     try {
       logInfo("[testWoo.llm.generatePlan] lexicon=" + lexSlots.length +
-        " llm=" + llmSlots.length + " merged=" + slots.length);
+        " llm=" + llmSlots.length + " merged=" + slots.length +
+        " enPivot=" + (skipReason || "off") +
+        " skipPass0=" + (skipPass0 ? "1" : "0"));
     } catch (eLog) { /* non-ACC */ }
     var slotCandidates = testWoo.fragments.searchSlots(slots);
     slotCandidates = _attachLexiconCandidates(slotCandidates, pack);
     var empty = [];
     var emptySlots = [];
     var matchedSlots = [];
+    var unresolved = [];
     for (var si = 0; si < slotCandidates.length; si++) {
       var sc = slotCandidates[si];
+      var decided = _resolveEnPivotSlot(sc, pack, skipPass0);
+      if (decided.kind === "matched") {
+        matchedSlots.push(decided.slot);
+        continue;
+      }
+      if (decided.kind === "unresolved") {
+        unresolved.push(decided.item);
+        continue;
+      }
       if (!sc.candidates || !sc.candidates.length) {
         if (_isNoiseResidue(sc.text)) continue;
         empty.push(sc.text);
@@ -472,7 +764,9 @@ testWoo.llm = (function () {
           text: sc.text,
           hintedCategory: sc.hintedCategory || "",
           searchKeywords: sc.searchKeywords || [],
-          resolvedName: sc.resolvedName || ""
+          resolvedName: sc.resolvedName || "",
+          concept: sc.concept || null,
+          en_literal: sc.en_literal || ""
         });
       } else matchedSlots.push({
         id: sc.id,
@@ -480,8 +774,23 @@ testWoo.llm = (function () {
         hintedCategory: sc.hintedCategory || "",
         searchKeywords: sc.searchKeywords || [],
         resolvedName: sc.resolvedName || "",
+        concept: sc.concept || null,
+        en_literal: sc.en_literal || "",
         candidates: sc.candidates
       });
+    }
+    if (unresolved.length) {
+      return {
+        grainKey: "",
+        include: [],
+        exclude: [],
+        unmatched: _unresolvedTexts(unresolved),
+        unmatchedSlots: [],
+        matchedSlots: matchedSlots,
+        unresolved: unresolved,
+        _meta: { slots: slots, slotCandidates: slotCandidates, stage: "enPivot_unresolved",
+          enPivot: skipReason }
+      };
     }
     if (!matchedSlots.length && !empty.length) {
       return {
@@ -491,7 +800,8 @@ testWoo.llm = (function () {
         unmatched: ["조건 슬롯이 없습니다"],
         unmatchedSlots: [],
         matchedSlots: [],
-        _meta: { slots: slots, slotCandidates: slotCandidates, stage: "stageA_empty" }
+        _meta: { slots: slots, slotCandidates: slotCandidates, stage: "stageA_empty",
+          enPivot: skipReason }
       };
     }
     if (empty.length) {
@@ -502,14 +812,17 @@ testWoo.llm = (function () {
         unmatched: empty,
         unmatchedSlots: emptySlots,
         matchedSlots: matchedSlots,
-        _meta: { slots: slots, slotCandidates: slotCandidates, stage: "stageA_empty" }
+        _meta: { slots: slots, slotCandidates: slotCandidates, stage: "stageA_empty",
+          enPivot: skipReason }
       };
     }
     var plan = selectPlan(nlRequest, matchedSlots);
     plan.matchedSlots = matchedSlots;
     plan.unmatchedSlots = [];
     plan.nl_request = String(nlRequest || "");
-    plan._meta = { slots: slots, slotCandidates: slotCandidates, stage: "pass1" };
+    plan._meta = { slots: slots, slotCandidates: slotCandidates, stage: "pass1",
+      enPivot: skipReason };
+    _applyMatchParams(plan, matchedSlots);
     if (testWoo.compiler && testWoo.compiler.bindPlanParams)
       testWoo.compiler.bindPlanParams(plan, plan.nl_request);
     _repairMissingParams(plan);
@@ -714,7 +1027,11 @@ testWoo.llm = (function () {
   var LLM_MAX_TOKENS = 8192; // reasoning 토큰이 max_tokens 에 합산되는 모델 기준 기본값
   var FREQUENCY_PENALTY_MAX = 1;
   // 단계별 출력 상한 env 키. Pass1 은 후보 카드 전량을 받아 CNF 를 만들므로 출력이 더 길다.
-  var STAGE_TOKEN_KEY = { pass0: "pass0MaxTokens", pass1: "pass1MaxTokens" };
+  var STAGE_TOKEN_KEY = {
+    pass0: "pass0MaxTokens",
+    pass1: "pass1MaxTokens",
+    enPivot: "pass0MaxTokens"
+  };
 
   // reasoning 을 끄는 유일한 형식. thinking 모델은 사고 토큰을 max_tokens 에 합산하므로
   // 끄지 못하면 본문 몫이 0 이 되어 finish_reason="length" + 빈 응답이 온다.
@@ -1372,6 +1689,8 @@ testWoo.llm = (function () {
     normalizeAtomicSlots: normalizeAtomicSlots,
     selectPlan: selectPlan,
     generatePlan: generatePlan,
+    chat: _chat,
+    parseJson: _parseJson,
     postChat: postChat,
     postEmbedding: postEmbedding,
     explainDedupDiff: explainDedupDiff,
@@ -1380,4 +1699,4 @@ testWoo.llm = (function () {
     _readResponseBody: _readResponseBody
   };
 })();
-testWoo.llm.__v = "164";
+testWoo.llm.__v = "168";

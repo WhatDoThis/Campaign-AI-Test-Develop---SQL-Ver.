@@ -1,7 +1,7 @@
 /*
  * testWooFoundry.js (Fragment Foundry 배치 처리)
  * ==================================================
- * litmus 동기 __v=160 (#172 FragContract · domain merge 위임).
+ * litmus 동기 __v=162 (#174-3 도메인 EN 사전화).
  * 큐 슬롯별 triage → feasible만 SQL 생성 → dedup → publish.
  * 색인·샘플바인딩·재사용 게이트는 testWoo.fragContract에 위임.
  *
@@ -11,6 +11,7 @@
  * - processBatch — 프리플라이트·스테일 복구·queued 순차 처리
  * - runToolLoop — LLM tool calling 루프(requireJson·sanitize)
  * - generateFragmentForSlot — tool 루프 + 게이트 재시도 생성
+ * - parseFragmentJson — 최상위 JSON 열거·첫 채택·dropped 슬롯 (V0)
  * - dryRunSlot — 큐 없이 triage+생성 1회 스모크
  * - peekQueue — 읽기 전용 큐 조회
  * - isAutoApprove — Option testWooAiAutoApprove 판정
@@ -34,6 +35,7 @@
  * - reuse_after_publish = libraryHitPredicate (서가와 동일 게이트)
  * - #167: frag=축1=컬럼1 · 값은 {{param}}+param_domain
  * - 색인 수리: synonyms·sample_questions만 Write
+ * - #174-1: JSON 2+ → 첫 채택 + extra_fragment_dropped · 축 mismatch throw 금지
  */
 var testWoo = testWoo || {};
 testWoo.foundry = (function () {
@@ -405,8 +407,8 @@ testWoo.foundry = (function () {
         "Never put value tokens in the name (no gyeonggi, seoul, yplan, male, f).",
       "- Do NOT invent a higher-level value (부천→경기) without user approval. " +
         "If the slot value is missing from the column, do not emit a fragment.",
-      "When ready, output ONE fragment JSON object for THIS slot only.",
-      "FORBIDDEN: markdown fences, prose, tables, or a second fragment in the same answer.",
+      "When ready, output exactly ONE fragment JSON object for THIS slot only.",
+      "FORBIDDEN: markdown fences, prose, tables, warning text, or a second top-level JSON.",
       "If the slot mentions two axes (e.g. age+gender), still emit ONLY the axis for THIS slot text — never both JSON objects.",
       "OUTPUT JSON SCHEMA (keys must match exactly):",
       FRAGMENT_SCHEMA_EXAMPLE,
@@ -485,49 +487,49 @@ testWoo.foundry = (function () {
     return "";
   }
 
-  function _axisHintsFromSlot(slotText) {
-    if (testWoo.fragContract && testWoo.fragContract.axisFromSlot)
-      return testWoo.fragContract.axisFromSlot({ text: slotText });
-    return [];
-  }
-
-  function _fragExistsByName(name) {
-    if (!name || !testWoo.fragments || !testWoo.fragments.getByName) return false;
-    try {
-      var row = testWoo.fragments.getByName(name);
-      return !!(row && row.id);
-    } catch (eE) {
-      return false;
+  function _extraSlotsFromDropped(droppedObjs) {
+    var out = [];
+    var i, o, axis, text;
+    var list = droppedObjs || [];
+    for (i = 0; i < list.length; i++) {
+      o = list[i];
+      if (!o) continue;
+      axis = _axisFromFragObj(o);
+      text = _trim(o.label) || _trim(o.name) || axis;
+      if (!text) continue;
+      out.push({
+        id: "extra_" + (axis || String(i)),
+        text: text,
+        hintedCategory: axis || "",
+        searchKeywords: axis ? [axis] : []
+      });
     }
+    return out;
   }
 
-  // 슬롯 축에 맞는 단일 frag 선택. age+gender 동시 출력 시 미존재 축·힌트 우선.
-  function _pickFragForSlot(objs, slotText) {
-    var list = objs || [];
-    if (!list.length) return null;
-    if (list.length === 1) return list[0];
-    var hints = _axisHintsFromSlot(slotText);
-    var best = null;
-    var bestScore = -1;
-    for (var i = 0; i < list.length; i++) {
-      var o = list[i];
-      if (!o || !o.name) continue;
-      var axis = _axisFromFragObj(o);
-      var score = 0;
-      var hi;
-      for (hi = 0; hi < hints.length; hi++) {
-        if (hints[hi] === axis) score += 10;
+  function _mergeExtraPending(pending, extraSlots) {
+    var out = pending || [];
+    var extra = extraSlots || [];
+    var i, j, ex, dup, pt, et, pc, ec;
+    for (i = 0; i < extra.length; i++) {
+      ex = extra[i];
+      if (!ex) continue;
+      et = _trim(ex.text).toLowerCase();
+      ec = _trim(ex.hintedCategory).toLowerCase();
+      dup = false;
+      for (j = 0; j < out.length; j++) {
+        pt = _trim(out[j] && out[j].text).toLowerCase();
+        pc = _trim(out[j] && out[j].hintedCategory).toLowerCase();
+        if (et && pt && et === pt) { dup = true; break; }
+        if (ec && pc && ec === pc) { dup = true; break; }
       }
-      if (hints.length === 1 && axis === hints[0]) score += 20;
-      if (!_fragExistsByName(o.name)) score += 8;
-      if (score > bestScore) {
-        bestScore = score;
-        best = o;
-      }
+      if (!dup) out.push(ex);
     }
-    return best || list[0];
+    return out;
   }
 
+  // #174-1: 최상위 JSON 2+ → 파싱 실패로 죽이지 않음. 첫 객체 채택.
+  // extra_fragment_dropped 로그 1건 + 나머지 축은 extraSlots(미처리).
   function _parseFragmentJson(content, loop, slotText) {
     var text = String(content || "");
     var objs = _extractJsonObjects(text);
@@ -539,20 +541,21 @@ testWoo.foundry = (function () {
       throw new Error("[testWoo.foundry] fragment JSON missing (contentLen=" +
         text.length + ctx + ")");
     }
-    if (objs.length > 1) {
-      logWarning("[testWoo.foundry] multiple JSON objects=" + objs.length +
-        " slot=" + String(slotText || "") + " — picking one axis");
+    var picked = objs[0];
+    var dropped = [];
+    var di;
+    for (di = 1; di < objs.length; di++) dropped.push(objs[di]);
+    if (dropped.length) {
+      logWarning("[testWoo.foundry] extra_fragment_dropped count=" + dropped.length +
+        " slot=" + String(slotText || "") + " kept=" + String(picked && picked.name || ""));
     }
-    var picked = _pickFragForSlot(objs, slotText);
     if (!picked || !picked.name)
       throw new Error("[testWoo.foundry] fragment JSON parse error: no usable object");
-    var hints = _axisHintsFromSlot(slotText);
-    var axis = _axisFromFragObj(picked);
-    if (hints.length === 1 && axis && axis !== hints[0]) {
-      throw new Error("[testWoo.foundry] axis mismatch: slot wants " + hints[0] +
-        " but JSON is " + axis + " — emit ONE JSON for " + hints[0] + " only");
-    }
-    return picked;
+    return {
+      picked: picked,
+      extraSlots: _extraSlotsFromDropped(dropped),
+      extraDropped: dropped.length > 0
+    };
   }
 
   function _gateFeedback(gate) {
@@ -671,9 +674,12 @@ testWoo.foundry = (function () {
       lastRaw = String(loop.content || "");
 
       var fragDoc = null;
+      var extraSlots = [];
       try {
+        var parsed = _parseFragmentJson(loop.content, loop, slotText);
+        extraSlots = (parsed && parsed.extraSlots) ? parsed.extraSlots : [];
         fragDoc = _fragDocFromLlm(
-          _parseFragmentJson(loop.content, loop, slotText),
+          parsed.picked,
           queueId,
           slotText,
           nlText
@@ -688,7 +694,8 @@ testWoo.foundry = (function () {
         }
         return {
           fragDoc: null, gate: lastGate, attempts: attempts, tokensUsed: tokensUsed,
-          shapeError: lastShapeError, rawContentPreview: _contentPreview(lastRaw)
+          shapeError: lastShapeError, rawContentPreview: _contentPreview(lastRaw),
+          extraSlots: extraSlots
         };
       }
 
@@ -703,7 +710,8 @@ testWoo.foundry = (function () {
       if (gate.pass) {
         return {
           fragDoc: fragDoc, gate: gate, attempts: attempts, tokensUsed: tokensUsed,
-          shapeError: "", rawContentPreview: _contentPreview(lastRaw)
+          shapeError: "", rawContentPreview: _contentPreview(lastRaw),
+          extraSlots: extraSlots
         };
       }
       logWarning("[testWoo.foundry] gate failed attempt=" + attempts +
@@ -712,7 +720,8 @@ testWoo.foundry = (function () {
     }
     return {
       fragDoc: null, gate: lastGate, attempts: attempts, tokensUsed: tokensUsed,
-      shapeError: lastShapeError, rawContentPreview: _contentPreview(lastRaw)
+      shapeError: lastShapeError, rawContentPreview: _contentPreview(lastRaw),
+      extraSlots: extraSlots
     };
   }
 
@@ -872,8 +881,11 @@ testWoo.foundry = (function () {
         for (var nk in map) {
           if (!map.hasOwnProperty(nk)) continue;
           var nv = map[nk];
-          if (nv == null || typeof nv === "object") continue;
-          var tok = String(nv).toLowerCase().replace(/[^a-z0-9]+/g, "");
+          var tokSrc = nv;
+          if (testWoo.fragContract && testWoo.fragContract.entryDb)
+            tokSrc = testWoo.fragContract.entryDb(nv);
+          if (tokSrc == null || typeof tokSrc === "object") continue;
+          var tok = String(tokSrc).toLowerCase().replace(/[^a-z0-9]+/g, "");
           if (tok.length >= 2 && nameLow.indexOf(tok) >= 0)
             return {
               ok: false,
@@ -1166,11 +1178,14 @@ testWoo.foundry = (function () {
     if (!optsAtt.force && existing && existing._source &&
         testWoo.toolkit.checkSourceFreshness) {
       var fr = testWoo.toolkit.checkSourceFreshness(existing._source);
-      if (fr.status === "ok")
+      if (fr.status === "ok") {
+        _maybeEnrichDomainEn(fragDoc);
         return { ok: true, reused: true, ttlHit: true };
+      }
     } else if (!optsAtt.force && existing && existing._source &&
         testWoo.toolkit.isDomainStale &&
         !testWoo.toolkit.isDomainStale(existing._source)) {
+      _maybeEnrichDomainEn(fragDoc);
       return { ok: true, reused: true, ttlHit: true };
     }
 
@@ -1202,11 +1217,31 @@ testWoo.foundry = (function () {
     fragDoc.param_domain = merged.json;
     if (rd.paramDomain._source)
       fragDoc._domainSource = rd.paramDomain._source;
+    _maybeEnrichDomainEn(fragDoc);
     return {
       ok: true,
       tier: rd.classification ? rd.classification.tier : "",
       snapshotSkipped: !!rd.snapshotSkipped
     };
+  }
+
+  function _maybeEnrichDomainEn(fragDoc) {
+    if (!fragDoc || !testWoo.enPivot || !testWoo.enPivot.enrichDomainEn) return;
+    var d;
+    try { d = JSON.parse(String(fragDoc.param_domain || "{}")); }
+    catch (eP) { return; }
+    var r;
+    try { r = testWoo.enPivot.enrichDomainEn(d); }
+    catch (eE) {
+      try {
+        logWarning("[testWoo.foundry] enrichDomainEn: " + String(eE.message || eE));
+      } catch (eL) { /* non-ACC */ }
+      return;
+    }
+    if (r && r.domain && r.changed) {
+      fragDoc.param_domain = JSON.stringify(r.domain);
+      if (r.domain._source) fragDoc._domainSource = r.domain._source;
+    }
   }
 
   function _fragDocFromLlm(frag, queueId, slotText, nlText) {
@@ -1602,6 +1637,8 @@ testWoo.foundry = (function () {
         } catch (eEv) { evOff = 0; }
         var gen = generateFragmentForSlot(cfg, row.nl_text, slotText, queueId, slotId);
         tokensUsed += Number(gen.tokensUsed) || 0;
+        if (gen.extraSlots && gen.extraSlots.length)
+          pending = _mergeExtraPending(pending, gen.extraSlots);
         var discoveredTools = _toolNamesSince(evOff);
         // E-2: 요청 토큰 예산 (dryRunSlot 은 이 경로를 타지 않음). dailyBudget 은 미구현.
         var tokBudget = cfg.foundry.tokenBudget != null ? Number(cfg.foundry.tokenBudget) : 0;
@@ -2218,6 +2255,7 @@ testWoo.foundry = (function () {
     processBatch: processBatch,
     runToolLoop: runToolLoop,
     generateFragmentForSlot: generateFragmentForSlot,
+    parseFragmentJson: _parseFragmentJson,
     dryRunSlot: dryRunSlot,
     peekQueue: peekQueue,
     isAutoApprove: isAutoApprove,
@@ -2226,4 +2264,4 @@ testWoo.foundry = (function () {
     repairIndexPollution: repairIndexPollution
   };
 })();
-testWoo.foundry.__v = "160";
+testWoo.foundry.__v = "162";

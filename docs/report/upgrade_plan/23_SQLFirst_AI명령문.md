@@ -13,7 +13,7 @@
 | PoC-V | #153 | [x] `24_[완료]_PoC-V_값인식매칭.md` |
 | **#154** | 값매칭 | [x] repo+배포 · C1~C6=`26_…` HUMAN[ ] · Option[ ] |
 | **#155** | 임베딩 | [x] OFF+영속화 코드 · true는 스모크+승인[ ] |
-| **다음 (추출)** | **#174** 0단계 조사 | `37_…` · 코드 금지 |
+| **다음 (추출)** | **#174 HUMAN V0~V5** | `37_…` §8 |
 | **#170 / #168-B / #172** | 재개 | #174 닫을 때까지 `[ ]` |
 | **다음 (셸)** | R5 배포 HUMAN 후 **R6** | 추출 우회 금지 |
 | R1 | #147R | **[S] 단독 스킵 → #154 흡수** (Match OFF 중 R1 금지) |
@@ -172,7 +172,7 @@ relative/absolute 용어만. Duplicate* 미확인 시 createWkfFromTemplate 폴�
 ## #174 — EN-Pivot Canonical Layer (트랙 A · 최우선)
 
 정본: `37_ENPivot_CanonicalLayer_174.md`. 아래 블록을 해당 Chat에 그대로 붙인다.  
-**지금 Chat은 0단계만.** 1단계 이후는 0단계 보고 HUMAN 승인 후.
+**지금 Chat은 HUMAN V0~V5.** 5단계 선삭제 금지. R6은 V0~V5 후.
 
 ```
 [#174] EN-Pivot Canonical Layer — 번역 기반 param 추출/매칭 전면 전환

@@ -10,6 +10,10 @@
  * - 1. 라이브러리 전역 정의 확인 (testWoo.* · fragContract 포함)
  * - 1b. FragContract — 축 identity·validateBind·렉시콘 분할(인천에/z요금제)
  * - 1c. normalizeAtomicSlots — 고객 잔여 제거 · 지역 최장일치 · 요금제 phrase
+ * - 1d. parseFragmentJson — JSON 2개 → 첫 채택 + extraSlots (V0, 비과금)
+ * - 1e. EnPivot — M1은 매칭만 · 캐시 시드 · concept 불변 (비과금, 번역 스킵 없음)
+ * - 1f. domain EN pair — {db,en} 바인딩은 db · enrich 이미-en이면 0콜 (비과금)
+ * - 1g. M1/M2/M3 매칭 · ambiguous · _negative TTL · heal 쿨다운 (비과금)
  * - 2. probe.preflight() → 'sql' named right + dbms/dialectVerified 기록
  * - 3. sqlSelect 반환 XML 구조 logInfo (파싱 가정 검증용)
  * - 4. describe_schema 속성 배열 비어있지 않은지 (N-2 회귀 검출)
@@ -56,6 +60,7 @@ loadLibrary("woo:testWooRepository.js");
 loadLibrary("woo:testWooEmbedding.js");
 loadLibrary("woo:testWooDedup.js");
 loadLibrary("woo:testWooToolkit.js");
+loadLibrary("woo:testWooEnPivot.js");
 loadLibrary("woo:testWooLlm.js");
 loadLibrary("woo:testWooFeasibility.js");
 loadLibrary("woo:testWooFoundry.js");
@@ -99,7 +104,7 @@ function twStepGlobals() {
       "JS 라이브러리 배포 여부와 woo: 네임스페이스를 먼저 확인할 것");
     return false;
   }
-  var names = ["fragContract", "probe", "toolkit", "llm", "fragments", "lifecycle", "dedup",
+  var names = ["fragContract", "probe", "toolkit", "enPivot", "llm", "fragments", "lifecycle", "dedup",
     "gates", "feasibility", "foundry", "compiler", "repo", "cfg", "env", "embedding"];
   var missing = [];
   for (var i = 0; i < names.length; i++) {
@@ -366,6 +371,298 @@ function twStepNormalizeSlots() {
     return true;
   } catch (e) {
     twFail("1c.normalizeSlots", String(e.message || e));
+    return false;
+  }
+}
+
+// 1d. #174-1 V0 — JSON 2개 강제 주입. LLM/DB 불필요.
+function twStepParseMultiJson() {
+  if (!testWoo.foundry || !testWoo.foundry.parseFragmentJson) {
+    twFail("1d.parseMultiJson", "parseFragmentJson missing");
+    return false;
+  }
+  try {
+    var raw =
+      '{"name":"woo__customer__age","label":"연령","keyColumn":"sCustomer_id",' +
+      '"sqlText":"SELECT DISTINCT sCustomer_id FROM t WHERE iAge>=1"}\n' +
+      '{"name":"woo__customer__gender","label":"성별","keyColumn":"sCustomer_id",' +
+      '"sqlText":"SELECT DISTINCT sCustomer_id FROM t WHERE sGender=\'M\'"}';
+    var r = testWoo.foundry.parseFragmentJson(raw, null, "남성");
+    if (!r || !r.picked || String(r.picked.name) !== "woo__customer__age") {
+      twFail("1d.parseMultiJson", "must adopt first JSON age, got " +
+        (r && r.picked ? r.picked.name : "null"));
+      return false;
+    }
+    if (!r.extraDropped) {
+      twFail("1d.parseMultiJson", "extraDropped must be true");
+      return false;
+    }
+    if (!r.extraSlots || r.extraSlots.length !== 1) {
+      twFail("1d.parseMultiJson", "extraSlots length want 1 got " +
+        (r.extraSlots ? r.extraSlots.length : 0));
+      return false;
+    }
+    var ex = r.extraSlots[0];
+    var exAxis = String(ex.hintedCategory || "") + " " + String(ex.text || "");
+    if (exAxis.toLowerCase().indexOf("gender") < 0) {
+      twFail("1d.parseMultiJson", "dropped axis must be gender, got " + exAxis);
+      return false;
+    }
+    twPass("1d.parseMultiJson", "first=age extra=gender extra_fragment_dropped");
+    return true;
+  } catch (e) {
+    twFail("1d.parseMultiJson", "must not throw: " + String(e.message || e));
+    return false;
+  }
+}
+
+// 1e. #174-2 — M1은 매칭 층. 번역 스킵 없음. 캐시는 시드만(비과금).
+function twStepEnPivot() {
+  var ep = testWoo.enPivot;
+  if (!ep || !ep.extractSlots || !ep.scanM1 || !ep.applyConceptLock ||
+      !ep.putNlCache) {
+    twFail("1e.enPivot", "testWoo.enPivot API missing");
+    return false;
+  }
+  try {
+    ep.clearNlCache();
+    var cards = [
+      {
+        name: "woo__t__region",
+        tags: "region",
+        param_domain: {
+          _source: {
+            schema: "woo:t", xpath: "@sRegion",
+            concept: "residential_region", tier: "enum"
+          },
+          sRegion: { type: "string", nlMap: { "서울": "서울" } }
+        }
+      },
+      {
+        name: "woo__t__age",
+        tags: "age",
+        param_domain: {
+          _source: {
+            schema: "woo:t", xpath: "@iAge",
+            concept: "age_group", tier: "range"
+          },
+          _bucket: { nlMap: { "10대": { ageMin: 10, ageMax: 20 } } }
+        }
+      }
+    ];
+    var nl = "서울에 사는 10대 고객";
+    var m1 = ep.scanM1(nl, cards);
+    if (!m1 || !m1.covered) {
+      twFail("1e.enPivot", "M1 match must still see 서울+10대, covered=" +
+        (m1 ? String(m1.covered) : "null") + " rem=" +
+        (m1 ? String(m1.remainder) : ""));
+      return false;
+    }
+    if (!m1.slots || m1.slots.length < 2) {
+      twFail("1e.enPivot", "M1 slots want >=2 got " +
+        (m1.slots ? m1.slots.length : 0));
+      return false;
+    }
+    var seeded = {
+      en: "Teenage customers living in Seoul",
+      slots: [
+        { surface: "서울", concept: "residential_region", en_literal: "Seoul",
+          kind: "categorical", polarity: "include" },
+        { surface: "10대", concept: "age_group", en_literal: "teenagers",
+          kind: "range", polarity: "include" }
+      ],
+      meta: { llmCalls: 0, skipReason: "cache", retryInput: false }
+    };
+    ep.putNlCache(nl, seeded);
+    var r2 = ep.extractSlots(nl, cards);
+    if (!r2 || !r2.meta || String(r2.meta.skipReason) !== "cache" ||
+        Number(r2.meta.llmCalls) !== 0) {
+      twFail("1e.enPivot", "seeded cache must hit, got " +
+        JSON.stringify(r2 && r2.meta));
+      return false;
+    }
+    var locked = ep.applyConceptLock(
+      [{ surface: "서울", concept: "city_name", is_new: true }],
+      cards
+    );
+    if (!locked || !locked[0] || String(locked[0].concept) !== "residential_region") {
+      twFail("1e.enPivot", "concept lock must keep residential_region, got " +
+        (locked && locked[0] ? locked[0].concept : "null"));
+      return false;
+    }
+    if (!locked[0].conceptAliases || locked[0].conceptAliases.join(",") !== "city_name") {
+      twFail("1e.enPivot", "alias city_name missing, got " +
+        JSON.stringify(locked[0].conceptAliases));
+      return false;
+    }
+    var pipe = ep.toPipelineSlots(seeded.slots);
+    if (!pipe || !pipe.length || String(pipe[0].text || "") === "") {
+      twFail("1e.enPivot", "toPipelineSlots must keep surface as text");
+      return false;
+    }
+    var open = ep.scanM1("판교요금제 쓰는 고객", cards);
+    if (!open || open.covered) {
+      twFail("1e.enPivot", "unknown value must not be M1-covered");
+      return false;
+    }
+    twPass("1e.enPivot", "M1 match + cache seed + concept lock; no translate skip");
+    return true;
+  } catch (e) {
+    twFail("1e.enPivot", "must not throw: " + String(e.message || e));
+    return false;
+  }
+}
+
+// 1f. #174-3 — {db,en} 바인딩은 db. 이미 en 있으면 enrich 0콜. LLM 없음.
+function twStepDomainEn() {
+  var fc = testWoo.fragContract;
+  var ep = testWoo.enPivot;
+  if (!fc || !fc.entryDb || !ep || !ep.enrichDomainEn) {
+    twFail("1f.domainEn", "entryDb/enrichDomainEn missing");
+    return false;
+  }
+  try {
+    var wrapped = {
+      _source: { schema: "woo:t", xpath: "@sRegion", concept: "residential_region" },
+      sRegion: {
+        type: "string",
+        nlMap: { "서울": { db: "서울", en: ["Seoul"] } }
+      }
+    };
+    if (String(fc.entryDb(wrapped.sRegion.nlMap["서울"])) !== "서울") {
+      twFail("1f.domainEn", "entryDb must return db");
+      return false;
+    }
+    var hit = fc.domainMatchSlot(wrapped, "서울");
+    if (!hit || String(hit.value) !== "서울") {
+      twFail("1f.domainEn", "domainMatchSlot must bind db, got " +
+        (hit ? JSON.stringify(hit.value) : "null"));
+      return false;
+    }
+    var params = fc.resolveNlParams(wrapped, "서울사는", { sRegion: 1 });
+    if (!params || String(params.sRegion) !== "서울") {
+      twFail("1f.domainEn", "resolveNlParams must use db, got " +
+        JSON.stringify(params));
+      return false;
+    }
+    var sql = fc.sampleBindSql("SELECT {{sRegion}} AS v", wrapped);
+    if (String(sql).indexOf("서울") < 0) {
+      twFail("1f.domainEn", "sampleBindSql must substitute db, got " + sql);
+      return false;
+    }
+    var enr = ep.enrichDomainEn(wrapped);
+    if (!enr || Number(enr.llmCalls) !== 0 || enr.skipped !== "fresh") {
+      twFail("1f.domainEn", "already-en must skip LLM, got " +
+        JSON.stringify(enr && { llm: enr.llmCalls, skip: enr.skipped }));
+      return false;
+    }
+    var merged = fc.mergeParamDomainJson(
+      { _source: { concept: "residential_region", conceptAliases: [] } },
+      { _source: { schema: "woo:t", xpath: "@sRegion" }, sRegion: { nlMap: { "부산": "부산" } } }
+    );
+    if (!merged || !merged.domain || !merged.domain._source ||
+        String(merged.domain._source.concept) !== "residential_region") {
+      twFail("1f.domainEn", "merge must keep locked concept");
+      return false;
+    }
+    twPass("1f.domainEn", "{db,en} bind=db · enrich skip · concept lock");
+    return true;
+  } catch (e) {
+    twFail("1f.domainEn", "must not throw: " + String(e.message || e));
+    return false;
+  }
+}
+
+// 1g. #174-4 — M1/M2/M3 · ambiguous · _negative TTL · heal 쿨다운. LLM 없음.
+function twStepEnMatch() {
+  var fc = testWoo.fragContract;
+  if (!fc || !fc.matchEnPivotSlot) {
+    twFail("1g.enMatch", "matchEnPivotSlot missing");
+    return false;
+  }
+  try {
+    var domain = {
+      _source: {
+        schema: "woo:t", xpath: "@sRegion",
+        concept: "residential_region", tier: "enum"
+      },
+      sRegion: {
+        type: "string",
+        nlMap: {
+          "서울": { db: "서울", en: ["Seoul"] },
+          "인천": { db: "인천", en: ["Incheon"] }
+        }
+      }
+    };
+    var m1 = fc.matchEnPivotSlot(domain, { text: "서울", surface: "서울" });
+    if (!m1 || m1.layer !== "M1" || String(m1.value) !== "서울") {
+      twFail("1g.enMatch", "M1 Seoul failed " + JSON.stringify(m1));
+      return false;
+    }
+    var m2 = fc.matchEnPivotSlot(domain, {
+      text: "셔율", surface: "셔율", en_literal: "Seoul",
+      concept: "residential_region", kind: "categorical"
+    });
+    if (!m2 || m2.layer !== "M2" || String(m2.value) !== "서울") {
+      twFail("1g.enMatch", "M2 Seoul via en failed " + JSON.stringify(m2));
+      return false;
+    }
+    var m3 = fc.matchEnPivotSlot(domain, {
+      text: "판교요금제", surface: "판교요금제", en_literal: "Pangyo plan",
+      concept: "residential_region", kind: "categorical"
+    });
+    if (!m3 || m3.layer !== "M3") {
+      twFail("1g.enMatch", "M3 concept miss-value failed " + JSON.stringify(m3));
+      return false;
+    }
+    var ambDom = {
+      _source: { concept: "plan_name", tier: "enum" },
+      plan: {
+        nlMap: {
+          "Y": { db: "Y_PLAN", en: ["plan", "youth"] },
+          "Z": { db: "Z_PLAN", en: ["plan", "zip"] }
+        }
+      }
+    };
+    var amb = fc.matchEnPivotSlot(ambDom, {
+      text: "요금제", en_literal: "plan",
+      concept: "plan_name", kind: "categorical"
+    });
+    if (!amb || !amb.ambiguous) {
+      twFail("1g.enMatch", "M2 ambiguous expected, got " + JSON.stringify(amb));
+      return false;
+    }
+    var now = new Date().getTime();
+    var marked = fc.markNegative(domain, "판교요금제", now);
+    if (!fc.isNegative(marked, "판교요금제", now)) {
+      twFail("1g.enMatch", "isNegative must be true within TTL");
+      return false;
+    }
+    if (fc.isNegative(marked, "판교요금제", now + 90000000)) {
+      twFail("1g.enMatch", "isNegative must expire after TTL");
+      return false;
+    }
+    var stamped = fc.stampHeal(domain, now);
+    if (!fc.inHealCooldown(stamped, now + 1000)) {
+      twFail("1g.enMatch", "heal cooldown should hold");
+      return false;
+    }
+    if (fc.inHealCooldown(stamped, now + 700000)) {
+      twFail("1g.enMatch", "heal cooldown should expire after 10min");
+      return false;
+    }
+    var kindMiss = fc.matchEnPivotSlot(domain, {
+      text: "x", en_literal: "nope",
+      concept: "residential_region", kind: "range"
+    });
+    if (kindMiss && kindMiss.layer === "M3") {
+      twFail("1g.enMatch", "kind mismatch must not be M3");
+      return false;
+    }
+    twPass("1g.enMatch", "M1/M2/M3 · ambiguous · _negative TTL · heal cooldown");
+    return true;
+  } catch (e) {
+    twFail("1g.enMatch", "must not throw: " + String(e.message || e));
     return false;
   }
 }
@@ -926,6 +1223,10 @@ function twSummary() {
 if (twStepGlobals()) {
   twStepFragContract();
   twStepNormalizeSlots();
+  twStepParseMultiJson();
+  twStepEnPivot();
+  twStepDomainEn();
+  twStepEnMatch();
   twStepPreflight();
   twStepSqlSelectShape();
   twStepDescribeSchema();

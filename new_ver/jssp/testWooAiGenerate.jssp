@@ -4,7 +4,7 @@ response.setContentType("application/json;charset=utf-8");
  * testWooAiGenerate.jssp (NL→plan→SQL 생성 API)
  * ==================================================
  * Pass0→StageA→Pass1로 CNF plan 생성 후 compile·gates 실행.
- * unmatched 시 Foundry 큐 또는 plan_only 탐색 응답으로 분기한다.
+ * unmatched 시 Foundry 큐 또는 plan_only. retryInput·unresolved이면 큐 없이 안내.
  *
  * [Main Functions]
  * ===========
@@ -15,16 +15,18 @@ response.setContentType("application/json;charset=utf-8");
  *
  * [Dependencies]
  * =========
- * - woo:testWooCommon.js, Config, FragContract, Fragments, Probe, Toolkit, Llm, Compiler, Gates, Repository
+ * - woo:testWooCommon.js, Config, FragContract, Fragments, Probe, Toolkit, EnPivot, Llm, Compiler, Gates, Repository
  * - right testWooAiSqlGenerate · Option testWooAiFoundryEnabled
  *
  * [Invariants]
  * ===========
  * - LLM은 plan_json만 — 최종 SQL은 compiler가 결정
+ * - retryInput → Foundry 큐 금지 · 재입력 안내
+ * - unresolved(3종) → Foundry 큐 금지 · 원문 surface 표시 · SQL 없음
  * - unmatched+Foundry OFF → passed:false, 큐 없음
  * - after_foundry/no_enqueue → 재큐잉 금지(대기 UI 루프 방지)
  * - catch 메시지에 [Generate] 접두(타 API plan missing와 구분)
- * - loadLibrary 직후 twRequireLib — repo/fragments/toolkit/llm/compiler/gates
+ * - loadLibrary 직후 twRequireLib — repo/fragments/toolkit/enPivot/llm/compiler/gates
  * - #170: missing_slots_json 은 축 원자 슬롯 객체(가능 시)
  */
 try {
@@ -37,6 +39,7 @@ try {
   loadLibrary("woo:testWooFragments.js");
   loadLibrary("woo:testWooProbe.js");
   loadLibrary("woo:testWooToolkit.js");
+  loadLibrary("woo:testWooEnPivot.js");
   loadLibrary("woo:testWooLlm.js");
   loadLibrary("woo:testWooCompiler.js");
   loadLibrary("woo:testWooGates.js");
@@ -45,6 +48,7 @@ try {
   twRequireLib("woo:testWooFragContract.js", (typeof testWoo !== "undefined") && testWoo.fragContract);
   twRequireLib("woo:testWooFragments.js", (typeof testWoo !== "undefined") && testWoo.fragments);
   twRequireLib("woo:testWooToolkit.js", (typeof testWoo !== "undefined") && testWoo.toolkit);
+  twRequireLib("woo:testWooEnPivot.js", (typeof testWoo !== "undefined") && testWoo.enPivot);
   twRequireLib("woo:testWooLlm.js", (typeof testWoo !== "undefined") && testWoo.llm);
   twRequireLib("woo:testWooCompiler.js", (typeof testWoo !== "undefined") && testWoo.compiler);
   twRequireLib("woo:testWooGates.js", (typeof testWoo !== "undefined") && testWoo.gates);
@@ -75,17 +79,39 @@ try {
   var plan = testWoo.llm.generatePlan(p.nl_request);
   if (!plan) throw new Error("[Generate] generatePlan returned empty");
   var unmatched = plan.unmatched || [];
+  var unresolved = plan.unresolved || [];
 
   var clientPlan = {
     grainKey: plan.grainKey || "",
     include: plan.include || [],
     exclude: plan.exclude || [],
-    unmatched: unmatched
+    unmatched: unmatched,
+    unresolved: unresolved
   };
 
-  if (unmatched.length) {
-    /* 탐색(plan_only): 큐/SQL 없이 unmatched만 반환 */
-    if (planOnly) {
+  if (unmatched.length || unresolved.length) {
+    /* 추출 실패·값 abstain: Foundry 큐 금지 · 재입력/원문 안내 */
+    if (plan.retryInput) {
+      jsonOut({
+        ok: false,
+        passed: false,
+        retryInput: true,
+        unmatched: unmatched,
+        matchedSlots: [],
+        plan: clientPlan,
+        error: unmatched.join(" ")
+      });
+    } else if (unresolved.length) {
+      jsonOut({
+        ok: false,
+        passed: false,
+        unresolved: unresolved,
+        unmatched: unmatched,
+        matchedSlots: plan.matchedSlots || [],
+        plan: clientPlan,
+        error: unmatched.join(" ")
+      });
+    } else if (planOnly) {
       jsonOut({
         ok: false,
         passed: false,
