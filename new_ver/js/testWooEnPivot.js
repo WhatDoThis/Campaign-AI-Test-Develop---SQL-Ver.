@@ -5,6 +5,7 @@
  * 동일 문장 재입력만 해시 캐시(TTL 1일). 번역·추출 실패 시 재입력을 요청한다.
  * concept는 (schema+xpath)에 이미 있으면 LLM 제안을 덮어쓰지 않는다.
  * 컬럼 도메인 값은 1회 번역해 nlMap 키를 {db, en[]} 으로 확장한다(키 삭제 금지).
+ * litmus __v=172 (잔여 드롭: concept|resolvedName|en_literal 중 하나면 유지).
  *
  * [Main Functions]
  * ===========
@@ -13,6 +14,7 @@
  * - scanM1 — 원문 literal ⊂ NL (매칭용. 추출 스킵에 쓰지 않음)
  * - applyConceptLock — _source.concept 불변 · 다른 이름은 aliases
  * - toPipelineSlots — EnPivot slot → Pass0 형태 {id,text,searchKeywords}
+ * - isNonConditionSlot — concept·resolvedName·en_literal 없으면 잔여. kind만으로는 조건 아님
  * - enrichDomainEn — 컬럼 distinct/enum/_bucket 1회 EN 사전화
  * - clearNlCache / putNlCache — NL 해시 캐시 (스모크)
  *
@@ -25,8 +27,9 @@
  * [Invariants]
  * =========
  * - 바인딩 문자열은 surface(원문). en_literal을 db 값으로 쓰지 않음
- * - JOSA/NOISE로 번역 스킵 금지. M1→M2→M3는 matchEnPivotSlot (#174-4)
+ * - JOSA/NOISE 사전 없음. M1→M2→M3는 matchEnPivotSlot (#174-4)
  * - 추출 실패 → retryInput. Pass0·Foundry로 우회하지 않음
+ * - concept·resolvedName·en_literal 없는 잔여만 드롭. kind만으로는 유지하지 않음
  */
 var testWoo = testWoo || {};
 testWoo.enPivot = (function () {
@@ -328,6 +331,14 @@ testWoo.enPivot = (function () {
     return slot;
   }
 
+  function _isNonConditionSlot(s) {
+    if (!s) return true;
+    if (s.concept) return false;
+    if (s.resolvedName) return false;
+    if (s.en_literal) return false;
+    return true;
+  }
+
   function _emptyExtract(reason) {
     return { en: "", slots: [], error: String(reason || "extract_failed") };
   }
@@ -350,13 +361,16 @@ testWoo.enPivot = (function () {
       "You translate Korean marketer targeting NL to English and extract atomic slots.",
       "ONE slot = ONE condition axis. Never merge two axes.",
       "Translate the FULL sentence. Korean may contain typos or broken spacing;",
-      "recover the intended meaning in en and en_literal (e.g. 셔율→Seoul, 10데→teenagers).",
+      "recover the intended meaning in en and en_literal (typos in the source language).",
       "Keep surface as the original typed span, including typos, so the marketer can verify.",
       "concept = English snake_case. Prefer a concept from CANDIDATE_CARDS.",
       "If no candidate fits, propose a new concept and set is_new:true.",
       "If a card already has concept, use that exact string. Do not invent a parallel axis.",
+      "Emit ONLY targeting-condition axes (region, plan, age, gender, consent, join date, etc.).",
+      "Do NOT emit slots for sentence glue: particles, copulas, verbs (live/use), or audience nouns with no filter value.",
+      "If a real condition cannot be named, still emit it with a snake_case concept and is_new:true.",
+      "Never emit a slot with concept:null for glue or leftover spans.",
       "If you cannot recover any targeting condition, return slots:[] (do not guess SQL).",
-      "If a mentioned condition is unclear, still emit the slot with concept:null and reason.",
       "Do not write SQL or fragment ids.",
       "kind: categorical|range|boolean|other. polarity: include|exclude.",
       "At most 8 slots. OUTPUT JSON ONLY. No prose, no markdown, no second JSON.",
@@ -390,6 +404,7 @@ testWoo.enPivot = (function () {
     for (i = 0; i < list.length && slots.length < MAX_SLOTS; i++) {
       ns = _normSlot(list[i]);
       if (!ns.surface) continue;
+      if (_isNonConditionSlot(ns)) continue;
       slots.push(ns);
     }
     var en = _trim(parsed.en);
@@ -448,6 +463,7 @@ testWoo.enPivot = (function () {
     for (i = 0; i < (pivotSlots || []).length; i++) {
       s = pivotSlots[i];
       if (!s || !s.surface) continue;
+      if (_isNonConditionSlot(s)) continue;
       kws = [];
       seen = {};
       addKw = function (v) {
@@ -643,9 +659,10 @@ testWoo.enPivot = (function () {
     scanM1: scanM1,
     applyConceptLock: applyConceptLock,
     toPipelineSlots: toPipelineSlots,
+    isNonConditionSlot: _isNonConditionSlot,
     enrichDomainEn: enrichDomainEn,
     clearNlCache: clearNlCache,
     putNlCache: putNlCache
   };
 })();
-testWoo.enPivot.__v = "168";
+testWoo.enPivot.__v = "172";

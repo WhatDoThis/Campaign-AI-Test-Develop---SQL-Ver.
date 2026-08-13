@@ -1,7 +1,7 @@
 /*
  * testWooFeasibility.js (슬롯 실현가능성 Triage)
  * ==================================================
- * litmus 동기 __v=160 (#172 FragContract).
+ * litmus 동기 __v=161 (#174-5: 프롬프트 도시명 리터럴 제거).
  * Foundry SQL 생성 전 슬롯별 feasible 여부 판정.
  * #169: Triage 진입 전 Stage A 라이브러리 조회(서가 우선). 미스만 스키마 탐색.
  * 축·커버·도메인 매칭은 testWoo.fragContract.libraryHitPredicate에 위임.
@@ -79,7 +79,7 @@ testWoo.feasibility = (function () {
 
   var NO_COLUMN_WITHOUT_DESCRIBE_NUDGE =
     "You claimed no_column (or have only searched literal values) without describe_schema. " +
-    "REQUIRED next steps: (1) search_columns for concept synonyms such as region, 지역, city — " +
+    "REQUIRED next steps: (1) search_columns for concept synonyms such as region, city — " +
     "NOT the city/value itself; (2) list_schemas on allowed namespaces; " +
     "(3) describe_schema on customer/sample tables; (4) probe_values for the literal value. " +
     "Then output the verdict JSON.";
@@ -92,8 +92,8 @@ testWoo.feasibility = (function () {
       "Fragment library was already checked before you ran — if you are called, library missed.",
       _envBlock(),
       "search_columns matches column NAMES/LABELS only — never data values. " +
-        "Searching a city name like 서울 returns 0 matches even when a region column exists.",
-      "Location/city slots: search keywords region, 지역, city first. " +
+        "Searching a city name like Seoul returns 0 matches even when a region column exists.",
+      "Location/city slots: search keywords region, area, city first. " +
         "Then list_schemas → describe_schema → probe_values for the literal value. " +
         "Do NOT conclude no_column from value-keyword searches alone.",
       "Budget: few turns. At most two value-keyword searches, then switch to " +
@@ -605,4 +605,4 @@ testWoo.feasibility = (function () {
     meetsConfidence: meetsConfidence
   };
 })();
-testWoo.feasibility.__v = "160";
+testWoo.feasibility.__v = "161";

@@ -1,14 +1,14 @@
 /*
  * testWooLlm.js (LLM Pass0·Pass1 파이프라인)
  * ==================================================
- * litmus 동기 __v=168 (#174-4 Rhino: for 안 function 선언 금지).
+ * litmus 동기 __v=172 (잔여 skip 유지 · en_literal은 M2용으로 보존).
  * EnPivot(전체 문장 1콜, 캐시만 스킵) 후 Pass1. 추출 실패 시 재입력(Pass0 우회 금지).
  * 최종 SQL은 쓰지 않음. 동기 HttpClientRequest만 사용.
  *
  * [Main Functions]
  * ===========
- * - decomposeSlots — Pass0 NL→slots JSON(+원자 분할)
- * - normalizeAtomicSlots — 복합 슬롯→축별 슬롯(결정적, LLM 무관)
+ * - decomposeSlots — Pass0 NL→slots JSON(EnPivot 없을 때 폴백)
+ * - normalizeAtomicSlots — EnPivot 슬롯 통과(중복·빈 텍스트만 제거)
  * - selectPlan — Pass1 후보→CNF plan JSON
  * - generatePlan — EnPivot→M1/M2/M3 매칭→Pass1. retryInput·unresolved 시 SQL 없음
  * - chat — 동기 chat/completions (EnPivot translateAndExtract)
@@ -31,10 +31,11 @@
  * =========
  * - response_format json_object 미사용 — 프롬프트+_parseJson으로 JSON 강제
  * - HttpClientRequest.wait 금지 · Rhino map/forEach/filter 금지
- * - #170: 슬롯 1개 = 조건 축 1개. 연령 다중 밴드(30대 50대)는 age 슬롯 1개로 유지
+ * - #170: 슬롯 1개 = 조건 축 1개. 쪼개기는 EnPivot extract
  * - 같은 tags/name 축 frag가 있으면 unmatched→Foundry 신규 생성 금지. 값은 heal
- * - unresolved(concept_not_found|value_not_in_domain|ambiguous) → Foundry 큐 금지
- * - EnPivot 슬롯(concept/en_literal)은 KO 축 재분할을 건너뜀
+ * - unresolved(value_not_in_domain|ambiguous) → Foundry 큐 금지
+ * - concept 없는 잔여(en_literal만 있는 glue 포함)는 unmatched/Foundry 금지. M2 히트만 조건으로 유지
+ * - normalizeAtomicSlots는 KO 지역/성별/N대 regex로 재분할하지 않음
  * - Rhino strict: function 선언은 함수 본문 최상위만. for/if 안 금지
  */
 var testWoo = testWoo || {};
@@ -59,12 +60,6 @@ testWoo.llm = (function () {
     );
   }
 
-  // #170 — NL 축 힌트(컬럼명 하드코딩 아님). 슬롯 원자 분할·키워드용.
-    var AXIS_REGIONS = [
-    "경기도", "서울", "경기", "인천", "부산", "대구", "대전", "광주", "울산", "세종",
-    "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주"
-  ];
-
   function _slotKeywords(text, maxTok) {
     var raw = String(text || "").split(/[^0-9a-zA-Z가-힣_]+/);
     var out = [];
@@ -84,178 +79,24 @@ testWoo.llm = (function () {
   function _isNoiseResidue(text) {
     if (testWoo.fragContract && testWoo.fragContract.isNoiseResidue)
       return testWoo.fragContract.isNoiseResidue(text);
-    var t = _trim(text || "");
-    if (!t) return true;
-    var cleaned = t.replace(
-      /고객|대상자|회원|사용자|사는|거주하는|거주|쓰는|사용하는|이용하는|이용|이면서|그리고|및|또|에게|한테|인|명/g,
-      " "
-    );
-    cleaned = cleaned.replace(/\s+/g, "");
-    return cleaned.length < 2;
+    return !_trim(text || "");
   }
 
-  function _extractAgePhrase(text) {
-    var t = String(text || "");
-    var bands = [];
-    var reBand = /(\d+)\s*대/g;
-    var m;
-    while ((m = reBand.exec(t)) != null) {
-      bands.push({ n: Number(m[1]), raw: m[0] });
-    }
-    var reRange = /(\d+)\s*[~\-–]\s*(\d+)\s*대/;
-    var rm = reRange.exec(t);
-    if (rm) {
-      return {
-        phrase: String(rm[1]) + "대~" + String(rm[2]) + "대",
-        strip: [rm[0]]
-      };
-    }
-    if (!bands.length) return null;
-    var strip = [];
-    for (var bi = 0; bi < bands.length; bi++) strip.push(bands[bi].raw);
-    if (bands.length === 1)
-      return { phrase: bands[0].n + "대", strip: strip };
-    var minN = bands[0].n;
-    var maxN = bands[0].n;
-    for (var bj = 1; bj < bands.length; bj++) {
-      if (bands[bj].n < minN) minN = bands[bj].n;
-      if (bands[bj].n > maxN) maxN = bands[bj].n;
-    }
-    // 30대 50대 → age 슬롯 1개(범위). 축을 둘로 쪼개지 않음.
-    return { phrase: String(minN) + "대~" + String(maxN) + "대", strip: strip };
-  }
-
-  function _extractGenderPhrase(text) {
-    var t = String(text || "");
-    if (/남성|남자/.test(t)) return { phrase: "남성", strip: ["남성", "남자"] };
-    if (/여성|여자/.test(t)) return { phrase: "여성", strip: ["여성", "여자"] };
-    return null;
-  }
-
-  function _extractPlanPhrase(text) {
-    var t = String(text || "");
-    var m = /([A-Za-z가-힣0-9]+요금제?)/.exec(t);
-    if (m) return { phrase: m[1], strip: [m[1]] };
-    return null;
-  }
-
-  function _extractRegionPhrase(text) {
-    var t = String(text || "");
-    var best = "";
-    var i;
-    for (i = 0; i < AXIS_REGIONS.length; i++) {
-      var r = AXIS_REGIONS[i];
-      if (t.indexOf(r) >= 0 && r.length > best.length) best = r;
-    }
-    if (!best) return null;
-    return { phrase: best, strip: [best] };
-  }
-
-  function _stripPhrases(text, strips) {
-    var t = String(text || "");
-    var list = strips || [];
-    for (var i = 0; i < list.length; i++) {
-      if (!list[i]) continue;
-      t = t.split(String(list[i])).join(" ");
-    }
-    return t.replace(/\s+/g, " ").replace(/^[~\-–\s]+|[~\-–\s]+$/g, "");
-  }
-
-  // 축 2개 이상이면 축별 슬롯. 1개면 추출 phrase만(고객 등 잔여 제거). 0개·노이즈면 버림.
+  // EnPivot 슬롯 통과. KO 축 regex로 쪼개지 않음. 빈 텍스트만 버림.
   function _expandOneSlot(slot, maxTok) {
     var text = _trim(slot && slot.text != null ? slot.text : slot);
     if (!text) return [];
-    var base = {
+    var kws = (slot && slot.searchKeywords) ? slot.searchKeywords : [];
+    return [{
+      text: text,
       hintedCategory: slot && slot.hintedCategory ? String(slot.hintedCategory) : "",
-      searchKeywords: (slot && slot.searchKeywords) ? slot.searchKeywords : [],
+      searchKeywords: kws.length ? kws : _slotKeywords(text, maxTok),
       resolvedName: slot && slot.resolvedName ? String(slot.resolvedName) : "",
       concept: slot && slot.concept ? slot.concept : null,
       en_literal: slot && slot.en_literal ? String(slot.en_literal) : "",
       kind: slot && slot.kind ? String(slot.kind) : "",
       polarity: slot && slot.polarity ? String(slot.polarity) : ""
-    };
-    if (base.concept || base.en_literal) {
-      if (_isNoiseResidue(text) && !base.concept) return [];
-      return [{
-        text: text,
-        hintedCategory: base.hintedCategory || "",
-        searchKeywords: base.searchKeywords.length ?
-          base.searchKeywords : _slotKeywords(text, maxTok),
-        resolvedName: base.resolvedName,
-        concept: base.concept,
-        en_literal: base.en_literal,
-        kind: base.kind,
-        polarity: base.polarity
-      }];
-    }
-    var age = _extractAgePhrase(text);
-    var gender = _extractGenderPhrase(text);
-    var plan = _extractPlanPhrase(text);
-    var region = _extractRegionPhrase(text);
-    var axisCount = (age ? 1 : 0) + (gender ? 1 : 0) + (plan ? 1 : 0) + (region ? 1 : 0);
-    if (axisCount === 0) {
-      if (_isNoiseResidue(text)) return [];
-      return [{
-        text: text,
-        hintedCategory: base.hintedCategory || "",
-        searchKeywords: base.searchKeywords.length ?
-          base.searchKeywords : _slotKeywords(text, maxTok),
-        resolvedName: base.resolvedName
-      }];
-    }
-    if (axisCount === 1) {
-      var one = region || plan || age || gender;
-      var phrase = one.phrase;
-      return [{
-        text: phrase,
-        hintedCategory: region ? "demo" : (plan ? "plan" : (base.hintedCategory || "demo")),
-        searchKeywords: _slotKeywords(phrase, maxTok),
-        resolvedName: base.resolvedName
-      }];
-    }
-    var out = [];
-    var strips = [];
-    if (region) {
-      out.push({
-        text: region.phrase,
-        hintedCategory: "demo",
-        searchKeywords: _slotKeywords(region.phrase, maxTok)
-      });
-      for (var ri = 0; ri < region.strip.length; ri++) strips.push(region.strip[ri]);
-    }
-    if (plan) {
-      out.push({
-        text: plan.phrase,
-        hintedCategory: "plan",
-        searchKeywords: _slotKeywords(plan.phrase, maxTok)
-      });
-      for (var pi = 0; pi < plan.strip.length; pi++) strips.push(plan.strip[pi]);
-    }
-    if (age) {
-      out.push({
-        text: age.phrase,
-        hintedCategory: "demo",
-        searchKeywords: _slotKeywords(age.phrase, maxTok)
-      });
-      for (var ai = 0; ai < age.strip.length; ai++) strips.push(age.strip[ai]);
-    }
-    if (gender) {
-      out.push({
-        text: gender.phrase,
-        hintedCategory: "demo",
-        searchKeywords: _slotKeywords(gender.phrase, maxTok)
-      });
-      for (var gi = 0; gi < gender.strip.length; gi++) strips.push(gender.strip[gi]);
-    }
-    var rest = _stripPhrases(text, strips);
-    if (!_isNoiseResidue(rest)) {
-      out.push({
-        text: _trim(rest),
-        hintedCategory: "other",
-        searchKeywords: _slotKeywords(rest, maxTok)
-      });
-    }
-    return out;
+    }];
   }
 
   // #170 공개 API — Pass0 이후·Foundry 큐 진입 시 동일 규칙
@@ -312,11 +153,11 @@ testWoo.llm = (function () {
       "NL may be messy one sentence without '+' separators.",
       "ATOMIC SLOT RULES (#170) — mandatory:",
       "- ONE slot = ONE condition axis (region OR plan OR age OR gender OR other).",
-      "- NEVER put two axes in one slot (e.g. forbidden: text=\"20대 남성\").",
-      "- Correct: separate slots text=\"20대\" and text=\"남성\".",
-      "- Age bands in one request stay ONE age slot (e.g. \"30대~50대\" or \"30대 50대\"), not two age slots.",
+      "- NEVER put two axes in one slot (e.g. forbidden: text=\"20s male\").",
+      "- Correct: separate slots for age and gender (or region, plan).",
+      "- Age bands in one request stay ONE age slot, not two age slots.",
       "- Unknown axes (e.g. homepage visit) stay their own other slot — do not drop them.",
-      "- Do NOT emit slots that are only audience nouns (고객/대상자/회원/사용자) with no condition.",
+      "- Do NOT emit slots that are only audience nouns (customer/member) with no condition.",
       "- Do NOT invent SQL or fragment ids.",
       "HARD LIMITS: at most 8 slots; each searchKeywords at most 5 short phrases;",
       "total JSON under 1200 characters. No commentary, no padding, no token repetition.",
@@ -371,7 +212,7 @@ testWoo.llm = (function () {
         searchKeywords: kws.slice(0, maxTok)
       });
     }
-    // #170: LLM이 복합 슬롯을 남겨도 결정적으로 축 분할
+    // LLM이 복합 슬롯을 남겨도 EnPivot 필드만 보존(KO 재분할 없음)
     slots = normalizeAtomicSlots(slots, { maxSlots: maxSlots, maxTokens: maxTok });
     return slots;
   }
@@ -398,9 +239,9 @@ testWoo.llm = (function () {
         "(a physical DB column name). Do not translate or guess it — the compiler rejects " +
         "any mismatch with the fragment key_column.",
       "PARAMS: for each chosen fragment, fill params from that candidate's param_domain " +
-        "(nlMap / _bucket.nlMap) using the slot/NL text. Example: slot \"20대\" + " +
-        "_bucket.nlMap[\"20대\"]={ageMin:20,ageMax:30} → params:{ageMin:20,ageMax:30}. " +
-        "slot \"남성\" + gender.nlMap → params:{gender:\"M\"}. " +
+        "(nlMap / _bucket.nlMap) using the slot/NL text. Example: an age-band slot + " +
+        "_bucket.nlMap entry {ageMin,ageMax} → params:{ageMin,ageMax}. " +
+        "A gender slot + gender.nlMap → params:{gender:\"M\"} using the entry's db value. " +
         "If the candidate is the matching axis fragment (_source + same tags) pick it even when " +
         "the exact NL value is not yet a nlMap key. Fill params by analogy with existing " +
         "examples and the declared types/_range/enum. Do not put that phrase in unmatched[]. " +
@@ -644,7 +485,7 @@ testWoo.llm = (function () {
       };
     }
     if (skipPass0 && !sc.concept)
-      return { kind: "unresolved", item: _unresolvedItem(sc, "concept_not_found") };
+      return { kind: "empty" };
     return { kind: "empty" };
   }
 
@@ -733,6 +574,15 @@ testWoo.llm = (function () {
       slots = testWoo.fragContract.mergeLexiconSlots(lexSlots, llmSlots);
     if (!slots || !slots.length) slots = lexSlots.length ? lexSlots : llmSlots;
     slots = normalizeAtomicSlots(slots);
+    if (testWoo.enPivot && testWoo.enPivot.isNonConditionSlot) {
+      var keptSlots = [];
+      var gi;
+      for (gi = 0; gi < slots.length; gi++) {
+        if (testWoo.enPivot.isNonConditionSlot(slots[gi])) continue;
+        keptSlots.push(slots[gi]);
+      }
+      slots = keptSlots;
+    }
     try {
       logInfo("[testWoo.llm.generatePlan] lexicon=" + lexSlots.length +
         " llm=" + llmSlots.length + " merged=" + slots.length +
@@ -756,8 +606,11 @@ testWoo.llm = (function () {
         unresolved.push(decided.item);
         continue;
       }
+      if (decided.kind === "empty" && !sc.concept) continue;
       if (!sc.candidates || !sc.candidates.length) {
         if (_isNoiseResidue(sc.text)) continue;
+        if (testWoo.enPivot && testWoo.enPivot.isNonConditionSlot &&
+            testWoo.enPivot.isNonConditionSlot(sc)) continue;
         empty.push(sc.text);
         emptySlots.push({
           id: sc.id,
@@ -1699,4 +1552,4 @@ testWoo.llm = (function () {
     _readResponseBody: _readResponseBody
   };
 })();
-testWoo.llm.__v = "168";
+testWoo.llm.__v = "172";

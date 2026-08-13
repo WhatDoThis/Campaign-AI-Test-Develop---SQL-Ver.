@@ -1,9 +1,9 @@
 # #174 — EN-Pivot Canonical Layer
 
-> **상태:** `[~]` 3단계 repo · **다음 = 4단계 매칭+heal+abstain**  
+> **상태:** `[~]` 5단계 배포·smoke PASS · **다음 = HUMAN V6 grep**  
 > **이 문서가 추출 좌표계의 정답이다.** 코드가 어긋나면 코드를 고친다.  
 > AI가 HUMAN 검증을 PASS로 자체 처리하지 않음.  
-> 5단계(한국어 사전 제거)는 V0~V5 통과 전에 **절대 앞당기지 않는다.**
+> 5단계 배포+smoke 완료. V6 grep은 HUMAN.
 
 원문: `[별도]_고도화_개발아이디어_관리자작성본.md` 2026-08-13  
 선행 헌법: `#167` 축1=컬럼1 · `#168-A` `_source` · `#169` 서가 우선 · `#172` 공유 모듈  
@@ -112,7 +112,7 @@ WHERE sRegion = '서울' AND iAge >= 10 AND iAge < 20
   #170 Pass0 원자분할       [ ] 재개 ← 추출 입력이 KO 힌트 → EN slots
   #168-B 값 바인딩          [ ] 재개 ← 입력=EN slots · unresolved
   #172 FragContract 매칭    [ ] 재개 ← M1/M2/M3 · abstain
-  ▶ #174 EN-Pivot           [ ] 지금 · 0→5단계
+  ▶ #174 EN-Pivot           [~] 5단계 repo · 다음=HUMAN V6
        0 조사 (코드 금지)
        1 출력 계약 고정
        2 EN 추출 (신규 testWooEnPivot.js)
@@ -135,11 +135,11 @@ R5 배포 HUMAN은 막지 않는다. **R6은 #174-4 완료 후 착수.** 그 전
 
 | 폐기 대상 | 사유 | 코드 삭제 시점 |
 |---|---|---|
-| `JOSA_TAIL` / `NOISE_WORD` / `stemToken` / `isNoiseResidue` **증식** | 조사·어미는 유한하지 않음. #234/#235가 같은 싸움의 연장 | **5단계** (V0~V5 후). 그 전엔 M1 폴백으로 병존 |
-| `#170` S5 한국어 축 힌트(지역명·성별 리터럴)를 슬롯 분할 **주경로**로 쓰는 것 | R1 위반 · EN `concept`가 대체 | 5단계 |
-| `nlMap` 수기 한→영을 **주 매칭 좌표계**로 유지 | 이미 번역표인데 손쌓기. LLM 번역+#174-3이 대체 | 주경로 즉시 폐기 · 키 삭제는 5단계 이후도 금지(하위호환) |
-| `collectLexicon`/`splitByLexicon`을 조사 정규화의 **영구 해법**으로 확장 | 렉시콘은 M1 보조. EN 추출이 주경로 | 증식 즉시 중지 · 함수 삭제는 5단계 |
-| `#170` `normalizeAtomicSlots`의 KO 정규화를 Pass0 **정본**으로 고정 | 원자 슬롯 원칙(S1)만 남김. 쪼개기는 EN extract | 주경로 2단계부터 EnPivot · KO 정규화는 5단계 삭제 |
+| `JOSA_TAIL` / `NOISE_WORD` / KO `stemToken` / 청중명사 `isNoiseResidue` | 조사·어미는 유한하지 않음. #234/#235가 같은 싸움의 연장 | **5단계 repo** (코드 삭제 · 함수는 empty no-op 유지) |
+| `#170` S5 한국어 축 힌트(지역명·성별 리터럴)를 슬롯 분할 **주경로**로 쓰는 것 | R1 위반 · EN `concept`가 대체 | **5단계 repo** |
+| `nlMap` 수기 한→영을 **주 매칭 좌표계**로 유지 | 이미 번역표인데 손쌓기. LLM 번역+#174-3이 대체 | 주경로 폐기 · 키 삭제는 금지(하위호환) |
+| `collectLexicon`/`splitByLexicon`을 조사 정규화의 **영구 해법**으로 확장 | 렉시콘은 M1 보조. EN 추출이 주경로 | 증식 중지 · M1 카탈로그⊂NL만 유지 |
+| `#170` `normalizeAtomicSlots`의 KO 정규화를 Pass0 **정본**으로 고정 | 원자 슬롯 원칙(S1)만 남김. 쪼개기는 EN extract | **5단계 repo** (통과만) |
 | V7 비용 실측을 차수 **합격 게이트**로 두는 것 | 기능이 정본. 비용은 부록 | 게이트에서 제외 (조사 생략 허용) |
 
 유지 (폐기 아님):
@@ -241,7 +241,7 @@ abstain(R3): `unresolved[]` 반환. reason은 `concept_not_found` / `value_not_i
 
 ### 5단계 — 한국어 사전 제거
 
-2~4단계가 **V0~V5** 통과한 뒤에만 `JOSA_TAIL` / `NOISE_WORD` / `stemToken` / `isNoiseResidue` 및 지역명·성별 하드코딩을 제거한다. **먼저 지우면 실패 원인이 EnPivot인지 KO 사전인지 판별 불가.** V6를 맞추려고 5단계를 앞당기지 말 것.
+V0~V5 후 `JOSA_TAIL` / `NOISE_WORD` / KO `stemToken` / 청중명사 `isNoiseResidue` 및 지역명·성별 하드코딩을 제거했다. `stemToken`/`isNoiseResidue` export는 empty no-op. `normalizeAtomicSlots`는 EnPivot 슬롯 통과. **다음 = HUMAN V6 grep.**
 
 ---
 
@@ -289,9 +289,9 @@ abstain(R3): `unresolved[]` 반환. reason은 `concept_not_found` / `value_not_i
 ## 10. Chat 한 줄
 
 ```
-차수: #174 HUMAN V0~V5
+차수: #174 HUMAN V6
 가이드: docs/report/upgrade_plan/37_ENPivot_CanonicalLayer_174.md §8
-선행: #174-4 repo · smoke 1g.enMatch · ACC 배포
-모드: 검증 · V0~V5 PASS 후에만 5단계(KO 사전 삭제)
-금지: 5단계 선삭제 · 번역값을 DB 바인딩 · R6을 V0~V5 전에 착수
+선행: #174-5 repo · V0~V5 PASS
+모드: 검증 · 매칭 코드에서 한국어 값/컬럼 하드코딩 0건
+금지: Studio UI·nlMap 키·바인딩=db 삭제 · R6 착수 · Match Option ON
 ```

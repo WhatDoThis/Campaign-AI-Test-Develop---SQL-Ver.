@@ -401,7 +401,7 @@ testWoo.fragments = (function () {
     return scored;
   }
 
-  // PG LIKE 는 대소문자 구분 — y요금제 토큰이 Y요금제 색인을 놓치지 않게 변형 추가
+  // PG LIKE 는 대소문자 구분 — 카탈로그 토큰의 대소문자 변형을 함께 넣음
   function _tokenCaseVariants(tok) {
     var s = String(tok || "");
     if (!s) return [];

@@ -65,7 +65,7 @@ Status enum: `draft` | `validated` | `registered` | `rejected`.
 
 ## LLM calls (max 2 per generation when EnPivot hits)
 
-1. **EnPivot `translateAndExtract`** — **full** NL → `{en, slots[]}` (0 calls only on identical NL-hash cache TTL 1d). Do not skip because JOSA/NOISE remainder looks empty.
+1. **EnPivot `translateAndExtract`** — **full** NL → `{en, slots[]}` (0 calls only on identical NL-hash cache TTL 1d). JOSA/NOISE matching dictionaries are removed (#174-5).
 2. **Pass0** — only if `testWoo.enPivot` is not loaded (partial deploy). Extract fail → `retryInput`, not Pass0.
 3. **Pass1** — slots + Stage A candidates → CNF plan
 

@@ -1,7 +1,7 @@
 /*
  * testWooFoundry.js (Fragment Foundry 배치 처리)
  * ==================================================
- * litmus 동기 __v=162 (#174-3 도메인 EN 사전화).
+ * litmus 동기 __v=163 (#174-5: 프롬프트 KO 값 리터럴 제거).
  * 큐 슬롯별 triage → feasible만 SQL 생성 → dedup → publish.
  * 색인·샘플바인딩·재사용 게이트는 testWoo.fragContract에 위임.
  *
@@ -68,7 +68,7 @@ testWoo.foundry = (function () {
     '"description":"age axis; physical sqlColumn from describe_schema","keyColumn":"sCustomer_id","scopeKey":"",' +
     '"tags":["age"],' +
     '"params":[{"name":"ageMin","type":"int"},{"name":"ageMax","type":"int"}],' +
-    '"paramDomain":{"_bucket":{"nlMap":{"20대":{"ageMin":20,"ageMax":30}}}},' +
+    '"paramDomain":{"_bucket":{"nlMap":{"<nl>":{"ageMin":20,"ageMax":30}}}},' +
     '"sqlText":"SELECT DISTINCT sCustomer_id FROM testWooSampleCustomer WHERE iAge >= {{ageMin}} AND iAge < {{ageMax}}",' +
     '"rationale":"axis=age; one filter column; range AND on same column; values in paramDomain"}';
   var FINAL_TURN_NUDGE = "FINAL TURN — no more tool calls are allowed. " +
@@ -397,16 +397,18 @@ testWoo.foundry = (function () {
       "- Compiler substitutes {{param}} later. For probe_sql during tools, temporarily " +
         "substitute a sample value from paramDomain, then output JSON with {{param}} kept.",
       "- paramDomain: NL expression → physical column value map " +
-        "(e.g. {\"gender\":{\"여성\":\"F\",\"남자\":\"M\"}}). Required for reuse.",
+        "(e.g. {\"gender\":{\"<nl>\":{\"db\":\"F\",\"en\":[\"female\"]}}}). Required for reuse.",
       "- Age axis: use iAge range comparisons (sargable). Never iAge/10 or column math. " +
         "Sample table has both iAge and dBirthDate — prefer iAge when present.",
-      "- Relative dates (가입 N년/개월 이내): prefer AddDays(GetDate(), -{{joinDaysWithin}}) " +
+      "- Relative dates (N years/months): prefer AddDays(GetDate(), -{{joinDaysWithin}}) " +
         "after probe_sql confirms it runs. Do not quote AddDays/GetDate as string literals. " +
-        "Keep the day count in {{param}} + _bucket.nlMap (e.g. \"1년 이내\":{joinDaysWithin:365}).",
+        "Keep the day count in {{param}} + _bucket.nlMap (e.g. \"<relative>\":{joinDaysWithin:365}).",
       "- name = woo__<table>__<axis> only (e.g. woo__customer__region). " +
         "Never put value tokens in the name (no gyeonggi, seoul, yplan, male, f).",
-      "- Do NOT invent a higher-level value (부천→경기) without user approval. " +
+      "- Do NOT invent a parent/region value without user approval. " +
         "If the slot value is missing from the column, do not emit a fragment.",
+      "- Do NOT bake quotes around {{param}} in sql_text (wrong: '{{planCode}}'). " +
+        "The compiler quotes string params.",
       "When ready, output exactly ONE fragment JSON object for THIS slot only.",
       "FORBIDDEN: markdown fences, prose, tables, warning text, or a second top-level JSON.",
       "If the slot mentions two axes (e.g. age+gender), still emit ONLY the axis for THIS slot text — never both JSON objects.",
@@ -791,7 +793,7 @@ testWoo.foundry = (function () {
 
   // WHERE 절에서 비교 대상 컬럼명만 수집 (동일 컬럼 범위 AND 는 1개로 카운트).
   // {{param}} / '리터럴' / 숫자 RHS 모두 인식해야 한다.
-  // 구버전은 연산자 뒤 \b 를 요구해 `sRegion = {{region}}` · `sRegion = '인천'` 에서
+  // 구버전은 연산자 뒤 \b 를 요구해 `sRegion = {{region}}` · `sRegion = 'literal'` 에서
   // 컬럼 0건 → domain attach 가 전부 실패했다(#168-A 실측 queueId=29894).
   function _sqlFilterColumns(sql) {
     var s = String(sql || "");
@@ -1375,7 +1377,7 @@ testWoo.foundry = (function () {
   }
 
   // missing_slots_json 항목(문자열 또는 객체)을 {id, text, searchKeywords} 로 통일
-  // #170: normalizeAtomicSlots 로 복합 슬롯(20대 남성 등) 방어적 재분할
+  // #170: normalizeAtomicSlots 로 EnPivot 슬롯 필드 보존(KO 재분할 없음)
   function _normalizeSlots(missing) {
     var out = [];
     var list = missing || [];
@@ -1386,7 +1388,11 @@ testWoo.foundry = (function () {
         id: (isObj && mo.id) ? String(mo.id) : ("m" + i),
         text: isObj ? String(mo.text || mo) : String(mo),
         hintedCategory: isObj ? String(mo.hintedCategory || "") : "",
-        searchKeywords: (isObj && mo.searchKeywords) ? mo.searchKeywords : []
+        searchKeywords: (isObj && mo.searchKeywords) ? mo.searchKeywords : [],
+        concept: (isObj && mo.concept) ? mo.concept : null,
+        en_literal: isObj ? String(mo.en_literal || "") : "",
+        kind: isObj ? String(mo.kind || "") : "",
+        polarity: isObj ? String(mo.polarity || "") : ""
       });
     }
     if (testWoo.llm && testWoo.llm.normalizeAtomicSlots) {
@@ -2264,4 +2270,4 @@ testWoo.foundry = (function () {
     repairIndexPollution: repairIndexPollution
   };
 })();
-testWoo.foundry.__v = "162";
+testWoo.foundry.__v = "163";

@@ -4,16 +4,16 @@
  * Stage A / libraryLookup / Foundry publish / Dedup / Compiler가
  * 각자 복제하던 축·색인·커버·샘플바인딩을 한곳에서 제공한다.
  * 같은 tags/name 축 frag는 값 사전 공백이어도 재사용하고, 별칭은 검증 후 merge한다.
- * NL 매칭은 M1 원문⊂문장 → M2 en[] → M3 concept. {db,en} 바인딩은 db만. litmus __v=166.
+ * NL 매칭은 M1 원문⊂문장 → M2 en[] → M3 concept. {db,en} 바인딩은 db만. litmus __v=168.
  *
  * [Main Functions]
  * ===========
- * - axisFromSlot / axisFromCard / axesCompatible — 축 힌트·정합
+ * - axisFromSlot / axisFromCard / axesCompatible — concept·영문 힌트·정합
  * - buildIndexFields — publish용 synonyms·sample_questions
  * - matchProfile / likeFieldExprs / scoreWeights / coverFieldNames — Match 프로필
- * - keywordsFromSlot — Stage A 토큰(+조사 어간·축 태그). 기능어는 LIKE에 안 넣음
- * - collectLexicon / splitByLexicon / mergeLexiconSlots — 카탈로그 값⊂NL 분할
- * - stemToken / isNoiseResidue — 한국어 조사·청중명사
+ * - keywordsFromSlot — Stage A 토큰(+축 태그). 조사 어간 없음
+ * - collectLexicon / splitByLexicon / mergeLexiconSlots — 카탈로그 값⊂NL 분할. 겹치면 EnPivot concept·en_literal을 렉시콘 슬롯에 복사
+ * - stemToken / isNoiseResidue — no-op (5단계: KO 사전 삭제)
  * - normalizeParamDomain / domainMatchSlot / entryDb — 도메인 정규화·값 매칭·{db,en} 원본
  * - matchEnPivotSlot / conceptOf / kindCompatible — M1→M2→M3 매칭
  * - isNegative / markNegative / inHealCooldown / stampHeal — _negative·heal 쿨다운
@@ -72,20 +72,6 @@ testWoo.fragContract = (function () {
     fatigue: "fatigue",
     signup: "joindate",
     other: ""
-  };
-
-  // 한국어 조사(속성 하드코딩 아님). 최장일치로 토큰 끝에서만 제거.
-  var JOSA_TAIL = [
-    "에서부터", "에게서", "으로서", "로써", "로서", "부터", "까지", "마저", "조차",
-    "이나", "이든", "이랑", "이여", "이며", "이야", "이란",
-    "에서", "에게", "한테", "으로",
-    "은", "는", "을", "를", "의", "에", "와", "과", "도", "만", "로", "가"
-  ];
-  var NOISE_WORD = {
-    "고객": 1, "대상자": 1, "회원": 1, "사용자": 1,
-    "사는": 1, "거주": 1, "거주하는": 1, "쓰는": 1, "사용하는": 1,
-    "이용하는": 1, "이용": 1, "이면서": 1, "그리고": 1, "및": 1,
-    "또": 1, "인": 1, "명": 1
   };
 
   function _trim(s) {
@@ -157,17 +143,40 @@ testWoo.fragContract = (function () {
   function axisFromSlot(slot) {
     var text = "";
     var hintCat = "";
+    var concept = "";
+    var kind = "";
     if (slot && typeof slot === "object") {
       text = String(slot.text || "");
       hintCat = String(slot.hintedCategory || "").toLowerCase();
+      concept = String(slot.concept || "");
+      kind = String(slot.kind || "");
     } else {
       text = String(slot || "");
     }
+    var fromC = _axisFromConcept(concept, kind);
+    if (fromC) return [fromC];
     var hints = _axisHintsFromText(text);
     if (hints.length) return hints;
     var mapped = HINT_CAT_TO_AXIS[hintCat];
     if (mapped) return [mapped];
     return [];
+  }
+
+  function _axisFromConcept(concept, kind) {
+    var c = String(concept || "").toLowerCase();
+    if (!c) return "";
+    if (c.indexOf("gender") >= 0 || c.indexOf("sex") >= 0) return "gender";
+    if (c.indexOf("region") >= 0 || c.indexOf("area") >= 0 ||
+        c.indexOf("city") >= 0 || c.indexOf("province") >= 0) return "region";
+    if (c.indexOf("age") >= 0) return "age";
+    if (c.indexOf("plan") >= 0 || c.indexOf("fare") >= 0 || c.indexOf("tariff") >= 0)
+      return "plan";
+    if (c.indexOf("consent") >= 0) return "consent";
+    if (c.indexOf("join") >= 0 || c.indexOf("signup") >= 0 || c.indexOf("tenure") >= 0)
+      return "joindate";
+    if (String(kind || "").toLowerCase() === "range" && c.indexOf("date") >= 0)
+      return "joindate";
+    return "";
   }
 
   function _axisHintsFromText(slotText) {
@@ -177,13 +186,12 @@ testWoo.fragContract = (function () {
       for (var i = 0; i < hints.length; i++) if (hints[i] === a) return;
       hints.push(a);
     }
-    if (/남성|여성|남자|여자|gender/i.test(t)) push("gender");
-    if (/\d+\s*대|연령|나이|\bage\b/i.test(t)) push("age");
-    if (/요금|plan|플랜/i.test(t)) push("plan");
-    if (/서울|경기|인천|부산|대구|대전|광주|울산|세종|강원|충남|충북|전남|전북|경남|경북|제주|지역|region/i.test(t))
-      push("region");
-    if (/동의|consent|수신/i.test(t)) push("consent");
-    if (/가입|이내|조인|join\s*date|created|등록일/i.test(t)) push("joindate");
+    if (/\bgender\b|\bsex\b/i.test(t)) push("gender");
+    if (/\bage\b|\bagegroup\b/i.test(t)) push("age");
+    if (/\bplan\b/i.test(t)) push("plan");
+    if (/\bregion\b|\barea\b/i.test(t)) push("region");
+    if (/\bconsent\b/i.test(t)) push("consent");
+    if (/join\s*date|\bcreated\b|\bsignup\b|\btenure\b/i.test(t)) push("joindate");
     return hints;
   }
 
@@ -219,48 +227,15 @@ testWoo.fragContract = (function () {
   }
 
   function stemToken(raw) {
-    var s = _trim(raw);
-    if (!s) return "";
-    var changed = true;
-    var i, josa;
-    while (changed && s.length >= 3) {
-      changed = false;
-      for (i = 0; i < JOSA_TAIL.length; i++) {
-        josa = JOSA_TAIL[i];
-        if (s.length - josa.length < 2) continue;
-        if (s.substring(s.length - josa.length) === josa) {
-          s = s.substring(0, s.length - josa.length);
-          changed = true;
-          break;
-        }
-      }
-    }
-    return s;
+    return _trim(raw);
   }
 
   function isNoiseToken(raw) {
-    var s = _trim(raw);
-    if (!s) return true;
-    if (NOISE_WORD[s] || NOISE_WORD[s.toLowerCase()]) return true;
-    var st = stemToken(s);
-    if (st && (NOISE_WORD[st] || NOISE_WORD[st.toLowerCase()])) return true;
-    return false;
+    return !_trim(raw);
   }
 
   function isNoiseResidue(text) {
-    var t = _trim(text || "");
-    if (!t) return true;
-    var parts = t.split(/[^0-9a-zA-Z가-힣_]+/);
-    var i, p, st;
-    for (i = 0; i < parts.length; i++) {
-      p = _trim(parts[i]);
-      if (!p) continue;
-      if (isNoiseToken(p)) continue;
-      st = stemToken(p);
-      if (st && st.length >= 2 && !isNoiseToken(st)) return false;
-      if (p.length >= 2 && !isNoiseToken(p)) return false;
-    }
-    return true;
+    return !_trim(text || "");
   }
 
   function collectLexicon(cards) {
@@ -389,10 +364,16 @@ testWoo.fragContract = (function () {
       s = llm[i];
       if (!s || isNoiseResidue(s.text)) continue;
       covered = false;
-      for (j = 0; j < lex.length; j++) {
-        k = String(lex[j].text || "");
+      for (j = 0; j < out.length; j++) {
+        k = String(out[j].text || "");
         if (!k) continue;
-        if (_ciHas(s.text, k) || _ciHas(k, s.text)) { covered = true; break; }
+        if (_ciHas(s.text, k) || _ciHas(k, s.text)) {
+          covered = true;
+          if (s.concept && !out[j].concept) out[j].concept = s.concept;
+          if (s.en_literal && !out[j].en_literal) out[j].en_literal = s.en_literal;
+          if (s.kind && !out[j].kind) out[j].kind = s.kind;
+          break;
+        }
       }
       if (!covered) out.push(s);
     }
@@ -493,7 +474,6 @@ testWoo.fragContract = (function () {
     function push(raw) {
       var s = _trim(raw);
       if (!s || s.length < 2) return;
-      if (isNoiseToken(s)) return;
       if (s.length > maxLen) s = s.substring(0, maxLen);
       var key = s.toLowerCase();
       if (!seen[key]) {
@@ -505,14 +485,6 @@ testWoo.fragContract = (function () {
         seen[compact] = true;
         out.push(compact);
       }
-      var st = stemToken(s);
-      if (st && st.length >= 2 && !isNoiseToken(st)) {
-        var sk = st.toLowerCase();
-        if (!seen[sk]) {
-          seen[sk] = true;
-          out.push(st);
-        }
-      }
     }
     if (!slot) return [];
     var kws = slot.searchKeywords;
@@ -523,7 +495,7 @@ testWoo.fragContract = (function () {
       var raw = String(slot.text).split(/[^0-9a-zA-Z가-힣]+/);
       for (var j = 0; j < raw.length; j++) push(raw[j]);
     }
-    // 값 토큰(10대)이 색인에 없어도 tags=age LIKE로 축 frag를 찾는다.
+    // 값 토큰이 색인에 없어도 tags=age LIKE로 축 frag를 찾는다.
     var hints = axisFromSlot(slot);
     for (var hi = 0; hi < hints.length; hi++) push(hints[hi]);
     return out.slice(0, Math.max(maxTok * 3, 12));
@@ -1185,4 +1157,4 @@ testWoo.fragContract = (function () {
     scoreCard: scoreCard
   };
 })();
-testWoo.fragContract.__v = "166";
+testWoo.fragContract.__v = "168";

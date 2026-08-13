@@ -1,6 +1,14 @@
 # Log
 
 ## Log Index
+251. 2026-08-13 인천 누락 — en_literal M2 보존 · merge 시 EnPivot 필드 복사
+250. 2026-08-13 「사는」 categorical glue가 Generate를 막던 구멍 수정
+249. 2026-08-13 Generate — 비조건 잔여(사는) 슬롯 드롭
+248. 2026-08-13 HUMAN #174-5 smoke PASS (20/21, embed SKIP)
+247. 2026-08-13 smoke 1b — unseen alias 히트는 concept 축
+246. 2026-08-13 smoke 1e — M1 covered≠NOISE 잔여 · WKF 스크립트 재등록
+245. 2026-08-13 HUMAN #174-5 ACC 배포 완료 · 다음 V6
+244. 2026-08-13 #174-5 한국어 매칭 사전 제거 (JOSA/NOISE/축 KO regex)
 243. 2026-08-13 Generate Rhino strict — for 안 function 선언 제거
 242. 2026-08-13 #174-4 M1→M2→M3 매칭 · unresolved · `_negative`
 241. 2026-08-13 #174-3 도메인 EN 사전화 · {db,en[]} · bind=db
@@ -246,6 +254,77 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+251. 2026-08-13 인천 누락 — en_literal M2 보존 · merge 시 EnPivot 필드 복사
+Purpose: 171이 concept 없는 en_literal 슬롯을 버려 인천(M2)이 사라지고 10대만 SQL이 나왔다. glue(사는)는 concept 없으면 skip.
+Changes:
+- isNonConditionSlot: concept | resolvedName | en_literal 이면 유지
+- mergeLexiconSlots: 겹치면 concept·en_literal·kind를 렉시콘 슬롯에 복사
+- generatePlan: kind=empty 이고 concept 없으면 unmatched에 넣지 않음(사는+living이 SQL을 막지 않음)
+- smoke 1e: 빈 glue drop · en_literal 유지. 1b merge 복사 검증
+- __v enPivot=172 llm=172 fragContract=168
+Verification: HUMAN — EnPivot+FragContract+Llm 재등록. `인천 거주 10대 고객` → 인천+10대 SQL. 1·3·4 유지.
+Changed files: new_ver/js/testWooEnPivot.js, new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+250. 2026-08-13 「사는」 categorical glue가 Generate를 막던 구멍 수정
+Purpose: EnPivot이 사는에 kind=categorical·en_literal을 붙이면 잔여 필터를 통과하고, concept 없음이 전체 SQL을 중단시켰다.
+Changes:
+- isNonConditionSlot: 유지 조건은 concept 또는 resolvedName만
+- skipPass0+concept없음 → unresolved 금지, skip. Foundry 큐도 안 탐
+- smoke 1e: categorical+en_literal glue도 drop
+- __v enPivot=171 llm=171
+Verification: HUMAN — EnPivot+Llm 재등록. 1차 서울+남성 SQL. 3차는 전라도만 value_not_in_domain(사는 메시지 없음).
+Changed files: new_ver/js/testWooEnPivot.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+249. 2026-08-13 Generate — 비조건 잔여(사는) 슬롯 드롭
+Purpose: 5단계 후 EnPivot이 연결어(사는)를 concept 없는 슬롯으로 내면 concept_not_found로 SQL이 막혔다. KO 사전 없이 비조건 슬롯만 버린다.
+Changes:
+- EnPivot 프롬프트: 조건 축만 추출. glue/audience noun 슬롯 금지
+- isNonConditionSlot: concept·en_literal·resolvedName·축 kind 없으면 드롭
+- toPipelineSlots·translateAndExtract·generatePlan에서 적용
+- __v enPivot=170 llm=170. smoke 1e glue drop
+Verification: HUMAN — woo:testWooEnPivot.js, testWooLlm.js 재등록. StudioContext.jssp(expected). 스모크 1e. 동일 NL 재생성(사는 없어야 함).
+Changed files: new_ver/js/testWooEnPivot.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+248. 2026-08-13 HUMAN #174-5 smoke PASS (20/21, embed SKIP)
+Purpose: WKF93 스모크 전 스텝 통과. SKIP 8은 embedEnabled=false 전제.
+Changes:
+- 진행판·37: 5단계 smoke PASS · 다음=HUMAN V6
+Verification: HUMAN V6 grep. libVersions mismatch 0 권장. R6·Match ON 금지.
+Changed files: docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/37_ENPivot_CanonicalLayer_174.md, docs/log/log.md
+
+247. 2026-08-13 smoke 1b — unseen alias 히트는 concept 축
+Purpose: N대 regex 삭제 후 text만으로는 age 축이 안 나온다. 서가 재사용은 EnPivot concept로 판정한다.
+Changes:
+- libraryHitPredicate 스모크 슬롯에 concept=age_group · kind=range
+Verification: HUMAN — WKF93 jsSmokeTest에 testWooSmoke.js만 재붙여넣기. JS lib 재배포 불필요.
+Changed files: new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+246. 2026-08-13 smoke 1e — M1 covered≠NOISE 잔여 · WKF 스크립트 재등록
+Purpose: 5단계 후 잔여(에 사는 고객)는 노이즈가 아니다. 1e가 covered=true를 요구하면 실패한다. 1b/1c FAIL 문구는 구 스모크 WKF.
+Changes:
+- 1e: 서울+10대 슬롯만 검사. covered 강제 삭제
+Verification: HUMAN — WKF93 `jsSmokeTest`에 `new_ver/tools/testWooSmoke.js` 재붙여넣기 후 재실행. JS lib는 이미 새 버전(1g/1f/1d PASS).
+Changed files: new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+245. 2026-08-13 HUMAN #174-5 ACC 배포 완료 · 다음 V6
+Purpose: 5단계 JS/JSSP 배포 사실을 진행판에 반영한다. V6는 HUMAN 판정.
+Changes:
+- 진행판: #174-5 배포 · 다음=HUMAN V6
+Verification: HUMAN — libVersions mismatch 0 · smoke 1b/1c · V6 grep. AI가 V6 PASS 처리 금지.
+Changed files: docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+244. 2026-08-13 #174-5 한국어 매칭 사전 제거 (JOSA/NOISE/축 KO regex)
+Purpose: V0~V5 후 조사·청중명사·지역/성별 하드코딩을 매칭 경로에서 지운다. 추출은 EnPivot, 바인딩은 db만.
+Changes:
+- JOSA_TAIL/NOISE_WORD 삭제. stemToken/isNoiseResidue는 empty no-op
+- axisFromSlot은 concept·영문 힌트·hintedCategory. 지역명/성별/N대 regex 없음
+- normalizeAtomicSlots는 EnPivot 슬롯 통과(KO 축 분할 없음)
+- Foundry/Feasibility 프롬프트에서 한국어 값 예시 제거. Foundry는 concept 필드 보존
+- smoke 1b/1c를 concept 기준으로 교체
+- __v: fragContract=167 llm=169 enPivot=169 foundry=163 feasibility=161
+Verification: HUMAN — 아래 배포 목록. smoke 1b/1c. 다음=V6 grep(매칭 코드 한국어 값/컬럼 하드코딩 0). Studio UI·nlMap 키는 유지. Match Option ON 금지.
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/js/testWooEnPivot.js, new_ver/js/testWooFoundry.js, new_ver/js/testWooFeasibility.js, new_ver/js/testWooFragments.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/report/upgrade_plan/37_ENPivot_CanonicalLayer_174.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/23_SQLFirst_AI명령문.md, docs/report/upgrade_plan/34_Pass0_슬롯원자분할_170.md, docs/report/upgrade_plan/20_전환_자산판정표.md, docs/report/upgrade_plan/27_스펙드리프트.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, .cursor/skills/campaign-ai-studio/pipeline-contracts.md, docs/log/log.md
 
 243. 2026-08-13 Generate Rhino strict — for 안 function 선언 제거
 Purpose: ACC Rhino strict 모드에서 for 루프 안의 function 선언이 Generate를 죽였다.

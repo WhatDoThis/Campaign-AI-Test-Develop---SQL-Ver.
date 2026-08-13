@@ -13,7 +13,7 @@ response.setContentType("application/json;charset=utf-8");
  * - listWkfs / createWkf — Campaign 하위 WKF(Max 15)
  * - listRegisteredSql — 최근 반영 SQL + WKF/Program 점프 메타(분기 B)
  * - selectWkf / releaseLock — soft-lock 획득·해제(CSRF)
- * - libVersions — 로드된 testWoo.* 모듈 __v JSON (expectedByMod: foundry=162 llm=168 enPivot=168 fragContract=166)
+ * - libVersions — 로드된 testWoo.* 모듈 __v JSON (expectedByMod: foundry=163 llm=172 enPivot=172 fragContract=168 feasibility=161)
  *
  * [Dependencies]
  * =========
@@ -59,9 +59,9 @@ try {
     loadLibrary("woo:testWooWorkflowUi.js");
     // 모듈별 기대 __v. 기본 159. heal 경로만 올림(전체 강제 재배포 방지).
     var expectedByMod = {
-      llm: "168", toolkit: "160", enPivot: "168",
-      fragContract: "166", fragments: "165", compiler: "160",
-      foundry: "162", dedup: "160", feasibility: "160"
+      llm: "172", toolkit: "160", enPivot: "172",
+      fragContract: "168", fragments: "165", compiler: "160",
+      foundry: "163", dedup: "160", feasibility: "161"
     };
     var expectedDefault = "159";
     function _twLibV(mod) {
