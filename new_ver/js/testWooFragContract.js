@@ -4,23 +4,26 @@
  * Stage A / libraryLookup / Foundry publish / Dedup / Compiler가
  * 각자 복제하던 축·색인·커버·샘플바인딩을 한곳에서 제공한다.
  * 같은 tags/name 축 frag는 값 사전 공백이어도 재사용하고, 별칭은 검증 후 merge한다.
- * NL 매칭은 M1 원문⊂문장 → M2 en[] → M3 concept. {db,en} 바인딩은 db만. litmus __v=168.
+ * NL 매칭은 M1 원문⊂문장 → M2 en[] → M3 concept. {db,en} 바인딩은 db만. litmus __v=175.
+ * N대는 _bucket/ageMin·ageMax 축에서 번역 전에 {ageMin:N,ageMax:N+10}으로 묶는다.
  *
  * [Main Functions]
  * ===========
  * - axisFromSlot / axisFromCard / axesCompatible — concept·영문 힌트·정합
- * - buildIndexFields — publish용 synonyms·sample_questions
+ * - buildIndexFields — publish용 synonyms·sample_questions. `_group` 별칭 포함
  * - matchProfile / likeFieldExprs / scoreWeights / coverFieldNames — Match 프로필
  * - keywordsFromSlot — Stage A 토큰(+축 태그). 조사 어간 없음
- * - collectLexicon / splitByLexicon / mergeLexiconSlots — 카탈로그 값⊂NL 분할. 겹치면 EnPivot concept·en_literal을 렉시콘 슬롯에 복사
+ * - collectLexicon / splitByLexicon / mergeLexiconSlots — 카탈로그 값⊂NL 분할. `_group` 별칭 포함. 겹치면 EnPivot 필드 복사. LLM 스팬이 더 길면 덮지 않음
  * - stemToken / isNoiseResidue — no-op (5단계: KO 사전 삭제)
- * - normalizeParamDomain / domainMatchSlot / entryDb — 도메인 정규화·값 매칭·{db,en} 원본
- * - matchEnPivotSlot / conceptOf / kindCompatible — M1→M2→M3 매칭
+ * - normalizeParamDomain / domainMatchSlot / entryDb — 도메인 정규화·값 매칭·{db,en} 원본. `_group` 별칭→members[]. 토큰 경계. N대는 _bucket 키·유도가 enum 접두보다 앞
+ * - matchEnPivotSlot / conceptOf / kindCompatible — M1→M2G(`_group`)→M2→M3 매칭. N대는 EN 다히트 전에 묶음
  * - isNegative / markNegative / inHealCooldown / stampHeal — _negative·heal 쿨다운
- * - validateBind / attachAlias / mergeParamDomainJson — 바인딩 검증·별칭 보완·도메인 merge
- * - sampleBindSql — {{param}} 검증/Dedup용 샘플 치환(유일 구현)
+ * - validateBind / attachAlias / mergeParamDomainJson — 바인딩 검증(배열은 원소별 enum)·별칭 보완(문장·공백 별칭 거부)·도메인 merge(`_group` 보존, nlMap 키 삭제 금지)
+ * - sampleBindSql — {{param}} 검증/Dedup용 샘플 치환(유일 구현). 배열은 'a','b'
+ * - promoteEqPlaceholderToIn — `col = {{p}}` → `col IN ({{p}})` (>= <= != 유지)
  * - coversSlot / libraryHitPredicate — 재사용·서가 히트(축 identity, 값 미등재≠신규)
- * - resolveNlParams — NL→params (Compiler bind 공유)
+ * - resolveNlParams — NL→params (Compiler bind 공유). `_group` 히트는 members[] (후보 교집합)
+ * - upsertGroup — `_group` 별칭 기록(members는 후보 교집합, nlMap 키 유지)
  * - logCode / errorCodes — FRAG_CONTRACT:<code> 로그
  *
  * [Dependencies]
@@ -86,6 +89,23 @@ testWoo.fragContract = (function () {
     return String(s || "").toLowerCase().replace(/\s+/g, "");
   }
 
+  function _induceNDae(text) {
+    var t = _trim(String(text || ""));
+    var m = /^(\d{1,2})\uB300$/.exec(t);
+    if (!m) m = /^(\d{1,2})s$/.exec(_norm(t));
+    if (!m) return null;
+    var n = Number(m[1]);
+    if (isNaN(n) || n < 1 || n > 90) return null;
+    return { ageMin: n, ageMax: n + 10 };
+  }
+
+  function _domainAcceptsNDae(domain) {
+    if (!domain) return false;
+    if (domain._bucket) return true;
+    if (domain.ageMin && domain.ageMax) return true;
+    return false;
+  }
+
   function _ciHas(hay, needle) {
     if (hay == null || needle == null) return false;
     var h = String(hay).toLowerCase();
@@ -94,9 +114,109 @@ testWoo.fragContract = (function () {
     return h.indexOf(n) >= 0;
   }
 
+  function _isWordChar(c) {
+    return /[0-9a-zA-Z가-힣_]/.test(String(c || ""));
+  }
+
+  function _tokenAliasHit(token, alias, dbHint, isGroup) {
+    var t = _norm(token);
+    var a = _norm(alias);
+    if (!t || !a || a.length < 2) return false;
+    if (t === a) return true;
+    if (t.indexOf(a) !== 0) return false;
+    var rest = t.substring(a.length);
+    if (!rest) return true;
+    if (isGroup) return rest.length <= 2;
+    var db = "";
+    if (dbHint != null && typeof dbHint !== "object") db = _norm(String(dbHint));
+    if (db && t.indexOf(db) >= 0) return true;
+    if (db && db === a && rest.length <= 1) return true;
+    return false;
+  }
+
+  function _boundHas(hay, needle, dbHint, isGroup) {
+    if (hay == null || needle == null) return false;
+    var n = String(needle);
+    if (!n || n.length < 2) return false;
+    var toks = String(hay).split(/[^0-9a-zA-Z가-힣_]+/);
+    var i;
+    for (i = 0; i < toks.length; i++) {
+      if (_tokenAliasHit(toks[i], n, dbHint, isGroup)) return true;
+    }
+    return false;
+  }
+
+  function _aliasPrefixConflict(surface, alias, dbHint, isGroup) {
+    var toks = String(surface || "").split(/[^0-9a-zA-Z가-힣_]+/);
+    var i, t, a;
+    a = _norm(alias);
+    if (!a) return false;
+    for (i = 0; i < toks.length; i++) {
+      t = _norm(toks[i]);
+      if (t && t.indexOf(a) === 0 && t !== a &&
+          !_tokenAliasHit(toks[i], alias, dbHint, isGroup))
+        return true;
+    }
+    return false;
+  }
+
+  function _lexHint(card, key) {
+    var out = { db: "", group: false };
+    var domain = normalizeParamDomain(card && card.param_domain);
+    if (!domain || !key) return out;
+    var k, spec, map, dbv, ei;
+    for (k in domain) {
+      if (!domain.hasOwnProperty(k) || String(k).charAt(0) === "_") continue;
+      spec = domain[k] || {};
+      map = spec.nlMap;
+      if (map && map[key] != null) {
+        dbv = entryDb(map[key]);
+        out.db = (dbv != null && typeof dbv !== "object") ? String(dbv) : "";
+        return out;
+      }
+      if (spec.enum && typeof spec.enum.length === "number") {
+        for (ei = 0; ei < spec.enum.length; ei++) {
+          if (String(spec.enum[ei]) === String(key)) {
+            out.db = String(key);
+            return out;
+          }
+        }
+      }
+    }
+    if (domain._bucket && domain._bucket.nlMap && domain._bucket.nlMap[key] != null) {
+      out.group = true;
+      return out;
+    }
+    _eachGroup(domain, function (gpk, alias, gentry) {
+      if (String(alias) === String(key)) out.group = true;
+    });
+    return out;
+  }
+
   function _sqlLit(v) {
     if (typeof v === "number" && isFinite(v)) return String(v);
     return "'" + String(v).replace(/'/g, "''") + "'";
+  }
+
+  function _sqlLitJoin(v) {
+    if (!_isArray(v)) return _sqlLit(v);
+    if (!v.length) return "'__sample__'";
+    var buf = [];
+    var i;
+    for (i = 0; i < v.length; i++) {
+      if (v[i] != null && typeof v[i] === "object") continue;
+      buf.push(_sqlLit(v[i]));
+    }
+    if (!buf.length) return "'__sample__'";
+    return buf.join(",");
+  }
+
+  // col = {{param}} → col IN ({{param}}). >= <= != <> 는 그대로.
+  function promoteEqPlaceholderToIn(sqlText) {
+    return String(sqlText || "").replace(
+      /\b([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\{\{(\w+)\}\}/g,
+      "$1 IN ({{$2}})"
+    );
   }
 
   function logCode(code, detail) {
@@ -281,6 +401,12 @@ testWoo.fragContract = (function () {
         }
       }
       if (domain._bucket) addMap(domain._bucket.nlMap, card);
+      _eachGroup(domain, function (gpk, alias, gentry) {
+        add(alias, card);
+        var gi;
+        for (gi = 0; gi < gentry.members.length; gi++)
+          add(gentry.members[gi], card);
+      });
       syn = card.synonyms;
       if (typeof syn === "string") synParts = syn.split(/[,;]+/);
       else if (syn && typeof syn.length === "number") synParts = syn;
@@ -319,6 +445,16 @@ testWoo.fragContract = (function () {
           if (used[at + hi]) { overlap = true; break; }
         }
         if (!overlap) {
+          var tokStart = at;
+          var tokEnd = at + klen;
+          while (tokStart > 0 && _isWordChar(text.charAt(tokStart - 1))) tokStart--;
+          while (tokEnd < text.length && _isWordChar(text.charAt(tokEnd))) tokEnd++;
+          var token = text.substring(tokStart, tokEnd);
+          var hint = _lexHint(entries[ei].card, k);
+          if (!_tokenAliasHit(token, k, hint.db, hint.group)) {
+            pos = at + 1;
+            continue;
+          }
           for (hi = 0; hi < klen; hi++) used[at + hi] = 1;
           hits.push({
             start: at,
@@ -368,6 +504,9 @@ testWoo.fragContract = (function () {
         k = String(out[j].text || "");
         if (!k) continue;
         if (_ciHas(s.text, k) || _ciHas(k, s.text)) {
+          var llmT = String(s.text || "");
+          if (llmT.length > k.length && _ciHas(llmT, k) && !_ciHas(k, llmT))
+            continue;
           covered = true;
           if (s.concept && !out[j].concept) out[j].concept = s.concept;
           if (s.en_literal && !out[j].en_literal) out[j].en_literal = s.en_literal;
@@ -425,6 +564,12 @@ testWoo.fragContract = (function () {
       pushNlMap(domain[sk] && domain[sk].nlMap);
     }
     if (domain._bucket) pushNlMap(domain._bucket.nlMap);
+    _eachGroup(domain, function (gpk, alias, gentry) {
+      _pushUniqueTok(syn, seen, alias);
+      var gei;
+      for (gei = 0; gei < gentry.en.length; gei++)
+        _pushUniqueTok(syn, seen, gentry.en[gei]);
+    });
 
     return {
       synonyms: syn.length ? syn.join(",") : "",
@@ -557,32 +702,242 @@ testWoo.fragContract = (function () {
     return v;
   }
 
+  function _normalizeMembers(raw) {
+    var arr = _isArray(raw) ? raw : (raw != null && raw !== "" ? [raw] : []);
+    var out = [];
+    var seen = {};
+    var i, s;
+    for (i = 0; i < arr.length; i++) {
+      if (arr[i] != null && typeof arr[i] === "object") continue;
+      s = String(arr[i]);
+      if (!s || seen[s]) continue;
+      seen[s] = 1;
+      out.push(s);
+    }
+    return out;
+  }
+
+  function _normalizeGroupEntry(raw) {
+    if (!raw || typeof raw !== "object" || _isArray(raw)) return null;
+    var members = _normalizeMembers(raw.members);
+    if (!members.length) return null;
+    var src = String(raw.src || "llm").toLowerCase();
+    if (src !== "human") src = "llm";
+    var en = [];
+    var seenEn = {};
+    var ei, e;
+    if (_isArray(raw.en)) {
+      for (ei = 0; ei < raw.en.length; ei++) {
+        if (raw.en[ei] != null && typeof raw.en[ei] === "object") continue;
+        e = _trim(raw.en[ei]);
+        if (e.length < 2 || seenEn[e.toLowerCase()]) continue;
+        seenEn[e.toLowerCase()] = 1;
+        en.push(e);
+      }
+    }
+    return {
+      members: members,
+      src: src,
+      verified: raw.verified === true || raw.verified === "true",
+      en: en
+    };
+  }
+
+  function _paramCandidates(domain, pk) {
+    var out = [];
+    var seen = {};
+    function add(v) {
+      if (v == null || typeof v === "object") return;
+      var s = String(v);
+      if (!s || seen[s]) return;
+      seen[s] = 1;
+      out.push(s);
+    }
+    var spec = (domain && domain[pk]) || {};
+    var ei, nk;
+    if (spec.enum && _isArray(spec.enum)) {
+      for (ei = 0; ei < spec.enum.length; ei++) add(spec.enum[ei]);
+    }
+    if (spec.nlMap && typeof spec.nlMap === "object") {
+      for (nk in spec.nlMap) {
+        if (!spec.nlMap.hasOwnProperty(nk)) continue;
+        add(entryDb(spec.nlMap[nk]));
+      }
+    }
+    return out;
+  }
+
+  function _isCandDb(domain, pk, val) {
+    if (val == null || typeof val === "object") return false;
+    var cand = _paramCandidates(domain, pk);
+    var s = String(val);
+    var i;
+    for (i = 0; i < cand.length; i++) {
+      if (String(cand[i]) === s) return true;
+    }
+    return false;
+  }
+
+  function _finestValue(domain, pk, alias, stored) {
+    var a = alias != null ? String(alias) : "";
+    if (a && _isCandDb(domain, pk, a)) return a;
+    return stored;
+  }
+
+  function _filterGroupMembers(domain, pk, members) {
+    var cand = _paramCandidates(domain, pk);
+    var src = _normalizeMembers(members);
+    if (!cand.length) return src;
+    var allow = {};
+    var i, m, out = [];
+    for (i = 0; i < cand.length; i++) allow[String(cand[i])] = 1;
+    for (i = 0; i < src.length; i++) {
+      m = String(src[i]);
+      if (allow[m]) out.push(m);
+    }
+    return out;
+  }
+
+  function _eachGroup(domain, fn) {
+    var g = domain && domain._group;
+    if (!g || typeof g !== "object" || _isArray(g)) return;
+    var pk, alias, bucket, entry;
+    for (pk in g) {
+      if (!g.hasOwnProperty(pk) || String(pk).charAt(0) === "_") continue;
+      bucket = g[pk];
+      if (!bucket || typeof bucket !== "object" || _isArray(bucket)) continue;
+      for (alias in bucket) {
+        if (!bucket.hasOwnProperty(alias)) continue;
+        entry = _normalizeGroupEntry(bucket[alias]);
+        if (!entry) continue;
+        fn(String(pk), String(alias), entry);
+      }
+    }
+  }
+
+  function _mergeGroupBlock(base, incGroup) {
+    if (!incGroup || typeof incGroup !== "object" || _isArray(incGroup)) return false;
+    if (!base._group || typeof base._group !== "object" || _isArray(base._group))
+      base._group = {};
+    var changed = false;
+    var pk, alias, incB, incE, baseE, mi, bj, found, merged;
+    for (pk in incGroup) {
+      if (!incGroup.hasOwnProperty(pk) || String(pk).charAt(0) === "_") continue;
+      incB = incGroup[pk];
+      if (!incB || typeof incB !== "object" || _isArray(incB)) continue;
+      if (!base._group[pk] || typeof base._group[pk] !== "object")
+        base._group[pk] = {};
+      for (alias in incB) {
+        if (!incB.hasOwnProperty(alias)) continue;
+        incE = _normalizeGroupEntry(incB[alias]);
+        if (!incE) continue;
+        baseE = _normalizeGroupEntry(base._group[pk][alias]);
+        if (!baseE) {
+          base._group[pk][alias] = incE;
+          changed = true;
+          continue;
+        }
+        merged = baseE.members.slice(0);
+        for (mi = 0; mi < incE.members.length; mi++) {
+          found = false;
+          for (bj = 0; bj < merged.length; bj++) {
+            if (String(merged[bj]) === String(incE.members[mi])) { found = true; break; }
+          }
+          if (!found) {
+            merged.push(incE.members[mi]);
+            changed = true;
+          }
+        }
+        baseE.members = merged;
+        if (baseE.src !== "human") {
+          if (incE.src === "human") {
+            baseE.src = "human";
+            changed = true;
+          } else if (incE.src && incE.src !== baseE.src) {
+            baseE.src = incE.src;
+          }
+        }
+        if (!baseE.verified && incE.verified) {
+          baseE.verified = true;
+          changed = true;
+        }
+        if (incE.en && incE.en.length) {
+          if (!baseE.en) baseE.en = [];
+          for (mi = 0; mi < incE.en.length; mi++) {
+            found = false;
+            for (bj = 0; bj < baseE.en.length; bj++) {
+              if (String(baseE.en[bj]).toLowerCase() === String(incE.en[mi]).toLowerCase()) {
+                found = true;
+                break;
+              }
+            }
+            if (!found) {
+              baseE.en.push(incE.en[mi]);
+              changed = true;
+            }
+          }
+        }
+        base._group[pk][alias] = baseE;
+      }
+    }
+    return changed;
+  }
+
+  function upsertGroup(domainRaw, param, alias, members, meta) {
+    var domain = normalizeParamDomain(domainRaw);
+    var pk = _trim(param);
+    var a = _trim(alias);
+    if (!pk || !a || a.length > 24) return domain;
+    meta = meta || {};
+    var enIn = meta.en;
+    var block = {};
+    block[pk] = {};
+    block[pk][a] = {
+      members: _normalizeMembers(members),
+      src: String(meta.src || "llm").toLowerCase() === "human" ? "human" : "llm",
+      verified: meta.verified === true || meta.verified === "true",
+      en: _isArray(enIn) ? enIn : (enIn ? [enIn] : [])
+    };
+    _mergeGroupBlock(domain, block);
+    var g = domain._group && domain._group[pk] && domain._group[pk][a];
+    if (g && g.members)
+      g.members = _filterGroupMembers(domain, pk, g.members);
+    return domain;
+  }
+
   function domainMatchSlot(domainRaw, slotText) {
     var domain = normalizeParamDomain(domainRaw);
     if (!domain) return null;
     var text = String(slotText || "");
     if (!text) return null;
+    if (domain._bucket && domain._bucket.nlMap && domain._bucket.nlMap[text] != null)
+      return { param: "_bucket", nl: text, value: entryDb(domain._bucket.nlMap[text]) };
+    var nd0 = _induceNDae(text);
+    if (nd0 && _domainAcceptsNDae(domain))
+      return { param: "_bucket", nl: text, value: nd0 };
     var k;
     for (k in domain) {
       if (!domain.hasOwnProperty(k)) continue;
       if (k.charAt(0) === "_") continue;
       var spec = domain[k] || {};
       var map = spec.nlMap;
-      var nk, dbv;
+      var nk, dbv, bound;
+      var en = spec.enum;
+      if (en && typeof en.length === "number") {
+        for (var ei = 0; ei < en.length; ei++) {
+          if (_boundHas(text, en[ei], en[ei], false))
+            return { param: k, value: en[ei] };
+        }
+      }
       if (map && typeof map === "object") {
         for (nk in map) {
           if (!map.hasOwnProperty(nk)) continue;
           dbv = entryDb(map[nk]);
-          if (_ciHas(text, nk) || (dbv != null && typeof dbv !== "object" && _ciHas(text, dbv))) {
-            return { param: k, nl: String(nk), value: dbv != null ? dbv : map[nk] };
+          if (_boundHas(text, nk, dbv, false) ||
+              (dbv != null && typeof dbv !== "object" && _boundHas(text, dbv, dbv, false))) {
+            bound = _finestValue(domain, k, nk, dbv != null ? dbv : map[nk]);
+            return { param: k, nl: String(nk), value: bound };
           }
-        }
-      }
-      var en = spec.enum;
-      if (en && typeof en.length === "number") {
-        for (var ei = 0; ei < en.length; ei++) {
-          if (_ciHas(text, en[ei]))
-            return { param: k, value: en[ei] };
         }
       }
     }
@@ -590,9 +945,36 @@ testWoo.fragContract = (function () {
       var bm = domain._bucket.nlMap;
       for (nk in bm) {
         if (!bm.hasOwnProperty(nk)) continue;
-        if (_ciHas(text, nk))
+        if (_boundHas(text, nk, null, true))
           return { param: "_bucket", nl: String(nk), value: entryDb(bm[nk]) };
       }
+    }
+    var bestAlias = "";
+    var bestPk = "";
+    var bestMembers = null;
+    _eachGroup(domain, function (gpk, alias, gentry) {
+      if (!_boundHas(text, alias, null, true)) return;
+      if (_isCandDb(domain, gpk, alias)) {
+        if (String(alias).length >= String(bestAlias).length) {
+          bestAlias = alias;
+          bestPk = gpk;
+          bestMembers = [alias];
+        }
+        return;
+      }
+      var mem = _filterGroupMembers(domain, gpk, gentry.members);
+      if (!mem.length) return;
+      if (String(alias).length >= String(bestAlias).length) {
+        bestAlias = alias;
+        bestPk = gpk;
+        bestMembers = mem;
+      }
+    });
+    if (bestMembers) {
+      if (bestMembers.length === 1 && String(bestMembers[0]) === bestAlias &&
+          _isCandDb(domain, bestPk, bestAlias))
+        return { param: bestPk, nl: bestAlias, value: bestAlias };
+      return { param: bestPk, nl: bestAlias, value: bestMembers, group: true };
     }
     return null;
   }
@@ -663,11 +1045,18 @@ testWoo.fragContract = (function () {
     var ens = _enList(entry);
     var n = _norm(lit);
     if (!ens || !n || n.length < 2) return false;
-    var i, e;
+    var i, e, toks, ti, tok;
+    toks = n.split(/[^a-z0-9]+/);
     for (i = 0; i < ens.length; i++) {
       e = _norm(ens[i]);
       if (!e || e.length < 2) continue;
-      if (n === e || n.indexOf(e) >= 0 || e.indexOf(n) >= 0) return true;
+      if (n === e) return true;
+      for (ti = 0; ti < toks.length; ti++) {
+        tok = toks[ti];
+        if (!tok || tok.length < 2) continue;
+        if (/^\d{1,2}$/.test(tok)) continue;
+        if (tok === e) return true;
+      }
     }
     return false;
   }
@@ -692,6 +1081,9 @@ testWoo.fragContract = (function () {
         fn("_bucket", String(nk), map[nk]);
       }
     }
+    _eachGroup(domain, function (gpk, alias, gentry) {
+      fn(gpk, alias, { db: gentry.members, en: gentry.en });
+    });
   }
 
   function matchEnPivotSlot(domainRaw, slot) {
@@ -705,24 +1097,43 @@ testWoo.fragContract = (function () {
     var m1 = surface ? domainMatchSlot(domain, surface) : null;
     if (m1)
       return {
-        layer: "M1", param: m1.param, nl: m1.nl || "", value: m1.value,
-        ambiguous: false, hits: [m1]
+        layer: m1.group ? "M2G" : "M1", param: m1.param, nl: m1.nl || "",
+        value: m1.value, ambiguous: false, group: !!m1.group, hits: [m1]
       };
+    if (_domainAcceptsNDae(domain)) {
+      var ndE = _induceNDae(enLit);
+      if (ndE)
+        return {
+          layer: "M1", param: "_bucket", nl: surface || enLit,
+          value: ndE, ambiguous: false, group: false,
+          hits: [{ param: "_bucket", nl: surface || enLit, value: ndE }]
+        };
+    }
     var hits = [];
     var seen = {};
     _walkNlMaps(domain, function (param, nl, entry) {
-      if (!_enHit(entry, enLit) && !_enHit(entry, surface)) return;
       var db = entryDb(entry);
+      var isG = _isArray(db);
+      var dbHint = isG ? "" : db;
+      var koOk = surface && (_boundHas(surface, nl, dbHint, isG) ||
+        (!isG && db != null && typeof db !== "object" &&
+          _boundHas(surface, String(db), db, false)));
+      var enOk = !!(enLit && _enHit(entry, enLit));
+      if (surface && !koOk && enOk && _aliasPrefixConflict(surface, nl, dbHint, isG))
+        enOk = false;
+      if (!koOk && !enOk) return;
       var key = param + "|" + _dbKey(db);
       if (seen[key]) return;
       seen[key] = 1;
       hits.push({ param: param, nl: nl, value: db });
     });
-    if (hits.length === 1)
+    if (hits.length === 1) {
+      var gHit = _isArray(hits[0].value);
       return {
-        layer: "M2", param: hits[0].param, nl: hits[0].nl, value: hits[0].value,
-        ambiguous: false, hits: hits
+        layer: gHit ? "M2G" : "M2", param: hits[0].param, nl: hits[0].nl,
+        value: hits[0].value, ambiguous: false, group: gHit, hits: hits
       };
+    }
     if (hits.length > 1)
       return {
         layer: "M2", param: "", nl: "", value: null,
@@ -814,7 +1225,8 @@ testWoo.fragContract = (function () {
   function sampleBindSql(sqlText, domainRaw) {
     var domain = normalizeParamDomain(domainRaw);
     var unbound = [];
-    var out = String(sqlText || "").replace(/\{\{(\w+)\}\}/g, function (_m, key) {
+    var sql = promoteEqPlaceholderToIn(sqlText);
+    var out = String(sql || "").replace(/\{\{(\w+)\}\}/g, function (_m, key) {
       var spec = domain[key] || {};
       var map = spec.nlMap;
       var nk, nv, bk, b;
@@ -822,17 +1234,20 @@ testWoo.fragContract = (function () {
         for (nk in map) {
           if (!map.hasOwnProperty(nk)) continue;
           nv = entryDb(map[nk]);
+          if (_isArray(nv) && nv.length) return _sqlLitJoin(nv);
           if (nv != null && typeof nv !== "object") return _sqlLit(nv);
         }
       }
       if (spec.enum && _isArray(spec.enum) && spec.enum.length)
-        return _sqlLit(spec.enum[0]);
+        return _sqlLitJoin(spec.enum[0]);
       if (domain._bucket && domain._bucket.nlMap) {
         for (bk in domain._bucket.nlMap) {
           if (!domain._bucket.nlMap.hasOwnProperty(bk)) continue;
           b = entryDb(domain._bucket.nlMap[bk]);
-          if (b && b[key] != null && typeof b[key] !== "object")
-            return _sqlLit(b[key]);
+          if (b && b[key] != null) {
+            if (_isArray(b[key])) return _sqlLitJoin(b[key]);
+            if (typeof b[key] !== "object") return _sqlLit(b[key]);
+          }
         }
       }
       if (key === "ageMin") return "20";
@@ -863,7 +1278,7 @@ testWoo.fragContract = (function () {
       var bestBv = null;
       for (var bk in bm) {
         if (!bm.hasOwnProperty(bk)) continue;
-        if (!_ciHas(hay, bk)) continue;
+        if (!_boundHas(hay, bk, null, true)) continue;
         if (String(bk).length >= String(bestB).length) {
           bestB = String(bk);
         bestBv = entryDb(bm[bk]);
@@ -884,20 +1299,56 @@ testWoo.fragContract = (function () {
       if (need && !need[pk]) continue;
       if (params[pk] != null && params[pk] !== "") continue;
       var spec = domain[pk] || {};
+      var ev, evi;
+      if (spec.enum && _isArray(spec.enum)) {
+        for (evi = 0; evi < spec.enum.length; evi++) {
+          ev = spec.enum[evi];
+          if (_boundHas(hay, ev, ev, false)) {
+            params[pk] = ev;
+            break;
+          }
+        }
+      }
+      if (params[pk] != null && params[pk] !== "") continue;
       var map = spec.nlMap;
       if (!map || typeof map !== "object") continue;
       var bestK = "";
       var bestV = null;
       for (var nk in map) {
         if (!map.hasOwnProperty(nk)) continue;
-        if (!_ciHas(hay, nk) && !_ciHas(hay, entryDb(map[nk]))) continue;
+        if (!_boundHas(hay, nk, entryDb(map[nk]), false) &&
+            !_boundHas(hay, entryDb(map[nk]), entryDb(map[nk]), false)) continue;
         if (String(nk).length >= String(bestK).length) {
           bestK = String(nk);
-          bestV = entryDb(map[nk]);
+          bestV = _finestValue(domain, pk, nk, entryDb(map[nk]));
         }
       }
       if (bestV != null && typeof bestV !== "object")
         params[pk] = bestV;
+    }
+    var gBest = {};
+    _eachGroup(domain, function (gpk, alias, gentry) {
+      if (need && !need[gpk]) return;
+      if (params[gpk] != null && params[gpk] !== "") return;
+      if (!_boundHas(hay, alias, null, true)) return;
+      if (_isCandDb(domain, gpk, alias)) {
+        if (!gBest[gpk] || String(alias).length >= String(gBest[gpk].alias).length)
+          gBest[gpk] = { alias: alias, members: [alias] };
+        return;
+      }
+      var mem = _filterGroupMembers(domain, gpk, gentry.members);
+      if (!mem.length) return;
+      if (!gBest[gpk] || String(alias).length >= String(gBest[gpk].alias).length)
+        gBest[gpk] = { alias: alias, members: mem };
+    });
+    for (pk in gBest) {
+      if (!gBest.hasOwnProperty(pk)) continue;
+      if (gBest[pk].members.length === 1 &&
+          String(gBest[pk].members[0]) === gBest[pk].alias &&
+          _isCandDb(domain, pk, gBest[pk].alias))
+        params[pk] = gBest[pk].alias;
+      else
+        params[pk] = gBest[pk].members.slice(0);
     }
     return params;
   }
@@ -944,13 +1395,27 @@ testWoo.fragContract = (function () {
       var spec = domain[pk];
       if (!spec || !spec.enum || !_isArray(spec.enum) || !spec.enum.length) continue;
       var val = params[pk];
-      if (val != null && typeof val === "object") continue;
-      var found = false;
-      var ei;
-      for (ei = 0; ei < spec.enum.length; ei++) {
-        if (String(spec.enum[ei]) === String(val)) { found = true; break; }
+      var vals;
+      if (_isArray(val)) {
+        if (!val.length) return { ok: false, reason: "empty_array", param: pk };
+        vals = val;
+      } else if (val != null && typeof val === "object") {
+        continue;
+      } else {
+        vals = [val];
       }
-      if (!found) return { ok: false, reason: "not_in_enum", param: pk };
+      var vi;
+      for (vi = 0; vi < vals.length; vi++) {
+        var one = vals[vi];
+        if (one != null && typeof one === "object")
+          return { ok: false, reason: "not_in_enum", param: pk };
+        var found = false;
+        var ei;
+        for (ei = 0; ei < spec.enum.length; ei++) {
+          if (String(spec.enum[ei]) === String(one)) { found = true; break; }
+        }
+        if (!found) return { ok: false, reason: "not_in_enum", param: pk };
+      }
     }
     return { ok: true };
   }
@@ -960,6 +1425,7 @@ testWoo.fragContract = (function () {
     var domain = normalizeParamDomain(domainRaw);
     var a = _trim(alias);
     if (!a || !params || typeof params !== "object") return domain;
+    if (a.length > 12 || a.indexOf(" ") >= 0) return domain;
     var sqlKeys = [];
     var pk;
     for (pk in params) {
@@ -1018,6 +1484,10 @@ testWoo.fragContract = (function () {
           base._range.max = specI.max;
           changed = true;
         }
+        continue;
+      }
+      if (k === "_group") {
+        if (_mergeGroupBlock(base, specI)) changed = true;
         continue;
       }
       if (!base[k]) {
@@ -1152,9 +1622,11 @@ testWoo.fragContract = (function () {
     coversSlot: coversSlot,
     libraryHitPredicate: libraryHitPredicate,
     sampleBindSql: sampleBindSql,
+    promoteEqPlaceholderToIn: promoteEqPlaceholderToIn,
     resolveNlParams: resolveNlParams,
+    upsertGroup: upsertGroup,
     entryDb: entryDb,
     scoreCard: scoreCard
   };
 })();
-testWoo.fragContract.__v = "168";
+testWoo.fragContract.__v = "175";

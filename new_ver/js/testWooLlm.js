@@ -1,7 +1,7 @@
 /*
  * testWooLlm.js (LLM Pass0·Pass1 파이프라인)
  * ==================================================
- * litmus 동기 __v=172 (잔여 skip 유지 · en_literal은 M2용으로 보존).
+ * litmus 동기 __v=178 (N대 heal-miss를 여러항목으로 안 씀).
  * EnPivot(전체 문장 1콜, 캐시만 스킵) 후 Pass1. 추출 실패 시 재입력(Pass0 우회 금지).
  * 최종 SQL은 쓰지 않음. 동기 HttpClientRequest만 사용.
  *
@@ -10,7 +10,7 @@
  * - decomposeSlots — Pass0 NL→slots JSON(EnPivot 없을 때 폴백)
  * - normalizeAtomicSlots — EnPivot 슬롯 통과(중복·빈 텍스트만 제거)
  * - selectPlan — Pass1 후보→CNF plan JSON
- * - generatePlan — EnPivot→M1/M2/M3 매칭→Pass1. retryInput·unresolved 시 SQL 없음
+ * - generatePlan — EnPivot→M1/M2/M2G/M2C/M3 매칭→Pass1. retryInput·unresolved 시 SQL 없음
  * - chat — 동기 chat/completions (EnPivot translateAndExtract)
  * - parseJson — LLM 봉투→JSON 객체
  * - postChat — chat/completions 호출·오류 메타 부착
@@ -23,7 +23,7 @@
  * - testWoo.cfg.getConfig — apiKey·model·endpoint·provider
  * - testWoo.enPivot.extractSlots·toPipelineSlots — 전체 NL 번역 (load 선행)
  * - testWoo.fragments.searchSlots·listLexiconCards·healDomain·saveParamDomain
- * - testWoo.fragContract.matchEnPivotSlot·validateBind — M1/M2/M3 · 바인딩
+ * - testWoo.fragContract.matchEnPivotSlot·upsertGroup·validateBind — M1/M2G/M2/M2C/M3 · 바인딩
  * - HttpClientRequest + MemoryBuffer — serverConf urlPermission 필요
  * - Foundry `_normalizeSlots` — normalizeAtomicSlots 재사용
  *
@@ -32,8 +32,10 @@
  * - response_format json_object 미사용 — 프롬프트+_parseJson으로 JSON 강제
  * - HttpClientRequest.wait 금지 · Rhino map/forEach/filter 금지
  * - #170: 슬롯 1개 = 조건 축 1개. 쪼개기는 EnPivot extract
- * - 같은 tags/name 축 frag가 있으면 unmatched→Foundry 신규 생성 금지. 값은 heal
- * - unresolved(value_not_in_domain|ambiguous) → Foundry 큐 금지
+ * - 같은 tags/name 축 frag가 있으면 unmatched→Foundry 신규 생성 금지. 값은 heal. 별칭은 슬롯 원문만(NL 전체 금지)
+ * - unresolved(value_not_in_domain|ambiguous|ambiguous_group) → Foundry 큐 금지
+ * - #175-3: 상위어는 M2G/M2C 한 frag. 닫힌 후보에만 편입. 자식이 후보에 있으면 그 값을 씀. Pass1 UNION 분할 금지
+ * - #175 G5: exclude만 있으면 include=[] 허용. 컴파일러가 grain universe + EXCEPT. polarity=exclude는 exclude[]로
  * - concept 없는 잔여(en_literal만 있는 glue 포함)는 unmatched/Foundry 금지. M2 히트만 조건으로 유지
  * - normalizeAtomicSlots는 KO 지역/성별/N대 regex로 재분할하지 않음
  * - Rhino strict: function 선언은 함수 본문 최상위만. for/if 안 금지
@@ -232,6 +234,8 @@ testWoo.llm = (function () {
       "- include[]: groups combined with AND (INTERSECT).",
       "- include[i].any[]: alternatives inside a group combined with OR (UNION).",
       "- exclude[]: single exclusion bag; all OR-ed then EXCEPT once at the end.",
+      "If the NL is only an exclusion (no positive audience), put those fragments in exclude[] and set include to [].",
+      "Do not invent a universe fragment. The compiler supplies the grain universe.",
       "Example meaning: age AND (region Seoul OR region Gyeonggi) EXCEPT opt_out",
       "→ include:[{any:[age]},{any:[regionSeoul,regionGyeonggi]}], exclude:[opt_out]",
       "Put uncovered phrases into unmatched[]. Do not invent fragments.",
@@ -239,9 +243,11 @@ testWoo.llm = (function () {
         "(a physical DB column name). Do not translate or guess it — the compiler rejects " +
         "any mismatch with the fragment key_column.",
       "PARAMS: for each chosen fragment, fill params from that candidate's param_domain " +
-        "(nlMap / _bucket.nlMap) using the slot/NL text. Example: an age-band slot + " +
+        "(nlMap / _bucket.nlMap / _group) using the slot/NL text. Example: an age-band slot + " +
         "_bucket.nlMap entry {ageMin,ageMax} → params:{ageMin,ageMax}. " +
         "A gender slot + gender.nlMap → params:{gender:\"M\"} using the entry's db value. " +
+        "If one slot maps to several domain db values, emit ONE fragment with an array param " +
+        "(compiler uses IN). Do not split one slot into two any[] items. " +
         "If the candidate is the matching axis fragment (_source + same tags) pick it even when " +
         "the exact NL value is not yet a nlMap key. Fill params by analogy with existing " +
         "examples and the declared types/_range/enum. Do not put that phrase in unmatched[]. " +
@@ -253,6 +259,9 @@ testWoo.llm = (function () {
     var user = "NL:\n" + String(nlRequest || "");
     var raw = _chat(cfg, system, user, "pass1");
     var plan = _parseJson(raw, "pass1");
+    if (!_isArray(plan.exclude)) plan.exclude = [];
+    if (!_isArray(plan.include)) plan.include = [];
+    _applyPolarity(plan, slotCandidates);
     _validatePlanShape(plan);
     var n = _countFragments(plan);
     if (n > cfg.search.maxSlots)
@@ -309,7 +318,7 @@ testWoo.llm = (function () {
         }
         if (fc.matchEnPivotSlot) {
           m = fc.matchEnPivotSlot(card.param_domain, sc);
-          if (m && m.layer && fc.axesCompatible(card, sc)) {
+          if (m && m.layer && !m.ambiguous && fc.axesCompatible(card, sc)) {
             addHit(card);
             continue;
           }
@@ -349,7 +358,7 @@ testWoo.llm = (function () {
       r = String(u.reason || "");
       if (r === "value_not_in_domain")
         out.push("값 '" + s + "'이(가) 도메인에 없습니다");
-      else if (r === "ambiguous")
+      else if (r === "ambiguous" || r === "ambiguous_group")
         out.push("값 '" + s + "'이(가) 여러 값과 맞습니다");
       else
         out.push("조건을 해석할 축을 찾지 못했습니다: " + s);
@@ -397,12 +406,12 @@ testWoo.llm = (function () {
       } catch (eE) { /* keep domain */ }
     }
     var hit = fc.matchEnPivotSlot ? fc.matchEnPivotSlot(domain, sc) : null;
-    if (hit && (hit.layer === "M1" || hit.layer === "M2") && !hit.ambiguous) {
+    if (hit && (hit.layer === "M1" || hit.layer === "M2" || hit.layer === "M2G") &&
+        !hit.ambiguous) {
       card.param_domain = domain;
       _saveSlotDomain(card, domain);
       return { ok: true, match: hit, domain: domain, card: card };
     }
-    if (fc.markNegative) domain = fc.markNegative(domain, key, now);
     card.param_domain = domain;
     _saveSlotDomain(card, domain);
     return { ok: false, skip: "miss", match: hit, domain: domain };
@@ -443,12 +452,251 @@ testWoo.llm = (function () {
     };
   }
 
+  function _groupCandRows(domain, pk) {
+    var fc = testWoo.fragContract;
+    var spec = (domain && domain[pk]) || {};
+    var rows = [];
+    var seen = {};
+    var nk, ent, dbv, en, ei;
+    function add(db, enList) {
+      if (db == null || typeof db === "object") return;
+      var s = String(db);
+      if (!s || seen[s]) return;
+      seen[s] = 1;
+      rows.push({ db: s, en: enList || [] });
+    }
+    if (spec.nlMap && typeof spec.nlMap === "object") {
+      for (nk in spec.nlMap) {
+        if (!spec.nlMap.hasOwnProperty(nk)) continue;
+        ent = spec.nlMap[nk];
+        dbv = fc && fc.entryDb ? fc.entryDb(ent) : ent;
+        en = [];
+        if (ent && typeof ent === "object" && !_isArray(ent) && _isArray(ent.en))
+          en = ent.en;
+        add(dbv, en);
+      }
+    }
+    if (spec.enum && _isArray(spec.enum)) {
+      for (ei = 0; ei < spec.enum.length; ei++) add(spec.enum[ei], []);
+    }
+    return rows;
+  }
+
+  function _pickGroupParam(domain, hint) {
+    var h = String(hint || "");
+    if (h && h.charAt(0) !== "_" && domain[h]) return h;
+    var k, spec, best = "";
+    for (k in domain) {
+      if (!domain.hasOwnProperty(k) || String(k).charAt(0) === "_") continue;
+      spec = domain[k] || {};
+      if ((spec.enum && spec.enum.length) ||
+          (spec.nlMap && typeof spec.nlMap === "object"))
+        return k;
+      if (!best) best = k;
+    }
+    return best;
+  }
+
+  function _tryGroupExpand(sc, card, matchHint) {
+    var fc = testWoo.fragContract;
+    if (!sc || !card || !fc || !fc.upsertGroup) return { ok: false, skip: "noapi" };
+    var kind = String(sc.kind || "").toLowerCase();
+    if (kind === "range") return { ok: false, skip: "range" };
+    var domain = fc.normalizeParamDomain(card.param_domain);
+    if (domain._bucket && domain._bucket.nlMap && kind !== "categorical") {
+      var hasCat = false;
+      var hk;
+      for (hk in domain) {
+        if (!domain.hasOwnProperty(hk) || String(hk).charAt(0) === "_") continue;
+        var sp = domain[hk] || {};
+        if ((sp.enum && sp.enum.length) || (sp.nlMap && typeof sp.nlMap === "object"))
+          hasCat = true;
+      }
+      if (!hasCat) return { ok: false, skip: "range" };
+    }
+    var pk = _pickGroupParam(domain, matchHint && matchHint.param);
+    if (!pk) return { ok: false, skip: "noparam" };
+    var cands = _groupCandRows(domain, pk);
+    if (!cands.length) return { ok: false, skip: "nocand" };
+    var key = _negKey(sc);
+    var now = new Date().getTime();
+    if (fc.isNegative && fc.isNegative(domain, key, now))
+      return { ok: false, skip: "negative" };
+    var alias = String((sc && (sc.surface || sc.text)) || key || "");
+    if (!alias) return { ok: false, skip: "noalias" };
+    var cfg;
+    try { cfg = testWoo.cfg.getConfig(); }
+    catch (eC) { return { ok: false, skip: "nocfg" }; }
+    var system = [
+      "Map a marketer surface term to DB members.",
+      "CANDIDATES.db is the only allowed set.",
+      "Return JSON only: {\"members\":[\"db1\",\"db2\"]}.",
+      "members MUST be a subset of CANDIDATES db values.",
+      "If the term is one candidate, return that one.",
+      "If several candidates share this term, return all of their db values.",
+      "If the term is a finer place not in CANDIDATES, return the one parent candidate it belongs to.",
+      "If two parents fit or you are unsure, return {\"members\":[]}.",
+      "If it is not a group, member, or child of one candidate, return {\"members\":[]}.",
+      "No SQL. No values outside CANDIDATES."
+    ].join("\n");
+    var user = "SURFACE:\n" + alias +
+      "\nEN_LITERAL:\n" + String((sc && sc.en_literal) || "") +
+      "\nCONCEPT:\n" + String((sc && sc.concept) || "") +
+      "\nCANDIDATES:\n" + JSON.stringify(cands);
+    var raw;
+    var obj;
+    try { raw = _chat(cfg, system, user, "groupExpand"); }
+    catch (eChat) {
+      try {
+        logWarning("[testWoo.llm.groupExpand] chat failed: " +
+          String(eChat.message || eChat));
+      } catch (eL) { /* non-ACC */ }
+      return { ok: false, skip: "llm_fail" };
+    }
+    try { obj = _parseJson(raw, "groupExpand"); }
+    catch (eJ) { obj = null; }
+    var members = (obj && _isArray(obj.members)) ? obj.members : [];
+    var seenDb = {};
+    var ci, mi, ei, out = [];
+    var enList, mv, dbv, ml, hit;
+    for (mi = 0; mi < members.length; mi++) {
+      if (members[mi] != null && typeof members[mi] === "object") continue;
+      mv = String(members[mi]);
+      if (!mv) continue;
+      ml = mv.toLowerCase();
+      for (ci = 0; ci < cands.length; ci++) {
+        dbv = String(cands[ci].db);
+        if (!dbv || seenDb[dbv]) continue;
+        hit = (dbv === mv || dbv.toLowerCase() === ml);
+        if (!hit) {
+          enList = cands[ci].en || [];
+          for (ei = 0; ei < enList.length; ei++) {
+            if (String(enList[ei] || "").toLowerCase() === ml) {
+              hit = true;
+              break;
+            }
+          }
+        }
+        if (hit) {
+          seenDb[dbv] = 1;
+          out.push(dbv);
+        }
+      }
+    }
+    for (ci = 0; ci < cands.length; ci++) {
+      if (String(cands[ci].db) === alias) {
+        out = [alias];
+        break;
+      }
+    }
+    if (!out.length) {
+      if (fc.markNegative) domain = fc.markNegative(domain, key, now);
+      card.param_domain = domain;
+      _saveSlotDomain(card, domain);
+      return { ok: false, skip: "miss" };
+    }
+    var enLit = String((sc && sc.en_literal) || "");
+    domain = fc.upsertGroup(domain, pk, alias, out, {
+      src: "llm", verified: false, en: enLit ? [enLit] : []
+    });
+    card.param_domain = domain;
+    _saveSlotDomain(card, domain);
+    try {
+      logInfo("[testWoo.llm.groupExpand] M2C alias=" + alias +
+        " n=" + out.length + " frag=" + String(card.name || ""));
+    } catch (eI) { /* non-ACC */ }
+    return {
+      ok: true,
+      card: card,
+      match: {
+        layer: "M2C", param: pk, nl: alias, value: out,
+        ambiguous: false, group: true, hits: []
+      }
+    };
+  }
+
+  function _mergeParamVals(a, b) {
+    var out = [];
+    var seen = {};
+    function pushOne(v) {
+      if (v == null || v === "") return;
+      if (_isArray(v)) {
+        var i;
+        for (i = 0; i < v.length; i++) pushOne(v[i]);
+        return;
+      }
+      if (typeof v === "object") return;
+      var s = String(v);
+      if (seen[s]) return;
+      seen[s] = 1;
+      out.push(s);
+    }
+    pushOne(a);
+    pushOne(b);
+    if (!out.length) return a != null ? a : b;
+    if (out.length === 1) return out[0];
+    return out;
+  }
+
+  function _collapseSameFragmentPlan(plan) {
+    if (!plan || !plan.include) return;
+    var inc = plan.include;
+    var out = [];
+    var seen = {};
+    var gi, g, any, name, prev, pk, src, keep;
+    for (gi = 0; gi < inc.length; gi++) {
+      g = inc[gi] || {};
+      any = g.any || [];
+      if (any.length === 1 && any[0] && any[0].fragment) {
+        name = String(any[0].fragment);
+        if (seen[name] != null) {
+          keep = out[seen[name]].any[0];
+          if (!keep.params || typeof keep.params !== "object") keep.params = {};
+          src = any[0].params || {};
+          for (pk in src) {
+            if (!src.hasOwnProperty(pk)) continue;
+            keep.params[pk] = _mergeParamVals(keep.params[pk], src[pk]);
+          }
+          continue;
+        }
+        seen[name] = out.length;
+      }
+      out.push(g);
+    }
+    for (gi = 0; gi < out.length; gi++) {
+      any = (out[gi] && out[gi].any) || [];
+      var collapsed = [];
+      var byName = {};
+      var ai, item;
+      for (ai = 0; ai < any.length; ai++) {
+        item = any[ai];
+        if (!item || !item.fragment) { collapsed.push(item); continue; }
+        name = String(item.fragment);
+        if (byName[name] == null) {
+          byName[name] = collapsed.length;
+          collapsed.push(item);
+          continue;
+        }
+        keep = collapsed[byName[name]];
+        if (!keep.params || typeof keep.params !== "object") keep.params = {};
+        src = item.params || {};
+        for (pk in src) {
+          if (!src.hasOwnProperty(pk)) continue;
+          keep.params[pk] = _mergeParamVals(keep.params[pk], src[pk]);
+        }
+      }
+      out[gi].any = collapsed;
+    }
+    plan.include = out;
+  }
+
   function _resolveEnPivotSlot(sc, pack, skipPass0) {
     var fc = testWoo.fragContract;
     if (!fc || !fc.matchEnPivotSlot)
       return { kind: "empty" };
     var cards = _collectSlotCards(sc, pack);
     var m1 = [];
+    var m2g = [];
     var m2 = [];
     var m2Amb = [];
     var m3 = [];
@@ -458,25 +706,36 @@ testWoo.llm = (function () {
       m = fc.matchEnPivotSlot(card.param_domain, sc);
       if (!m || !m.layer) continue;
       if (m.layer === "M1") m1.push({ card: card, match: m });
+      else if (m.layer === "M2G") m2g.push({ card: card, match: m });
       else if (m.layer === "M2" && m.ambiguous) m2Amb.push({ card: card, match: m });
       else if (m.layer === "M2") m2.push({ card: card, match: m });
       else if (m.layer === "M3") m3.push({ card: card, match: m });
     }
     if (m1.length)
       return { kind: "matched", slot: _matchedSlot(sc, m1[0].card, m1[0].match) };
+    if (m2g.length)
+      return { kind: "matched", slot: _matchedSlot(sc, m2g[0].card, m2g[0].match) };
     if (m2.length === 1 && !m2Amb.length)
       return { kind: "matched", slot: _matchedSlot(sc, m2[0].card, m2[0].match) };
-    if (m2.length > 1 || m2Amb.length)
+    if (m2.length > 1 || m2Amb.length) {
+      var expA = _tryGroupExpand(sc, (m2Amb[0] || m2[0]).card, (m2Amb[0] || m2[0]).match);
+      if (expA && expA.ok)
+        return { kind: "matched", slot: _matchedSlot(sc, expA.card, expA.match) };
       return {
         kind: "unresolved",
-        item: _unresolvedItem(sc, "ambiguous", {
+        item: _unresolvedItem(sc,
+          (m2Amb.length) ? "ambiguous" : "value_not_in_domain", {
           fragment: (m2[0] || m2Amb[0]).card.name
         })
       };
+    }
     if (m3.length) {
       var healed = _healSlotValue(sc, m3[0].card);
       if (healed && healed.ok)
         return { kind: "matched", slot: _matchedSlot(sc, m3[0].card, healed.match) };
+      var exp3 = _tryGroupExpand(sc, m3[0].card, healed && healed.match);
+      if (exp3 && exp3.ok)
+        return { kind: "matched", slot: _matchedSlot(sc, exp3.card, exp3.match) };
       return {
         kind: "unresolved",
         item: _unresolvedItem(sc, "value_not_in_domain", {
@@ -489,6 +748,73 @@ testWoo.llm = (function () {
     return { kind: "empty" };
   }
 
+  function _slotFragName(sc) {
+    var name = String((sc && sc.resolvedName) || "");
+    if (!name && sc && sc.candidates && sc.candidates[0])
+      name = String(sc.candidates[0].name || "");
+    return name;
+  }
+
+  function _applyPolarity(plan, matchedSlots) {
+    if (!plan || !matchedSlots || !matchedSlots.length) return;
+    if (!_isArray(plan.exclude)) plan.exclude = [];
+    if (!_isArray(plan.include)) plan.include = [];
+    var i, sc, name, found, ei, gi, aj, any, item, pk, src;
+    var moveSet = {};
+    for (i = 0; i < matchedSlots.length; i++) {
+      sc = matchedSlots[i];
+      if (String((sc && sc.polarity) || "").toLowerCase() !== "exclude") continue;
+      name = _slotFragName(sc);
+      if (!name) continue;
+      moveSet[name] = 1;
+      found = null;
+      for (ei = 0; ei < plan.exclude.length; ei++) {
+        if (plan.exclude[ei] && String(plan.exclude[ei].fragment) === name) {
+          found = plan.exclude[ei];
+          break;
+        }
+      }
+      if (!found) {
+        item = { fragment: name, label: "", params: {} };
+        if (sc.candidates && sc.candidates[0] && sc.candidates[0].label)
+          item.label = String(sc.candidates[0].label);
+        plan.exclude.push(item);
+        found = item;
+      }
+      for (gi = 0; gi < plan.include.length; gi++) {
+        any = (plan.include[gi] && plan.include[gi].any) || [];
+        for (aj = 0; aj < any.length; aj++) {
+          if (!any[aj] || String(any[aj].fragment) !== name) continue;
+          if (!found.label && any[aj].label) found.label = any[aj].label;
+          src = any[aj].params;
+          if (!src || typeof src !== "object") continue;
+          if (!found.params || typeof found.params !== "object") found.params = {};
+          for (pk in src) {
+            if (!src.hasOwnProperty(pk)) continue;
+            if (found.params[pk] == null || found.params[pk] === "")
+              found.params[pk] = src[pk];
+          }
+        }
+      }
+    }
+    for (ei = 0; ei < plan.exclude.length; ei++) {
+      if (plan.exclude[ei] && plan.exclude[ei].fragment)
+        moveSet[String(plan.exclude[ei].fragment)] = 1;
+    }
+    var newInc = [];
+    var keep;
+    for (gi = 0; gi < plan.include.length; gi++) {
+      any = (plan.include[gi] && plan.include[gi].any) || [];
+      keep = [];
+      for (aj = 0; aj < any.length; aj++) {
+        if (any[aj] && moveSet[String(any[aj].fragment)]) continue;
+        keep.push(any[aj]);
+      }
+      if (keep.length) newInc.push({ any: keep });
+    }
+    plan.include = newInc;
+  }
+
   function _applyMatchParams(plan, matchedSlots) {
     if (!plan || !matchedSlots) return;
     var byName = {};
@@ -496,7 +822,9 @@ testWoo.llm = (function () {
     for (i = 0; i < matchedSlots.length; i++) {
       sc = matchedSlots[i];
       m = sc && sc.match;
-      if (!m || (m.layer !== "M1" && m.layer !== "M2") || m.value == null) continue;
+      if (!m || m.value == null) continue;
+      if (m.layer !== "M1" && m.layer !== "M2" && m.layer !== "M2G" && m.layer !== "M2C")
+        continue;
       name = String(sc.resolvedName || "");
       if (!name && sc.candidates && sc.candidates[0])
         name = String(sc.candidates[0].name || "");
@@ -515,7 +843,9 @@ testWoo.llm = (function () {
             item.params[k] = m.value[k];
         }
       } else if (m.param && m.param !== "_bucket") {
-        if (item.params[m.param] == null || item.params[m.param] === "")
+        if (_isArray(m.value) && m.value.length)
+          item.params[m.param] = m.value;
+        else if (item.params[m.param] == null || item.params[m.param] === "")
           item.params[m.param] = m.value;
       }
     });
@@ -621,16 +951,29 @@ testWoo.llm = (function () {
           concept: sc.concept || null,
           en_literal: sc.en_literal || ""
         });
-      } else matchedSlots.push({
-        id: sc.id,
-        text: sc.text,
-        hintedCategory: sc.hintedCategory || "",
-        searchKeywords: sc.searchKeywords || [],
-        resolvedName: sc.resolvedName || "",
-        concept: sc.concept || null,
-        en_literal: sc.en_literal || "",
-        candidates: sc.candidates
-      });
+      } else {
+        var expE = _tryGroupExpand(sc, sc.candidates[0], null);
+        if (expE && expE.ok) {
+          matchedSlots.push(_matchedSlot(sc, expE.card, expE.match));
+          continue;
+        }
+        if (expE && expE.skip === "range") {
+          matchedSlots.push({
+            id: sc.id,
+            text: sc.text,
+            hintedCategory: sc.hintedCategory || "",
+            searchKeywords: sc.searchKeywords || [],
+            resolvedName: sc.resolvedName || "",
+            concept: sc.concept || null,
+            en_literal: sc.en_literal || "",
+            candidates: sc.candidates
+          });
+          continue;
+        }
+        unresolved.push(_unresolvedItem(sc, "value_not_in_domain", {
+            fragment: String(sc.candidates[0].name || "")
+          }));
+      }
     }
     if (unresolved.length) {
       return {
@@ -678,6 +1021,8 @@ testWoo.llm = (function () {
     _applyMatchParams(plan, matchedSlots);
     if (testWoo.compiler && testWoo.compiler.bindPlanParams)
       testWoo.compiler.bindPlanParams(plan, plan.nl_request);
+    _applyPolarity(plan, matchedSlots);
+    _collapseSameFragmentPlan(plan);
     _repairMissingParams(plan);
     _healPlanDomains(plan);
     _dropBindableUnmatched(plan);
@@ -728,6 +1073,7 @@ testWoo.llm = (function () {
     for (pk in need) {
       if (!need.hasOwnProperty(pk)) continue;
       if (p[pk] == null || p[pk] === "") return true;
+      if (_isArray(p[pk]) && !p[pk].length) return true;
     }
     return false;
   }
@@ -782,7 +1128,7 @@ testWoo.llm = (function () {
           testWoo.fragContract.axesCompatible(card, slots[i]))
         return String(slots[i].text || "");
     }
-    return String((plan && plan.nl_request) || "");
+    return "";
   }
 
   // Pass1이 params를 비우면, 기존 nlMap 예시를 보고 같은 축 값을 채운다(SQL 창작 금지).
@@ -1485,7 +1831,8 @@ testWoo.llm = (function () {
     if (!_isArray(plan.exclude)) plan.exclude = [];
     if (!_isArray(plan.include)) plan.include = [];
     if (!plan.unmatched.length) {
-      if (!plan.include.length) throw new Error("[testWoo.llm] plan.include empty");
+      if (!plan.include.length && !plan.exclude.length)
+        throw new Error("[testWoo.llm] plan.include empty");
       for (var i = 0; i < plan.include.length; i++) {
         var g = plan.include[i];
         if (!g || !_isArray(g.any) || !g.any.length)
@@ -1552,4 +1899,4 @@ testWoo.llm = (function () {
     _readResponseBody: _readResponseBody
   };
 })();
-testWoo.llm.__v = "172";
+testWoo.llm.__v = "178";

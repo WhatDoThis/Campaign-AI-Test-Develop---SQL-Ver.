@@ -8,7 +8,7 @@ woo:testWooAiWorkflowUi (Test Woo AI Workflow UI · SOAP method host)
 ===========
 - ShellProbe(activities) → hasActivity, message, activityName  (out×3)
 - ShellPick(workflowName) → aiSqlId, pickLabel, tick (캐시버스트 · Date.getTime)
-- ShellBind(activities, aiSqlId, workflowName) → activitiesOut  (첫 AI 액티비티)
+- ShellBind(activities, aiSqlId, workflowName) → activitiesOut  (첫 AI 액티비티 · registered SQL script)
 - 폼에 FormatDate/GetDate 금지 (XTK-170016 SQL expressions)
 
 [Deploy — 반드시 동시]
@@ -65,7 +65,7 @@ woo:testWooAiWorkflowUi (Test Woo AI Workflow UI · SOAP method host)
 
     <method name="ShellBind" static="true" library="woo:testWooWorkflowUi.js"
             label="Bind ai_sql_id to first AI activity">
-      <help>Writes ai-sql-id on first ibankSqlDM. No activityName argument.</help>
+      <help>Writes ai-sql-id and registered sql_query into script on first ibankSqlDM. SQL is loaded server-side. No activityName argument.</help>
       <parameters>
         <param name="activities" type="DOMElement" inout="in"
                desc="Workflow activities element"/>

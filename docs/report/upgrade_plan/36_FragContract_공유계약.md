@@ -1,7 +1,6 @@
 # #172 — FragContract 공유 계약
 
-> **상태: `[ ]` 재개.** 모듈 한곳 수렴은 유지. 매칭 좌표계가 KO 표층 → M1/M2/M3.  
-> **#174 영향:** `domainMatchSlot`에 EN `en[]`·concept. JOSA/NOISE는 5단계까지 병존(증식 금지). 한국어 값/컬럼 하드코딩 grep 0은 5단계 후. 이 문서를 닫으면 진행판 `[x]` 복귀.  
+> **상태: `[x]` 닫힘** (2026-08-14). #174-4/#174-5가 M1→M2→M3 · unresolved 3종 · JOSA 삭제를 흡수. 모듈 수렴 유지. 재구현 없음.  
 > Cube/MetricFlow급 시맨틱 레이어는 비채택(ACC Rhino).
 
 ---

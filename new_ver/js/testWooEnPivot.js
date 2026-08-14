@@ -2,10 +2,10 @@
  * testWooEnPivot.js (EN Pivot 슬롯 추출)
  * ==================================================
  * 모든 NL은 전체 문장 번역 1회가 기본이다. 조사/청중명사로 번역을 건너뛰지 않는다.
- * 동일 문장 재입력만 해시 캐시(TTL 1일). 번역·추출 실패 시 재입력을 요청한다.
+ * - 동일 문장 재입력만 해시 캐시(TTL 1일 · 키에 __v 포함, 배포 후 구추출 재사용 금지).
  * concept는 (schema+xpath)에 이미 있으면 LLM 제안을 덮어쓰지 않는다.
  * 컬럼 도메인 값은 1회 번역해 nlMap 키를 {db, en[]} 으로 확장한다(키 삭제 금지).
- * litmus __v=172 (잔여 드롭: concept|resolvedName|en_literal 중 하나면 유지).
+ * litmus __v=174 (NL 캐시 키에 __v · ambiguous 카드 히트 금지).
  *
  * [Main Functions]
  * ===========
@@ -27,7 +27,7 @@
  * [Invariants]
  * =========
  * - 바인딩 문자열은 surface(원문). en_literal을 db 값으로 쓰지 않음
- * - JOSA/NOISE 사전 없음. M1→M2→M3는 matchEnPivotSlot (#174-4)
+ * - JOSA/NOISE 사전 없음. M1→M2G(`_group`)→M2→M3→M2C 는 matchEnPivotSlot/generatePlan
  * - 추출 실패 → retryInput. Pass0·Foundry로 우회하지 않음
  * - concept·resolvedName·en_literal 없는 잔여만 드롭. kind만으로는 유지하지 않음
  */
@@ -105,8 +105,15 @@ testWoo.enPivot = (function () {
     return t;
   }
 
+  function _cacheKey(nl) {
+    var gen = "";
+    try { gen = String((testWoo.enPivot && testWoo.enPivot.__v) || ""); }
+    catch (eG) { gen = ""; }
+    return _hash(_normNl(nl) + "|" + gen);
+  }
+
   function _cacheGet(nl) {
-    var key = _hash(_normNl(nl));
+    var key = _cacheKey(nl);
     var row = _nlCache[key];
     if (!row) return null;
     if (_now() - row.ts > CACHE_TTL_MS) {
@@ -117,7 +124,7 @@ testWoo.enPivot = (function () {
   }
 
   function _cachePut(nl, payload) {
-    _nlCache[_hash(_normNl(nl))] = { ts: _now(), payload: payload };
+    _nlCache[_cacheKey(nl)] = { ts: _now(), payload: payload };
   }
 
   function clearNlCache() {
@@ -207,7 +214,7 @@ testWoo.enPivot = (function () {
       if (name && String(card.name) === name) return card;
       if (fc && fc.matchEnPivotSlot) {
         hit = fc.matchEnPivotSlot(card.param_domain, slot);
-        if (hit && hit.layer) return card;
+        if (hit && hit.layer && !hit.ambiguous) return card;
         continue;
       }
       if (!fc || !fc.domainMatchSlot || !surface) continue;
@@ -665,4 +672,4 @@ testWoo.enPivot = (function () {
     putNlCache: putNlCache
   };
 })();
-testWoo.enPivot.__v = "172";
+testWoo.enPivot.__v = "174";

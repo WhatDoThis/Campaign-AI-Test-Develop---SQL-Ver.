@@ -1,7 +1,7 @@
 /*
  * testWooFoundry.js (Fragment Foundry 배치 처리)
  * ==================================================
- * litmus 동기 __v=163 (#174-5: 프롬프트 KO 값 리터럴 제거).
+ * litmus 동기 __v=165 (#175-1 categorical IN({{param}})).
  * 큐 슬롯별 triage → feasible만 SQL 생성 → dedup → publish.
  * 색인·샘플바인딩·재사용 게이트는 testWoo.fragContract에 위임.
  *
@@ -10,7 +10,7 @@
  * - processQueueItem — 슬롯 1건 triage·생성·dedup·publish
  * - processBatch — 프리플라이트·스테일 복구·queued 순차 처리
  * - runToolLoop — LLM tool calling 루프(requireJson·sanitize)
- * - generateFragmentForSlot — tool 루프 + 게이트 재시도 생성
+ * - generateFragmentForSlot — tool 루프 + 도메인 스냅샷 후 게이트 재시도 생성
  * - parseFragmentJson — 최상위 JSON 열거·첫 채택·dropped 슬롯 (V0)
  * - dryRunSlot — 큐 없이 triage+생성 1회 스모크
  * - peekQueue — 읽기 전용 큐 조회
@@ -21,7 +21,7 @@
  *
  * [Dependencies]
  * =========
- * - testWoo.fragContract — buildIndexFields·sampleBindSql·libraryHitPredicate·mergeParamDomainJson
+ * - testWoo.fragContract — buildIndexFields·sampleBindSql·promoteEqPlaceholderToIn·libraryHitPredicate·mergeParamDomainJson
  * - testWoo.feasibility.libraryLookup·triage — #169 서가 우선(공유)
  * - testWoo.toolkit·llm·repo·probe·dedup·lifecycle·gates·fragments·compiler
  * - woo:testWooAiRequestQueue — xtk.queryDef·xtk.session#Write
@@ -35,6 +35,8 @@
  * - reuse_after_publish = libraryHitPredicate (서가와 동일 게이트)
  * - #167: frag=축1=컬럼1 · 값은 {{param}}+param_domain
  * - 색인 수리: synonyms·sample_questions만 Write
+ * - #168-A: 게이트 전 resolveDomain. enum 없는 {{param}}은 G-C 0건(__sample__) 금지
+ * - #175-1: categorical sql_text 는 IN({{param}}). `=` 는 persist 전 승격
  * - #174-1: JSON 2+ → 첫 채택 + extra_fragment_dropped · 축 mismatch throw 금지
  */
 var testWoo = testWoo || {};
@@ -394,6 +396,9 @@ testWoo.foundry = (function () {
         "(e.g. iAge >= {{ageMin}} AND iAge < {{ageMax}}). " +
         "Never AND two different columns (region AND gender is FORBIDDEN).",
       "- Do NOT bake literal filter values into sql_text. Use {{param}} placeholders.",
+      "- Categorical filters (region, gender, plan): sql_text MUST use " +
+        "col IN ({{param}}) even for a single value. Never col = {{param}}. " +
+        "Range axes keep >= / < on the same column.",
       "- Compiler substitutes {{param}} later. For probe_sql during tools, temporarily " +
         "substitute a sample value from paramDomain, then output JSON with {{param}} kept.",
       "- paramDomain: NL expression → physical column value map " +
@@ -699,6 +704,15 @@ testWoo.foundry = (function () {
           shapeError: lastShapeError, rawContentPreview: _contentPreview(lastRaw),
           extraSlots: extraSlots
         };
+      }
+
+      // 게이트 전에 도메인 스냅샷(enum/nlMap). 없으면 {{region}} → '__sample__' → G-C 0건.
+      try { _attachDomainSnapshot(fragDoc, {}); }
+      catch (eAtt) {
+        try {
+          logWarning("[testWoo.foundry] pre-gate domain attach: " +
+            String(eAtt.message || eAtt));
+        } catch (eL) { /* non-ACC */ }
       }
 
       // gates/probe 는 {{param}} 거부 — 샘플 바인딩본으로만 검증, 저장본은 템플릿 유지.
@@ -1255,6 +1269,9 @@ testWoo.foundry = (function () {
     if (!_trim(frag.sqlText)) missing.push("sqlText");
     if (missing.length)
       throw new Error("[testWoo.foundry] required fields missing: " + missing.join(","));
+
+    if (testWoo.fragContract && testWoo.fragContract.promoteEqPlaceholderToIn)
+      frag.sqlText = testWoo.fragContract.promoteEqPlaceholderToIn(frag.sqlText);
 
     var paramList = _normalizeParams(frag.params);
     var pd = _buildParamDomain(frag, paramList);
@@ -2270,4 +2287,4 @@ testWoo.foundry = (function () {
     repairIndexPollution: repairIndexPollution
   };
 })();
-testWoo.foundry.__v = "163";
+testWoo.foundry.__v = "165";

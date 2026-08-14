@@ -1,26 +1,31 @@
 <%
 response.setContentType("application/json;charset=utf-8");
 /*
- * testWooAiRegister.jssp (SQL 등록 API)
+ * testWooAiRegister.jssp (SQL 등록 · R6 커밋)
  * ==================================================
- * plan 재컴파일·gates 통과 후 woo:testWooAiSql에 ai_sql_id 저장.
- * workflow+sqlContentHash 중복 시 insert 스킵(created:false).
+ * plan 재컴파일·gates 통과 후 WKF가 있으면 락→주입→saveAiSql→해제.
+ * WKF 없으면 이력만. 락 실패·주입 실패 시 AiSql 부분 기록 없음.
  *
  * [Main Functions]
  * ===========
  * - compile+runAll — gates 실패 시 registered 없이 results 반환
- * - findAiSqlBySqlHash — 동일 WKF·SQL 해시 dedup
- * - saveAiSql — usedFragments·compileHash 필수(CSRF)
+ * - findAiSqlBySqlHash — 동일 WKF·SQL 해시면 신규 행 없이 그 id로 주입
+ * - commitInject — 첫 AI 액티비티 script+ai-sql-id (confirm_overwrite)
+ * - saveAiSql — 주입 성공 후에만 Insert (선할당 id, param_key)
+ * - hasInjectedAiSql — 덮어쓰기 2클릭 게이트(스키마 injected_at, XML 미조회)
+ * - markAiSqlInjected — 주입 성공 후 현재 반영 스탬프 (created/dup 공통)
  *
  * [Dependencies]
  * =========
  * - woo:testWooCommon.js, Config, Fragments, Compiler, Gates, Lifecycle, Repository
- * - right testWooAiSqlRegister · schema woo:testWooAiSql
+ * - woo:testWooWorkflowClone.js · testWooWorkflowUi.js — 락·주입
+ * - right testWooAiSqlRegister · schema woo:testWooAiSql · xtk:workflow
  *
  * [Invariants]
  * ===========
- * - usedFragments 비면 등록 거부 — WF XML 직접 쓰기 없음
- * - gates 미통과 SQL은 woo:testWooAiSql에 insert 금지
+ * - usedFragments 비면 등록 거부
+ * - gates 미통과 SQL은 woo:testWooAiSql insert 금지
+ * - 커밋 락은 soft-fail 금지. Spawn 금지. J-9-5-2 없음
  * - loadLibrary 직후 twRequireLib (#160)
  */
 try {
@@ -59,6 +64,7 @@ try {
       ok: true,
       passed: false,
       created: false,
+      injected: false,
       results: results,
       sql: compiled.sql,
       summary: compiled.summary,
@@ -72,82 +78,178 @@ try {
     var compileHash = testWoo.lifecycle.compileHash(p.plan, compiled.sql);
     var sqlHash = testWoo.lifecycle.sqlContentHash(compiled.sql);
     var wfName = String(p.workflow_name || "");
+    var wfId = String(p.workflow_id || "");
+    var confirmOw = p.confirm_overwrite === true ||
+      p.confirm_overwrite === "true" ||
+      p.confirm_overwrite === 1 ||
+      p.confirm_overwrite === "1";
+
+    var title = String(p.title || "");
+    if (typeof TW_TITLE_MAX !== "undefined" && title.length > TW_TITLE_MAX)
+      title = title.substring(0, TW_TITLE_MAX);
+
+    var recBase = {
+      title: title,
+      creator: currentLogin(),
+      nl_request: p.nl_request,
+      plan_json: JSON.stringify(p.plan),
+      used_fragments: JSON.stringify(used),
+      param_key: testWoo.compiler.paramKeyFromPlan(p.plan),
+      compile_hash: compileHash,
+      sql_query: compiled.sql,
+      summary_ko: compiled.summary || p.summary,
+      target_count: p.target_count != null ? p.target_count : 0,
+      excluded_slots: p.excluded_slots ? JSON.stringify(p.excluded_slots) : "",
+      status: "registered"
+    };
 
     if (wfName) {
-      var dup = testWoo.repo.findAiSqlBySqlHash(wfName, sqlHash);
-      if (dup && dup.id) {
+      loadLibrary("woo:testWooWorkflowClone.js");
+      loadLibrary("woo:testWooWorkflowUi.js");
+      twRequireLib("woo:testWooWorkflowClone.js", (typeof testWoo !== "undefined") && testWoo.wfClone);
+      twRequireLib("woo:testWooWorkflowUi.js", (typeof testWoo !== "undefined") && testWoo.workflowUi);
+
+      if (!wfId && testWoo.workflowUi.lookupIdByName) {
+        wfId = String(testWoo.workflowUi.lookupIdByName(wfName) || "");
+      }
+      if (!wfId) {
         jsonOut({
-          ok: true,
+          ok: false,
           passed: true,
           created: false,
-          ai_sql_id: dup.id,
-          status: dup.status || "registered",
-          sql: compiled.sql,
-          summary: compiled.summary,
-          usedFragments: used,
-          compileHash: compileHash,
-          sqlHash: sqlHash,
-          message:
-            "\uB3D9\uC77C\uD55C SQL\uC774 \uC774\uBBF8 \uB4F1\uB85D\uB418\uC5B4 \uC788\uC2B5\uB2C8\uB2E4. " +
-            "\uC0C8 ID\uB97C \uB9CC\uB4E4\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. (ai_sql_id=" +
-            dup.id +
-            ")"
+          injected: false,
+          error: "workflow_id required for commit"
         });
       } else {
-        var title = String(p.title || "");
-        if (typeof TW_TITLE_MAX !== "undefined" && title.length > TW_TITLE_MAX)
-          title = title.substring(0, TW_TITLE_MAX);
+        var lockHeld = false;
+        var lockErr = null;
+        try {
+          testWoo.wfClone.acquireLock(wfId, wfName);
+          lockHeld = true;
+        } catch (eLock) {
+          lockErr = eLock;
+        }
 
-        var id = testWoo.repo.saveAiSql({
-          title: title,
-          creator: currentLogin(),
-          nl_request: p.nl_request,
-          plan_json: JSON.stringify(p.plan),
-          used_fragments: JSON.stringify(used),
-          compile_hash: compileHash,
-          sql_query: compiled.sql,
-          summary_ko: compiled.summary || p.summary,
-          target_count: p.target_count != null ? p.target_count : 0,
-          workflow_name: wfName,
-          excluded_slots: p.excluded_slots ? JSON.stringify(p.excluded_slots) : "",
-          status: "registered"
-        });
-        jsonOut({
-          ok: true,
-          passed: true,
-          created: true,
-          ai_sql_id: id,
-          status: "registered",
-          sql: compiled.sql,
-          summary: compiled.summary,
-          usedFragments: used,
-          compileHash: compileHash,
-          sqlHash: sqlHash
-        });
+        if (!lockHeld && lockErr && lockErr.code === "LOCKED") {
+          jsonOut({
+            ok: false,
+            passed: true,
+            created: false,
+            injected: false,
+            code: "LOCKED",
+            locked_by: lockErr.locked_by || "",
+            error:
+              "\uC774 WKF\uB294 " +
+              (lockErr.locked_by || "\uB2E4\uB978 \uC0AC\uC6A9\uC790") +
+              " \uB2D8\uC774 \uC0AC\uC6A9 \uC911\uC785\uB2C8\uB2E4. \uBC18\uC601\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4."
+          });
+        } else if (!lockHeld) {
+          throw lockErr || new Error("[Register] acquireLock failed");
+        } else {
+          var alreadyInj = false;
+          try {
+            alreadyInj = !!testWoo.repo.hasInjectedAiSql(wfName);
+          } catch (eHas) {
+            try { testWoo.wfClone.releaseLock(wfId); } catch (eRelH) {}
+            throw eHas;
+          }
+          if (alreadyInj && !confirmOw) {
+            try { testWoo.wfClone.releaseLock(wfId); } catch (eRel0) {}
+            jsonOut({
+              ok: true,
+              passed: true,
+              created: false,
+              injected: false,
+              needsOverwrite: true,
+              sql: compiled.sql,
+              summary: compiled.summary,
+              usedFragments: used,
+              compileHash: compileHash,
+              sqlHash: sqlHash,
+              message:
+                "\uC774\uBBF8 \uBC18\uC601\uB41C \uB0B4\uC6A9\uC774 \uC788\uC2B5\uB2C8\uB2E4. \uB36E\uC5B4\uC4F0\uB824\uBA74 \uB2E4\uC2DC \uD074\uB9AD\uD558\uC138\uC694."
+            });
+          } else {
+          var dup = testWoo.repo.findAiSqlBySqlHash(wfName, sqlHash);
+          var created = !(dup && dup.id);
+          var aiSqlId = created ? testWoo.repo.allocAiSqlId() : dup.id;
+
+          var inj = testWoo.workflowUi.commitInject({
+            workflowId: wfId,
+            workflowName: wfName,
+            aiSqlId: aiSqlId,
+            sqlText: compiled.sql,
+            confirmOverwrite: true
+          });
+
+          if (!inj || !inj.ok) {
+            try { testWoo.wfClone.releaseLock(wfId); } catch (eRel1) {}
+            jsonOut({
+              ok: false,
+              passed: true,
+              created: false,
+              injected: false,
+              sql: compiled.sql,
+              summary: compiled.summary,
+              error: (inj && inj.error) ? inj.error : "inject failed"
+            });
+          } else {
+            if (created) {
+              try {
+                recBase.id = aiSqlId;
+                recBase.workflow_name = wfName;
+                testWoo.repo.saveAiSql(recBase);
+              } catch (eSave) {
+                try { testWoo.workflowUi.restoreInject(wfId, wfName); } catch (eRst) {}
+                try { testWoo.wfClone.releaseLock(wfId); } catch (eRel2) {}
+                throw eSave;
+              }
+            }
+            try {
+              testWoo.repo.markAiSqlInjected(aiSqlId, {
+                operator: currentLogin(),
+                activityName: inj.activityName || "",
+                workflowId: wfId
+              });
+            } catch (eMark) {
+              try { testWoo.wfClone.releaseLock(wfId); } catch (eRelM) {}
+              throw eMark;
+            }
+            try { testWoo.wfClone.releaseLock(wfId); } catch (eRel3) {
+              try { logWarning("[Register] releaseLock: " + eRel3); } catch (eL) {}
+            }
+            jsonOut({
+              ok: true,
+              passed: true,
+              created: created,
+              injected: true,
+              ai_sql_id: aiSqlId,
+              status: "registered",
+              sql: compiled.sql,
+              summary: compiled.summary,
+              usedFragments: used,
+              compileHash: compileHash,
+              sqlHash: sqlHash,
+              activityName: inj.activityName || "",
+              openHint:
+                "\uBC18\uC601\uD588\uC2B5\uB2C8\uB2E4. \uC774\uBBF8 \uC5F4\uB9B0 WKF \uCC3D\uC774 \uC788\uC73C\uBA74 \uB2EB\uACE0 Explorer\uC5D0\uC11C \uB2E4\uC2DC \uC5EC\uC138\uC694. (name=" +
+                wfName +
+                ", id=" +
+                wfId +
+                ")"
+            });
+          }
+          }
+        }
       }
     } else {
-      var title2 = String(p.title || "");
-      if (typeof TW_TITLE_MAX !== "undefined" && title2.length > TW_TITLE_MAX)
-        title2 = title2.substring(0, TW_TITLE_MAX);
-
-      var id2 = testWoo.repo.saveAiSql({
-        title: title2,
-        creator: currentLogin(),
-        nl_request: p.nl_request,
-        plan_json: JSON.stringify(p.plan),
-        used_fragments: JSON.stringify(used),
-        compile_hash: compileHash,
-        sql_query: compiled.sql,
-        summary_ko: compiled.summary || p.summary,
-        target_count: p.target_count != null ? p.target_count : 0,
-        workflow_name: "",
-        excluded_slots: p.excluded_slots ? JSON.stringify(p.excluded_slots) : "",
-        status: "registered"
-      });
+      recBase.workflow_name = "";
+      var id2 = testWoo.repo.saveAiSql(recBase);
       jsonOut({
         ok: true,
         passed: true,
         created: true,
+        injected: false,
         ai_sql_id: id2,
         status: "registered",
         sql: compiled.sql,

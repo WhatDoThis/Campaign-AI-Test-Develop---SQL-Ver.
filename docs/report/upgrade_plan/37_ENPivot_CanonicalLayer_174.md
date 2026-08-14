@@ -1,9 +1,9 @@
 # #174 — EN-Pivot Canonical Layer
 
-> **상태:** `[~]` 5단계 배포·smoke PASS · **다음 = HUMAN V6 grep**  
+> **상태:** `[x]` V0~V6 · 5단계 repo · HUMAN 교차 완료. 재개 #170/#168-B/#172 가이드 닫힘.  
 > **이 문서가 추출 좌표계의 정답이다.** 코드가 어긋나면 코드를 고친다.  
 > AI가 HUMAN 검증을 PASS로 자체 처리하지 않음.  
-> 5단계 배포+smoke 완료. V6 grep은 HUMAN.
+> 5단계 배포+smoke 완료. V6 콘솔은 복사 배포로 교차됨.
 
 원문: `[별도]_고도화_개발아이디어_관리자작성본.md` 2026-08-13  
 선행 헌법: `#167` 축1=컬럼1 · `#168-A` `_source` · `#169` 서가 우선 · `#172` 공유 모듈  
@@ -112,7 +112,7 @@ WHERE sRegion = '서울' AND iAge >= 10 AND iAge < 20
   #170 Pass0 원자분할       [ ] 재개 ← 추출 입력이 KO 힌트 → EN slots
   #168-B 값 바인딩          [ ] 재개 ← 입력=EN slots · unresolved
   #172 FragContract 매칭    [ ] 재개 ← M1/M2/M3 · abstain
-  ▶ #174 EN-Pivot           [~] 5단계 repo · 다음=HUMAN V6
+  ▶ #174 EN-Pivot           [x] V6 · 재개 닫힘
        0 조사 (코드 금지)
        1 출력 계약 고정
        2 EN 추출 (신규 testWooEnPivot.js)
@@ -241,7 +241,7 @@ abstain(R3): `unresolved[]` 반환. reason은 `concept_not_found` / `value_not_i
 
 ### 5단계 — 한국어 사전 제거
 
-V0~V5 후 `JOSA_TAIL` / `NOISE_WORD` / KO `stemToken` / 청중명사 `isNoiseResidue` 및 지역명·성별 하드코딩을 제거했다. `stemToken`/`isNoiseResidue` export는 empty no-op. `normalizeAtomicSlots`는 EnPivot 슬롯 통과. **다음 = HUMAN V6 grep.**
+V0~V5 후 `JOSA_TAIL` / `NOISE_WORD` / KO `stemToken` / 청중명사 `isNoiseResidue` 및 지역명·성별 하드코딩을 제거했다. `stemToken`/`isNoiseResidue` export는 empty no-op. `normalizeAtomicSlots`는 EnPivot 슬롯 통과. **V6 repo grep 2026-08-13: 매칭 경로 한국어 값 리터럴 0. HUMAN 콘솔 교차(복사 배포) 동일.**
 
 ---
 
@@ -270,7 +270,7 @@ V0~V5 후 `JOSA_TAIL` / `NOISE_WORD` / KO `stemToken` / 청중명사 `isNoiseRes
 | V3 | V2 재실행 (동일 문자열) | 신규 0, library hit 4, LLM 번역 호출 0. **근거: 동일 NL 해시 캐시. M1 스킵 아님** |
 | V4 | DB에 신규 지역값 1건 삽입 후 그 값으로 요청 | `probe_values` 1회 → `param_domain` merge → SQL 생성 성공 |
 | V5 | 존재하지 않는 값("판교요금제") | unresolved 1, reason=`value_not_in_domain`, `_negative` 기록, SQL 생성 안 함 |
-| V6 | grep (**5단계 후만 측정**) | 한국어 값 리터럴/컬럼명 하드코딩 0건 |
+| V6 | grep (**5단계 후만 측정**) | **repo 0건 + HUMAN 복사 배포 교차 (2026-08-13).** 제외: 스모크 픽스처·seed·UI 문구·토큰 문자클래스 `가-힣`. Foundry 프롬프트 `iAge` 예시는 생성축(매칭 사전 아님) |
 
 ### 부록 V7 (게이트 아님)
 
@@ -289,9 +289,9 @@ V0~V5 후 `JOSA_TAIL` / `NOISE_WORD` / KO `stemToken` / 청중명사 `isNoiseRes
 ## 10. Chat 한 줄
 
 ```
-차수: #174 HUMAN V6
+차수: #174 HUMAN V6 교차
 가이드: docs/report/upgrade_plan/37_ENPivot_CanonicalLayer_174.md §8
-선행: #174-5 repo · V0~V5 PASS
-모드: 검증 · 매칭 코드에서 한국어 값/컬럼 하드코딩 0건
+선행: #174-5 repo · V6 repo grep 매칭 경로 0건
+모드: 검증 · 콘솔에서 매칭 JS 한글 값/컬럼 하드코딩 교차
 금지: Studio UI·nlMap 키·바인딩=db 삭제 · R6 착수 · Match Option ON
 ```

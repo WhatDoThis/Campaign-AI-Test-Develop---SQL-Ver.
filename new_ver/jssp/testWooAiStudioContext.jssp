@@ -10,10 +10,10 @@ response.setContentType("application/json;charset=utf-8");
  * ===========
  * - listAiFolders — @isAiFolder Program 목록
  * - listCampaigns / createCampaign — Program 하위 Campaign
- * - listWkfs / createWkf — Campaign 하위 WKF(Max 15)
+ * - listWkfs / createWkf — Campaign 하위 WKF(Max 15, sqlCount=반영 SQL 건수)
  * - listRegisteredSql — 최근 반영 SQL + WKF/Program 점프 메타(분기 B)
  * - selectWkf / releaseLock — soft-lock 획득·해제(CSRF)
- * - libVersions — 로드된 testWoo.* 모듈 __v JSON (expectedByMod: foundry=163 llm=172 enPivot=172 fragContract=168 feasibility=161)
+ * - libVersions — 로드된 testWoo.* 모듈 __v JSON (expectedByMod: foundry=165 llm=178 enPivot=174 fragContract=175 feasibility=161 toolkit=161 gates=163 compiler=164 repo=163 workflowUi=162)
  *
  * [Dependencies]
  * =========
@@ -59,9 +59,10 @@ try {
     loadLibrary("woo:testWooWorkflowUi.js");
     // 모듈별 기대 __v. 기본 159. heal 경로만 올림(전체 강제 재배포 방지).
     var expectedByMod = {
-      llm: "172", toolkit: "160", enPivot: "172",
-      fragContract: "168", fragments: "165", compiler: "160",
-      foundry: "163", dedup: "160", feasibility: "161"
+      llm: "178", toolkit: "161", enPivot: "174",
+      fragContract: "175", fragments: "165", compiler: "164",
+      foundry: "165", dedup: "160", feasibility: "161", gates: "163",
+      repo: "163", workflowUi: "162"
     };
     var expectedDefault = "159";
     function _twLibV(mod) {
@@ -136,9 +137,29 @@ try {
     }
     var limW = p.limit != null ? p.limit : 200;
     var wkfRes = testWoo.wfClone.listWkfsByCampaign(cidL, limW);
+    loadLibrary("woo:testWooRepository.js");
+    twRequireLib(
+      "woo:testWooRepository.js",
+      (typeof testWoo !== "undefined") && testWoo.repo
+    );
+    var itemsW = wkfRes.items || [];
+    for (var iw = 0; iw < itemsW.length; iw++) {
+      var cntW = 0;
+      try {
+        var rowsW = testWoo.repo.listAiSqlByWorkflow(itemsW[iw].name, 200);
+        if (rowsW) {
+          for (var ir = 0; ir < rowsW.length; ir++) {
+            if (String(rowsW[ir].status || "") === "registered") cntW++;
+          }
+        }
+      } catch (eCnt) {
+        cntW = 0;
+      }
+      itemsW[iw].sqlCount = cntW;
+    }
     jsonOut({
       ok: true,
-      items: wkfRes.items,
+      items: itemsW,
       count: wkfRes.items.length,
       wkfCount: wkfRes.wkfCount,
       wkfMax: wkfRes.wkfMax,
@@ -175,6 +196,8 @@ try {
         title: rec.title,
         nl_request: rec.nl_request,
         status: rec.status,
+        used_fragments: rec.used_fragments || "[]",
+        param_key: rec.param_key || "",
         workflow_name: rec.workflow_name,
         creation_date: rec.creation_date,
         workflow_id: meta.id || "",

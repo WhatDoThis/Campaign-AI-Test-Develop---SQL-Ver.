@@ -1,7 +1,6 @@
 # #168-B — Generate 값 바인딩 (param_domain → plan.params)
 
-> **상태: `[ ]` 재개.** 템플릿 계약(`{{param}}`)은 유지.  
-> **#174 영향:** 바인딩 입력이 KO nlMap만이 아니라 EN 매칭 결과. `unresolved`면 SQL 생성 안 함. 번역 문자열을 `db` 대신 넣지 말 것. 이 문서를 닫으면 진행판 `[x]` 복귀.  
+> **상태: `[x]` 닫힘** (2026-08-14). #174-4가 params←`db` · unresolved 시 SQL 금지 · `en_literal` WHERE 금지를 흡수. 재구현 없음.  
 > frag SQL은 `{{param}}` 템플릿. 컴파일 직전에 NL+`param_domain`으로 **결정적** 치환.  
 > Pass1 LLM params만 믿지 않는다.
 

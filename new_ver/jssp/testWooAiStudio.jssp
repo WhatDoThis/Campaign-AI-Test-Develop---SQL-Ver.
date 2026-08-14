@@ -13,14 +13,14 @@
  *
  * [Dependencies]
  * =========
- * - /woo/testWooAiStudioJs.jssp?v=166 — 클라이언트 IIFE
+ * - /woo/testWooAiStudioJs.jssp?v=180 — 클라이언트 IIFE (injected_at 반영 상태 · 덮어쓰기)
  * - Option testWooAiMatchEnabled — 1/true만 ON
  * - input_form testWooExtendWorkflow — urlViewer height=630(embed 본문+70 정합)
  *
  * [Invariants]
  * ===========
  * - MSHTML: fetch/Promise/flex/CSS변수 금지 · 한글 HTML 엔티티
- * - litmus URL v=166 필수 — 뒤로가기 시 미반영 SQL 유지
+ * - litmus URL v=180 필수 — 스키마 반영 행 배지 · WKF에 덮어쓰기 · WKF로 이동
  * - NL textarea·목록 고정 height(+70) — 단독 630 / embed 510
  */
 response.setContentType("text/html;charset=utf-8");
@@ -180,14 +180,26 @@ if (!_login) {
     #twListPane h2,#twListTitle{font-size:.78rem;margin:0 0 8px;height:22px;line-height:22px;overflow:hidden;color:#64748b;text-transform:uppercase;letter-spacing:.03em;}
     /* 목록: max-height 대신 고정 height — 빈 목록도 동일 창 높이 유지 */
     #twDummyList,#sideSql{height:570px;overflow:auto;}
+    .list-sec{font-size:.78rem;font-weight:700;color:#334155;margin:12px 0 6px;}
+    .list-sec.first{margin-top:0;}
+    .sql-search{margin:0 0 8px;}
+    .sql-search .sql-search-lab{font-size:.72rem;color:#64748b;margin:0 0 4px;}
+    .sql-search input{display:block;width:100%;box-sizing:border-box;font:inherit;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;}
+    .chip-line{font-size:.9rem;color:#0f172a;margin:0 0 8px;line-height:1.4;}
     .shell-item{border:1px solid #e2e8f0;border-radius:10px;padding:10px;margin-bottom:8px;cursor:pointer;background:#fff;font-size:.82rem;}
+    .shell-item .meta{color:#64748b;font-size:.72rem;margin-top:4px;}
     .shell-item:hover,.shell-item.active{border-color:#2563eb;background:#eff6ff;}
+    .shell-item.draft-cache{border-color:#f59e0b;background:#fffbeb;}
+    .shell-item.draft-cache:hover{border-color:#d97706;background:#fef3c7;}
     .shell-item.locked{opacity:0.55;cursor:not-allowed;background:#f8fafc;}
     .shell-item.locked:hover{border-color:#e2e8f0;background:#f8fafc;}
     .side{display:block;overflow:auto;padding:0;background:transparent;}
     .side.hidden{display:none;}
     .sql-item{position:relative;border:1px solid #e2e8f0;border-radius:10px;padding:10px 48px 10px 10px;margin-bottom:8px;cursor:pointer;background:#fff;font-size:.82rem;}
     .sql-item:hover,.sql-item.active{border-color:#2563eb;background:#eff6ff;}
+    .sql-item.current{border-color:#059669;background:#ecfdf5;}
+    .sql-item.current:hover,.sql-item.current.active{border-color:#047857;background:#d1fae5;}
+    .sql-item .badge-now{display:inline-block;font-size:.68rem;font-weight:700;padding:1px 6px;margin-left:6px;background:#d1fae5;color:#047857;border:1px solid #6ee7b7;}
     .sql-item.locked{opacity:0.55;cursor:not-allowed;background:#f8fafc;}
     .sql-item.locked:hover{border-color:#e2e8f0;background:#f8fafc;}
     .sql-item .sid{font-weight:700;color:#2563eb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -304,7 +316,7 @@ if (!_login) {
   <!-- 오류 시에만 표시(#136). 정상 시 숨기고 진단 패널에만 기록 -->
   <table id="twBootTable" width="100%" bgcolor="#FFFF00" border="0" cellspacing="0" cellpadding="3" class="tw-boot-show">
     <tr><td>
-      <font id="twBootFont" face="Tahoma" size="2" color="#000000">TW-BOOT v=166 | loading&#x2026;</font>
+      <font id="twBootFont" face="Tahoma" size="2" color="#000000">TW-BOOT v=180 | loading&#x2026;</font>
     </td></tr>
   </table>
   <div id="twBoot" class="tw-boot-show">Studio boot&#x2026;</div>
@@ -323,7 +335,7 @@ if (!_login) {
         r = amp < 0 ? rest : rest.substring(0, amp);
       }
     } catch (eR) {}
-    var msg = "TW-BOOT v=166 | documentMode=" + dm + " | embed=" + emb + " | match=" + (window.__TW_MATCH_ENABLED__ ? "1" : "0") + " | _r=" + (r || "-");
+    var msg = "TW-BOOT v=180 | documentMode=" + dm + " | embed=" + emb + " | match=" + (window.__TW_MATCH_ENABLED__ ? "1" : "0") + " | _r=" + (r || "-");
     var font = document.getElementById("twBootFont");
     if (font) font.innerHTML = msg;
     var el = document.getElementById("twBoot");
@@ -349,6 +361,7 @@ if (!_login) {
       <span id="twInfoText">&#xC870;&#xAC74; &gt; SQL</span>
       <span id="twInfoActions">
         <button type="button" class="btn-mini" id="btnTwOpenWkf" disabled="disabled">WKF &#xC5F4;&#xAE30; &#xC548;&#xB0B4;</button>
+        <button type="button" class="btn-mini hidden" id="btnTwOtherWkf" disabled="disabled">&#xB2E4;&#xB978; WKF&#xC5D0;&#xB3C4; &#xBC18;&#xC601;</button>
         <button type="button" class="btn-mini" id="btnTwBack">&#xB4A4;&#xB85C;</button>
         <button type="button" class="btn-mini" id="btnTwReset">&#xCD08;&#xAE30;&#xD654;</button>
       </span>
@@ -362,11 +375,11 @@ if (!_login) {
 
             <div class="card hidden" id="cardSlotResults"><h2>&#xC2AC;&#xB86F; &#xD310;&#xC815; / &#xBD88;&#xAC00; &#xBCF4;&#xACE0;</h2><div id="slotResults"></div></div>
 
-            <div class="card hidden" id="cardChips"><h2>&#xC870;&#xAC74; &#xC2AC;&#xB86F;</h2><div class="chips" id="chips"></div></div>
+            <div class="card hidden" id="cardChips"><h2>&#xD574;&#xC11D;&#xD55C; &#xC870;&#xAC74;</h2><div class="chip-line" id="chipLine"></div><div class="chips" id="chips"></div></div>
 
             <div class="card hidden" id="cardFunnel"><h2>&#xD37C;&#xB110; &#xCE74;&#xC6B4;&#xD2B8; (&#xBCF4;&#xB958;)</h2><table class="funnel" id="funnel"></table></div>
 
-            <div class="card hidden" id="cardGates"><h2>&#xC790;&#xB3D9; &#xAC80;&#xC99D; &#xACB0;&#xACFC;</h2><div class="gates" id="gates"></div></div>
+            <div class="card hidden" id="cardGates"><h2>&#xC900;&#xBE44; &#xC0C1;&#xD0DC;</h2><div class="gates" id="gates"></div></div>
 
             <div class="card hidden" id="cardCode">
               <div><div style="font-size:.82rem;color:#64748b;cursor:default;">&#xCF54;&#xB4DC; &#xBCF4;&#xAE30; (SQL)</div><pre class="code" id="sql"></pre></div>
@@ -375,17 +388,17 @@ if (!_login) {
             <div class="banner err hidden" id="err"></div>
           </div>
           <div class="composer">
-            <div id="twNlHint" class="hidden">&#xC870;&#xAC74;&#xC744; &#xC785;&#xB825;&#xD55C; &#xB4A4; [&#xC0DD;&#xC131;]&#xC744; &#xB204;&#xB974;&#xC138;&#xC694;</div>
+            <div id="twNlHint" class="hidden">&#xC870;&#xAC74;&#xC744; &#xC785;&#xB825;&#xD55C; &#xB4A4; [&#xB300;&#xC0C1; &#xB9CC;&#xB4E4;&#xAE30;]&#xB97C; &#xB204;&#xB974;&#xC138;&#xC694;</div>
             <textarea id="nl" rows="1"></textarea>
             <div class="actions">
-              <button type="button" class="btn" id="btnGen">&#xC0DD;&#xC131;</button>
-              <button type="button" class="btn btn-outline" id="btnReg" disabled="disabled">&#xB4F1;&#xB85D;</button>
+              <button type="button" class="btn" id="btnGen">&#xB300;&#xC0C1; &#xB9CC;&#xB4E4;&#xAE30;</button>
+              <button type="button" class="btn btn-outline" id="btnReg" disabled="disabled">&#xC774; &#xC870;&#xAC74; &#xC4F0;&#xAE30;</button>
               <button type="button" class="btn btn-outline" id="btnTwGotoWkf" disabled="disabled">WKF&#xB85C; &#xC774;&#xB3D9;</button>
             </div>
           </div>
         </td>
         <td id="twListPane">
-          <h2 id="twListTitle">SQL &#xBAA9;&#xB85D;</h2>
+          <h2 id="twListTitle">&#xB0B4; &#xC870;&#xAC74;</h2>
           <div id="twDummyList"></div>
           <div class="side" id="sideSql" style="display:none">
             <div class="side-empty" id="sqlListEmpty">&#xB4F1;&#xB85D;&#xB41C; SQL &#xC774; &#xC5C6;&#xC2B5;&#xB2C8;&#xB2E4;. &#xC0DD;&#xC131; &#xD6C4; &#xB4F1;&#xB85D;&#xD558;&#xBA74; &#xC5EC;&#xAE30; &#xBAA8;&#xC785;&#xB2C8;&#xB2E4;.</div>
@@ -401,8 +414,8 @@ if (!_login) {
     </div>
   </div>
 
-  <!-- v=166 · unresolved 3종 원문 표시 · 뒤로가기 캐시 유지 · Match OFF 유지 -->
-  <script type="text/javascript" src="/woo/testWooAiStudioJs.jssp?v=166"></script>
+  <!-- v=180 · injected_at 반영 상태 · 덮어쓰기 · Match OFF 유지 -->
+  <script type="text/javascript" src="/woo/testWooAiStudioJs.jssp?v=180"></script>
 </body>
 </html>
 <%

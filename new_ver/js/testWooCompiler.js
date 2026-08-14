@@ -1,21 +1,25 @@
 /*
  * testWooCompiler.js (CNF plan → SQL 컴파일러)
  * ==================================================
- * litmus 동기 __v=160 (#172 FragContract).
+ * litmus 동기 __v=164 (paramKeyFromPlan — 값 없는 조건축 키).
  * LLM이 낸 CNF plan을 fragment sql_text로 조합해 최종 audience SQL 생성.
  * summary·chips는 compile 결과에서만 만든다. Oracle은 EXCEPT→MINUS.
  * #168-B/#172: NL 바인딩은 fragContract.resolveNlParams 공유.
+ * #175-1: `col = {{p}}` 는 치환 전 IN 승격. 배열 params는 쉼표 join.
+ * #175 G5: include 없고 exclude만 있으면 exclude sql_text의 FROM으로 universe를 만들고 EXCEPT. NOT IN 금지.
  *
  * [Main Functions]
  * ===========
- * - compile — plan → {sql, keyColumn, summary, plan}
- * - bindPlanParams — NL·도메인으로 plan item.params 채움
+ * - compile — plan → {sql, keyColumn, summary, plan}. include 빈+exclude면 FROM universe + EXCEPT
+ * - bindPlanParams — NL·도메인으로 plan item.params 채움. sql {{}} 키만 남김. snake↔camel 별칭
  * - chipsFromPlan — plan에서 UI 칩 배열 생성
  * - collectUsedFragments — plan에 쓰인 fragment 메타 수집
+ * - paramKeyFromPlan — plan.params 키 camelCase 정렬 문자열 (값 제외)
  *
  * [Dependencies]
  * =========
  * - testWoo.fragContract.resolveNlParams — nlMap/_bucket 해석 (#172)
+ * - testWoo.fragContract.promoteEqPlaceholderToIn — `=` → IN (#175-1)
  * - testWoo.fragments.getByName — fragment sql_text·param_domain 로드
  * - testWoo.gates — fragmentSqlContract·checkScopePlan(로드 시)
  * - testWoo.cfg.getConfig — search.maxSlots 상한
@@ -47,8 +51,21 @@ testWoo.compiler = (function () {
     return need;
   }
 
+  // plan_code ↔ planCode. xpath/도메인은 snake, Foundry 예시는 camel.
+  function _aliasParamKey(key) {
+    var k = String(key || "");
+    if (!k) return "";
+    if (k.indexOf("_") >= 0)
+      return k.replace(/_([a-zA-Z])/g, function (_, c) {
+        return String(c).toUpperCase();
+      });
+    return k.replace(/[A-Z]/g, function (c) {
+      return "_" + String(c).toLowerCase();
+    });
+  }
+
   // NL(+슬롯 텍스트)에서 param_domain nlMap/_bucket 매칭 → item.params
-  // LLM Pass1 params 누락·오타를 보정. sql_text에 있는 키만 채운다.
+  // LLM Pass1 extras·키 불일치는 sql_text {{}} 만 남기고 버린다.
   function bindPlanParams(plan, nlText) {
     if (!plan) return plan;
     var blobs = [];
@@ -68,18 +85,37 @@ testWoo.compiler = (function () {
       try { f = testWoo.fragments.getByName(item.fragment); } catch (eG) { f = null; }
       if (!f) return;
       var need = _sqlPlaceholders(f.sql_text);
+      var needLookup = {};
+      var nk, alt, pk;
+      for (nk in need) {
+        if (!need.hasOwnProperty(nk)) continue;
+        needLookup[nk] = 1;
+        alt = _aliasParamKey(nk);
+        if (alt) needLookup[alt] = 1;
+      }
       var params = item.params && typeof item.params === "object" ? item.params : {};
       var resolved = {};
       if (testWoo.fragContract && testWoo.fragContract.resolveNlParams)
-        resolved = testWoo.fragContract.resolveNlParams(f.param_domain, hay, need) || {};
-      var pk;
-      for (pk in resolved) {
-        if (!resolved.hasOwnProperty(pk)) continue;
-        if (!need[pk]) continue;
-        if (params[pk] == null || params[pk] === "")
-          params[pk] = resolved[pk];
+        resolved = testWoo.fragContract.resolveNlParams(f.param_domain, hay, needLookup) || {};
+      for (nk in need) {
+        if (!need.hasOwnProperty(nk)) continue;
+        if (params[nk] != null && params[nk] !== "") continue;
+        if (resolved[nk] != null && resolved[nk] !== "")
+          params[nk] = resolved[nk];
+        else {
+          alt = _aliasParamKey(nk);
+          if (alt && resolved[alt] != null && resolved[alt] !== "")
+            params[nk] = resolved[alt];
+          else if (alt && params[alt] != null && params[alt] !== "")
+            params[nk] = params[alt];
+        }
       }
-      item.params = params;
+      var kept = {};
+      for (pk in params) {
+        if (!params.hasOwnProperty(pk)) continue;
+        if (need[pk]) kept[pk] = params[pk];
+      }
+      item.params = kept;
     }
 
     var inc = plan.include || [];
@@ -96,7 +132,9 @@ testWoo.compiler = (function () {
   function compile(plan) {
     if (!plan) throw new Error("[testWoo.compiler] plan missing");
     bindPlanParams(plan, plan.nl_request || "");
-    if (!_isArray(plan.include) || !plan.include.length)
+    if (!_isArray(plan.include)) plan.include = [];
+    if (!_isArray(plan.exclude)) plan.exclude = [];
+    if (!plan.include.length && !plan.exclude.length)
       throw new Error("[testWoo.compiler] plan.include empty");
     var maxSlots = 40;
     try {
@@ -119,6 +157,13 @@ testWoo.compiler = (function () {
 
     var groupSqls = [];
     var summaryParts = [];
+    if (!plan.include.length) {
+      var uf = testWoo.fragments.getByName(plan.exclude[0].fragment);
+      if (!uf) throw new Error("[testWoo.compiler] universe fragment missing: " +
+        plan.exclude[0].fragment);
+      groupSqls.push([_universeFromFrag(uf, grain)]);
+      summaryParts.push("· [AND] 전체 대상");
+    }
     for (var gi = 0; gi < plan.include.length; gi++) {
       var group = plan.include[gi];
       if (!group || !_isArray(group.any) || !group.any.length)
@@ -181,8 +226,20 @@ testWoo.compiler = (function () {
     } else if (!_sqlHasGrain(f.sql_text, grain)) {
       throw new Error("[testWoo.compiler] grain not in sql_text: " + item.fragment);
     }
-    var sql = _substitute(f.sql_text, item.params || {}, f);
+    var tmpl = f.sql_text;
+    if (testWoo.fragContract && testWoo.fragContract.promoteEqPlaceholderToIn)
+      tmpl = testWoo.fragContract.promoteEqPlaceholderToIn(tmpl);
+    var sql = _substitute(tmpl, item.params || {}, f);
     return { sql: sql, label: item.label || f.label || item.fragment };
+  }
+
+  function _universeFromFrag(f, grain) {
+    var sql = String((f && f.sql_text) || "");
+    var fm = sql.match(/\bFROM\s+([A-Za-z_][A-Za-z0-9_]*)/i);
+    if (!fm)
+      throw new Error("[testWoo.compiler] universe FROM missing: " +
+        ((f && f.name) || ""));
+    return "SELECT DISTINCT " + grain + " FROM " + fm[1];
   }
 
   // grain 투영 + NULL 차단 (EXCEPT는 NULL을 동일로 취급)
@@ -255,6 +312,10 @@ testWoo.compiler = (function () {
       var v = params[key];
       if (_isArray(v)) {
         if (!v.length) throw new Error("[testWoo.compiler] empty array param: " + key);
+        var inRe = new RegExp("IN\\s*\\(\\s*\\{\\{" + key + "\\}\\}\\s*\\)", "i");
+        if (!inRe.test(String(sqlText)))
+          throw new Error("[testWoo.compiler] array param requires IN ({{" +
+            key + "}}): " + key);
         var buf = [];
         for (var i = 0; i < v.length; i++) buf.push(_lit(v[i]));
         return buf.join(",");
@@ -351,11 +412,49 @@ testWoo.compiler = (function () {
     return out;
   }
 
+  function _canonParamName(k) {
+    var s = String(k || "");
+    if (!s || s.charAt(0) === "_") return "";
+    if (s.indexOf("_") >= 0) {
+      return s.replace(/_([a-zA-Z])/g, function (_, c) {
+        return String(c).toUpperCase();
+      });
+    }
+    return s;
+  }
+
+  function paramKeyFromPlan(plan) {
+    var seen = {};
+    var keys = [];
+    function addParams(params) {
+      var pk, ck;
+      if (!params) return;
+      for (pk in params) {
+        if (!params.hasOwnProperty(pk)) continue;
+        ck = _canonParamName(pk);
+        if (!ck || seen[ck]) continue;
+        seen[ck] = 1;
+        keys.push(ck);
+      }
+    }
+    var inc = (plan && plan.include) || [];
+    var i, j, any, ex;
+    for (i = 0; i < inc.length; i++) {
+      any = (inc[i] && inc[i].any) || [];
+      for (j = 0; j < any.length; j++) addParams(any[j] && any[j].params);
+    }
+    ex = (plan && plan.exclude) || [];
+    for (i = 0; i < ex.length; i++) addParams(ex[i] && ex[i].params);
+    keys.sort();
+    return keys.join("|");
+  }
+
   return {
     compile: compile,
     bindPlanParams: bindPlanParams,
     chipsFromPlan: chipsFromPlan,
-    collectUsedFragments: collectUsedFragments
+    collectUsedFragments: collectUsedFragments,
+    paramKeyFromPlan: paramKeyFromPlan
   };
 })();
-testWoo.compiler.__v = "160";
+testWoo.compiler.__v = "164";

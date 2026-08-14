@@ -1,7 +1,7 @@
 /*
  * testWooToolkit.js (LLM Tool 레지스트리)
  * ==================================================
- * litmus 동기 __v=160 (refreshDomain — 후속 적재 재스냅샷).
+ * litmus 동기 __v=161 (스키마 enum 이름 정규화 · 라벨 공백 시 probe_values).
  * OpenRouter tools용 spec·invoke·evidenceLog.
  * Triage·Foundry가 schema 조사·probe_sql·search_columns 호출.
  * #168-A: 탐색(툴) 결과를 frag._source 로 결정화. classifyField·fingerprint·TTL.
@@ -19,7 +19,7 @@
  * - resetBudget — (deprecated) 전체 예산 리셋
  * - getEvidenceLog — 누적 evidence 배열
  * - getEvidenceLogSince — offset 이후 evidence
- * - classifyField — schema+xpath → tier + toolCalls (메타데이터 판정)
+ * - classifyField — schema+xpath → tier + toolCalls (메타데이터 판정). enum 속성명은 로컬/FQN 모두 매칭
  * - resolveDomain — 스냅샷 + _source(provenance·fingerprint)
  * - refreshDomain — 기존 domain을 _source로 재스냅샷(후속 데이터 추가 반영)
  * - pathFromGrain / findSchemaBySqlTable / resolveGrainSchema — 경로·스키마 추론
@@ -795,6 +795,22 @@ testWoo.toolkit = (function () {
     return { ok: false, error: "xpath not found in schema" };
   }
 
+  function _enumNameMatch(enName, want) {
+    var a = String(enName || "");
+    var b = String(want || "");
+    if (!a || !b) return false;
+    if (a === b) return true;
+    var al = a.toLowerCase();
+    var bl = b.toLowerCase();
+    if (al === bl) return true;
+    var aTail = al.indexOf(":") >= 0 ? al.substring(al.lastIndexOf(":") + 1) : al;
+    var bTail = bl.indexOf(":") >= 0 ? bl.substring(bl.lastIndexOf(":") + 1) : bl;
+    if (aTail === bTail) return true;
+    if (aTail && bTail && (aTail.indexOf(bTail) >= 0 || bTail.indexOf(aTail) >= 0))
+      return true;
+    return false;
+  }
+
   function _enumLabelValueMap(schemaId, enumName) {
     var out = {};
     if (!enumName) return out;
@@ -805,7 +821,7 @@ testWoo.toolkit = (function () {
       return out;
     }
     for each (var en in xml.enumeration) {
-      if (String(en.@name || "") !== enumName) continue;
+      if (!_enumNameMatch(String(en.@name || ""), enumName)) continue;
       for each (var v in en.value) {
         var vName = String(v.@name || "");
         var vVal = String(v.@value != null ? v.@value : "");
@@ -1067,6 +1083,32 @@ testWoo.toolkit = (function () {
         if (!dup) ev.push(mv);
       }
       domain[paramKey].enum = ev;
+      if (!ev.length) {
+        var pvE = _toolProbeValues({
+          schemaId: sid,
+          columnName: (meta && meta.name) ? meta.name : _xpathAttrName(xp),
+          limit: dcfg.snapshotCap
+        });
+        var valsE = (pvE && pvE.ok && pvE.values) ? pvE.values : [];
+        var viE, vvE;
+        for (viE = 0; viE < valsE.length; viE++) {
+          vvE = String(valsE[viE] || "");
+          if (!vvE) continue;
+          if (!map[vvE]) map[vvE] = vvE;
+          ev.push(vvE);
+        }
+        domain[paramKey].nlMap = map;
+        domain[paramKey].enum = ev;
+        source.evidence = String(source.evidence || "") +
+          " | enum labels empty, probe_values n=" + ev.length;
+        var hasPvE = false;
+        var pviE;
+        for (pviE = 0; pviE < discoveredBy.length; pviE++) {
+          if (discoveredBy[pviE] === "probe_values") { hasPvE = true; break; }
+        }
+        if (!hasPvE) discoveredBy.push("probe_values");
+        source.discoveredBy = discoveredBy;
+      }
       return { ok: true, classification: cls, paramDomain: domain };
     }
 
@@ -1547,4 +1589,4 @@ testWoo.toolkit = (function () {
     resolveGrainSchema: resolveGrainSchema
   };
 })();
-testWoo.toolkit.__v = "160";
+testWoo.toolkit.__v = "161";

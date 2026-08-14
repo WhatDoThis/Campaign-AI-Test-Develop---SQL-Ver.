@@ -1,6 +1,6 @@
 <%/*
  * testWooAiStudioJs.jssp (Studio 클라이언트 JS 서빙)
- * new_ver/html/testWooAiStudio.js 와 동기 유지 · v=166 · unresolved 3종.
+ * new_ver/html/testWooAiStudio.js 와 동기 유지 · v=180 · injected_at 반영 상태.
  */
 response.setContentType("text/javascript;charset=utf-8");
 try {
@@ -15,11 +15,15 @@ try {
  *
  * [Main Functions]
  * ===========
- * - generate / validate / register — ST0생성 → ST1 SQL목록 → ST3~ST5 매핑 후 WKF 있으면 Register
+ * - generate / validate / register — ST0대상만들기 → ST1 목록(임시=이어서) → ST3~ST5 후 WKF면 R6 커밋
  * - loadAiFolders·selectFolder·loadCampaigns·createCampaign·loadWkfs·createWkf·selectWkf — ST3~ST5
- * - _jumpExistingSql — 분기 B 기존(반영됨) SQL → Program/Campaign/WKF 점프
- * - renderListPane / goBack / resetCtx — 우측 목록·뒤로·초기화(→ST0)
+ * - _jumpExistingSql — 분기 B 기존 SQL → Program/Campaign/WKF 점프 후 그 WKF SQL 이력
+ * - _similarRegistered — param_key(값 없는 조건축) 비교. NL/조사 토큰 없음
+ * - renderListPane / goBack / resetCtx — 브레드크럼은 listMode 기준(목록=타입만, 선택=타입:라벨)
+ * - _wfListText — WKF 행 `라벨 / 인터널네임 / SQL개수`
+ * - loadSqlList — injected_at(없으면 creation_date) 최대 행을 반영됨으로 표시. 클릭 후 버튼=덮어쓰기
  * - putDraft / _cacheListDrafts — R2 미반영 SQL 캐시(twStudioCache)
+ * - renderChips / _chipDisplay — 칩·해석 한 줄은 params 값 우선(U4)
  *
  * [Dependencies]
  * =========
@@ -34,7 +38,7 @@ try {
  * - intent create/reuse UI 폐기 — 분기는 목록 데이터(R4+)
  * - ST0 최초 진입 시 NL 즉시 활성(폴더 선지정 게이트 없음)
  * - Draft는 saveAiSql/DB 금지 — Register 성공 시만 DB
- * - Served /woo/testWooAiStudioJs.jssp?v=164 · 뒤로가기≠초기화(캐시 SQL 유지)
+ * - Served /woo/testWooAiStudioJs.jssp?v=180 · 스키마 반영(injected_at)이면 [WKF로 이동] 활성
  * - Foundry done 자동 재생성은 after_foundry(재큐잉 금지)
  */
 (function () {
@@ -47,6 +51,9 @@ try {
   var QUEUE_POLL_MAX = 30;
   var BASE = "/woo/";
   var DEL_CONFIRM_MS = 3000;
+  var OVERWRITE_MS = 8000;
+  var _overwriteArmed = false;
+  var _overwriteTimer = null;
 
   // ACC urlViewer 구엔진에 URLSearchParams 없을 수 있음 — 수동 파싱
   function _qs(name) {
@@ -261,6 +268,8 @@ try {
     state.summary = "";
     state.passed = !!(_trim(state.sql) && state.plan);
     state.aiSqlId = null;
+    state.commitOk = false;
+    _clearOverwriteArm();
     try {
       var nlEl = $("nl");
       if (nlEl) nlEl.value = state.nl;
@@ -276,15 +285,23 @@ try {
     _syncRegButton();
     clearErr();
     renderSummaryHint(
-      "\uC784\uC2DC SQL \uBCF5\uC6D0 \u2014 " + String(draft.cacheId || ""),
-      state.passed
+      "\uC774 \uC870\uAC74\uC73C\uB85C \uC774\uC5B4\uC11C \uC9C4\uD589\uD569\uB2C8\uB2E4.",
+      false
     );
   }
 
-  function _renderDraftRows(box) {
+  function _appendListSec(box, text, isFirst) {
+    var el = document.createElement("div");
+    el.className = isFirst ? "list-sec first" : "list-sec";
+    el.appendChild(document.createTextNode(text));
+    box.appendChild(el);
+  }
+
+  /* beginMapping=true: SQL목록에서 임시 클릭 = 매핑 계속. WKF discover는 false. */
+  function _renderDraftRows(box, beginMapping) {
     var drafts = _cacheListDrafts();
     for (var d = 0; d < drafts.length; d++) {
-      (function (draft) {
+      (function (draft, goMap) {
         var el = document.createElement("div");
         el.className = "shell-item draft-cache";
         var label = _trim(draft.nl_request || draft.cacheId || "");
@@ -294,10 +311,11 @@ try {
         ));
         el.onclick = function () {
           _restoreDraft(draft);
+          if (goMap) _beginMapping({ showProgramCrumb: true });
           return false;
         };
         box.appendChild(el);
-      })(drafts[d]);
+      })(drafts[d], !!beginMapping);
     }
   }
 
@@ -310,10 +328,11 @@ try {
     aiSqlId: null,
     cacheId: null,
     queuePoll: null,
-    foundryDoneQid: null
+    foundryDoneQid: null,
+    commitOk: false
   };
   var _delPending = { id: null, timer: null, btn: null };
-  /* SQL-First: phase=ST0~ST6 · listMode=SQL|FOLDER|CAMPAIGN|WKF */
+  /* SQL-First: phase=ST0~ST6 · listMode=SQL|FOLDER|CAMPAIGN|WKF|WKFSQL */
   var ctx = {
     phase: "ST0",
     listMode: "SQL",
@@ -329,7 +348,11 @@ try {
     matchShown: false,
     matchMode: "",
     registeredSql: [],
-    stack: []
+    sqlFilter: "",
+    stack: [],
+    bareLevel: "",
+    wfHasInjected: false,
+    currentInjectedId: null
   };
   var SHELL_MODE = !(WORKFLOW_NAME && EMBED);
   var $ = function (id) { return document.getElementById(id); };
@@ -338,6 +361,19 @@ try {
     if (WORKFLOW_NAME) return WORKFLOW_NAME;
     if (ctx.workflow && ctx.workflow.name) return String(ctx.workflow.name);
     return "";
+  }
+
+  function _activeWorkflowId() {
+    if (ctx.workflow && ctx.workflow.id) return String(ctx.workflow.id);
+    return "";
+  }
+
+  function _clearOverwriteArm() {
+    _overwriteArmed = false;
+    if (_overwriteTimer) {
+      try { clearTimeout(_overwriteTimer); } catch (eT) {}
+      _overwriteTimer = null;
+    }
   }
 
   // ---- className helpers (classList 없음 / IE \b 이슈 회피: 공백 패딩) ----
@@ -482,8 +518,8 @@ try {
           var parts = [];
           var keys = [
             "repo", "fragments", "foundry", "common", "env", "cfg", "llm",
-            "compiler", "gates", "lifecycle", "embedding", "match",
-            "studioContext", "wfClone"
+            "fragContract", "enPivot", "compiler", "gates", "lifecycle",
+            "embedding", "match", "studioContext", "wfClone"
           ];
           var ki;
           for (ki = 0; ki < keys.length; ki++) {
@@ -746,14 +782,19 @@ try {
                 _uu = res.unresolved[_ui] || {};
                 _us = String(_uu.surface || "");
                 _ur = String(_uu.reason || "");
+                var _uen = String(_uu.en_literal || "");
                 if (_ur === "value_not_in_domain")
-                  _ub.push("값 '" + _us + "'이(가) 도메인에 없습니다");
-                else if (_ur === "ambiguous")
-                  _ub.push("값 '" + _us + "'이(가) 여러 값과 맞습니다. 다시 입력해 주세요");
+                  _ub.push("값 '" + _us + "'" + (_uen ? (" (\uBC88\uC5ED '" + _uen + "')") : ""));
+                else if (_ur === "ambiguous" || _ur === "ambiguous_group")
+                  _ub.push("값 '" + _us + "'" +
+                    (_uen ? (" (\uBC88\uC5ED '" + _uen + "')") : "") +
+                    " (\uC5EC\uB7EC \uD56D\uBAA9\uACFC \uB9DE\uC74C)");
                 else
-                  _ub.push("조건을 해석할 축을 찾지 못했습니다: " + _us);
+                  _ub.push(_us || "\uBBF8\uD655\uC815 \uC870\uAC74");
               }
-              $("hint").textContent = _ub.join(" | ");
+              $("hint").textContent =
+                "\uC774 \uBD80\uBD84\uC740 \uD655\uC778\uC774 \uD544\uC694\uD569\uB2C8\uB2E4. " +
+                _ub.join(" \u00B7 ");
             } else if (res.retryInput) {
               $("hint").textContent = res.unmatched.join(" ");
             } else if (afterFoundry || res.afterFoundry) {
@@ -925,15 +966,52 @@ try {
     }
     setBusy(true); clearErr();
     var title = String(state.nl || "").substring(0, TITLE_MAX);
-    _diag("register start");
+    _diag("register start overwrite=" + (_overwriteArmed ? "1" : "0"));
     post("testWooAiRegister.jssp", {
       plan: state.plan,
       workflow_name: _activeWorkflowName(),
+      workflow_id: _activeWorkflowId(),
+      confirm_overwrite: _overwriteArmed,
       title: title,
       target_count: 0,
       nl_request: state.nl
     }, function (r) {
       try {
+        if (r && r.code === "LOCKED") {
+          $("hint").className = "banner warn";
+          $("hint").textContent = _errText(r) ||
+            "\uC774 WKF\uB294 \uB2E4\uB978 \uC0AC\uC6A9\uC790\uAC00 \uC0AC\uC6A9 \uC911\uC785\uB2C8\uB2E4. \uBC18\uC601\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.";
+          _syncRegButton();
+          return;
+        }
+        if (r && r.needsOverwrite) {
+          _overwriteArmed = true;
+          if (_overwriteTimer) {
+            try { clearTimeout(_overwriteTimer); } catch (eT) {}
+          }
+          _overwriteTimer = setTimeout(function () {
+            _clearOverwriteArm();
+            _syncRegButton();
+            var hArm = $("hint");
+            if (hArm) {
+              hArm.className = "banner warn";
+              hArm.textContent =
+                "\uB36E\uC5B4\uC4F0\uAE30 \uB300\uAE30\uAC00 \uB05D\uB0AC\uC2B5\uB2C8\uB2E4. \uB2E4\uC2DC [" +
+                (ctx.wfHasInjected ? "WKF\uC5D0 \uB36E\uC5B4\uC4F0\uAE30" : "WKF\uC5D0 \uB123\uAE30") +
+                "]\uB97C \uB204\uB974\uC138\uC694.";
+            }
+          }, OVERWRITE_MS);
+          $("hint").className = "banner warn";
+          $("hint").textContent =
+            r.message ||
+            "\uC774\uBBF8 \uBC18\uC601\uB41C \uB0B4\uC6A9\uC774 \uC788\uC2B5\uB2C8\uB2E4. \uB36E\uC5B4\uC4F0\uB824\uBA74 \uB2E4\uC2DC \uD074\uB9AD\uD558\uC138\uC694.";
+          var btnOw = $("btnReg");
+          if (btnOw) {
+            btnOw.disabled = false;
+            btnOw.textContent = "\uB36E\uC5B4\uC4F0\uB824\uBA74 \uB2E4\uC2DC \uD074\uB9AD";
+          }
+          return;
+        }
         if (!r.ok || r.passed === false) {
           showErr(_errText(r));
           if (r.results) renderGates(r.results);
@@ -942,6 +1020,26 @@ try {
         }
         state.aiSqlId = r.ai_sql_id;
         if (r.sql) state.sql = r.sql;
+        if (r.injected) {
+          state.commitOk = true;
+          _clearOverwriteArm();
+          if (state.cacheId) {
+            _cacheRemoveDraft(state.cacheId);
+            state.cacheId = null;
+          }
+          if (SHELL_MODE) ctx.phase = "ST6";
+          setInfoBar(_folderInfoText());
+          $("hint").className = "banner ok";
+          $("hint").textContent = r.openHint ||
+            "\uBC18\uC601\uD588\uC2B5\uB2C8\uB2E4. \uC5F4\uB9B0 WKF \uCC3D\uC774 \uC788\uC73C\uBA74 \uB2EB\uACE0 Explorer\uC5D0\uC11C \uB2E4\uC2DC \uC5EC\uC138\uC694.";
+          ctx.wfHasInjected = true;
+          setBindPick(r.ai_sql_id);
+          _refreshOpenButtons();
+          _syncRegButton();
+          _syncOtherWkfBtn();
+          loadSqlList({ selectCurrent: true });
+          return;
+        }
         if (state.cacheId) {
           _cacheRemoveDraft(state.cacheId);
           state.cacheId = null;
@@ -952,7 +1050,7 @@ try {
           $("hint").className = "banner warn";
           $("hint").textContent =
             r.message ||
-            ("\uB3D9\uC77C SQL \uAE30\uC874 \uB4F1\uB85D \u2014 ai_sql_id=" + r.ai_sql_id);
+            ("\uAC19\uC740 \uC870\uAC74\uC774 \uC774\uBBF8 \uC800\uC7A5\uB418\uC5B4 \uC788\uC2B5\uB2C8\uB2E4.");
           $("btnReg").disabled = true;
           setBindPick(r.ai_sql_id);
           loadSqlList();
@@ -960,10 +1058,8 @@ try {
         }
         $("hint").className = "banner ok";
         $("hint").textContent = EMBED
-          ? ("Registered. ai_sql_id=" + r.ai_sql_id +
-            " \u2014 \uC544\uB798 Apply to canvas \uB97C \uB204\uB974\uC138\uC694.")
-          : ("Registered. ai_sql_id=" + r.ai_sql_id +
-            " \u2014 Apply on WF AI Studio form (ibankSqlDM ai-sql-id).");
+          ? "\uC774 \uC870\uAC74\uC744 \uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4. \uCE94\uBC84\uC2A4\uC5D0 \uB123\uB294 \uB2E8\uACC4\uB294 \uB2E4\uC74C\uC785\uB2C8\uB2E4."
+          : "\uC774 \uC870\uAC74\uC744 \uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4. WKF \uD3FC\uC5D0\uC11C \uC5F0\uACB0\uD558\uC138\uC694.";
         $("btnReg").disabled = true;
         setBindPick(r.ai_sql_id);
         loadSqlList();
@@ -1059,6 +1155,15 @@ try {
     return !!(state.passed && _trim(state.sql) && state.plan);
   }
 
+  function _wfSchemaBound() {
+    return !!(state.commitOk || ctx.wfHasInjected);
+  }
+
+  function _resetInjectFlags() {
+    ctx.wfHasInjected = false;
+    ctx.currentInjectedId = null;
+  }
+
   /* ST3~ST5(WKF 미선택): [등록] 비활성. SQL목록은 브레드크럼/뒤로. 생성 직후 [등록]→목록은 유지. */
   function _isMappingWithoutWkf() {
     if (!SHELL_MODE) return false;
@@ -1070,11 +1175,16 @@ try {
   function _syncRegButton() {
     var el = $("btnReg");
     if (!el) return;
-    if (!state.passed) {
-      el.disabled = true;
-      return;
+    if (_overwriteArmed) {
+      el.textContent = "\uB36E\uC5B4\uC4F0\uB824\uBA74 \uB2E4\uC2DC \uD074\uB9AD";
+    } else if (ctx.wfHasInjected && _activeWorkflowName()) {
+      el.textContent = "WKF\uC5D0 \uB36E\uC5B4\uC4F0\uAE30";
+    } else if (_activeWorkflowName()) {
+      el.textContent = "WKF\uC5D0 \uB123\uAE30";
+    } else {
+      el.textContent = "\uC774 \uC870\uAC74 \uC4F0\uAE30";
     }
-    if (String(ctx.phase || "") === "ST6") {
+    if (!state.passed) {
       el.disabled = true;
       return;
     }
@@ -1095,6 +1205,8 @@ try {
     state.aiSqlId = null;
     state.cacheId = null;
     state.foundryDoneQid = null;
+    state.commitOk = false;
+    _clearOverwriteArm();
     ctx.wkfs = [];
     ctx.matchShown = false;
     ctx.matchMode = "";
@@ -1111,56 +1223,76 @@ try {
     } catch (eS) {}
   }
 
+  function _clearShellSelection() {
+    ctx.folder = null;
+    ctx.campaign = null;
+    ctx.workflow = null;
+    ctx.bareLevel = "";
+    ctx.openHint = "";
+    ctx.wkfs = [];
+    ctx.campaigns = [];
+    _resetInjectFlags();
+    if (!EMBED) WORKFLOW_NAME = "";
+  }
+
   /* R4: [등록] = SQL 목록 (WKF 선행 금지). DB Register는 WKF 있을 때만. */
   function _enterSqlList() {
     if (!SHELL_MODE) return;
-    _restoreLatestDraftIfNeeded();
-    if (state.passed && _trim(state.sql)) putDraft();
-    ctx.phase = state.passed && _trim(state.sql) ? "ST2" : "ST1";
-    ctx.listMode = "SQL";
-    _showSqlSide(false);
-    setInputEnabled(true);
-    renderBreadcrumb();
-    renderListPane();
-    _loadRegisteredSql();
-    _syncRegButton();
-    var hint = $("hint");
-    if (hint) {
-      hint.className = "banner ok";
-      hint.textContent = state.passed
-        ? "SQL \uBAA9\uB85D \u2014 \uC0C8 SQL\uB85C \uC9C4\uD589\uD558\uAC70\uB098 \uBBF8\uBC18\uC601(\uC784\uC2DC) \uD56D\uBAA9\uC744 \uC120\uD0DD\uD558\uC138\uC694."
-        : "\uC870\uAC74\uC744 [\uC0DD\uC131] \uD55C \uB4A4 [\uB4F1\uB85D]\uC744 \uB204\uB974\uBA74 SQL \uBAA9\uB85D\uC774 \uB098\uD0D5\uB2C8\uB2E4.";
-    }
+    _releaseCurrentLock(function () {
+      _restoreLatestDraftIfNeeded();
+      if (state.passed && _trim(state.sql)) putDraft();
+      _clearShellSelection();
+      ctx.phase = state.passed && _trim(state.sql) ? "ST2" : "ST1";
+      ctx.listMode = "SQL";
+      _showSqlSide(false);
+      setInputEnabled(true);
+      renderBreadcrumb();
+      renderListPane();
+      _loadRegisteredSql();
+      _syncRegButton();
+      var hint = $("hint");
+      if (hint) {
+        hint.className = "banner ok";
+        hint.textContent = state.passed
+          ? "\uC704\uC758 \uC784\uC2DC \uD56D\uBAA9\uC744 \uB204\uB974\uBA74 \uADF8 \uC870\uAC74\uC73C\uB85C \uC774\uC5B4\uC11C \uC9C4\uD589\uD569\uB2C8\uB2E4."
+          : "\uC870\uAC74\uC744 [\uB300\uC0C1 \uB9CC\uB4E4\uAE30] \uD55C \uB4A4 [\uC774 \uC870\uAC74 \uC4F0\uAE30]\uB97C \uB204\uB974\uBA74 \uBAA9\uB85D\uC774 \uB098\uD0D5\uB2C8\uB2E4.";
+      }
+    });
   }
 
-  function _beginMapping() {
+  function _beginMapping(opts) {
     if (!SHELL_MODE) return;
     if (!state.passed || !_trim(state.sql)) {
-      showErr("\uBA3C\uC800 \uC870\uAC74\uC744 [\uC0DD\uC131]\uD558\uC138\uC694.");
+      showErr("\uBA3C\uC800 \uC870\uAC74\uC744 [\uB300\uC0C1 \uB9CC\uB4E4\uAE30]\uD558\uC138\uC694.");
       return;
     }
+    opts = opts || {};
     putDraft();
     _pushStack();
-    ctx.phase = "ST3";
-    ctx.listMode = "FOLDER";
-    _showSqlSide(false);
-    setInputEnabled(true);
-    renderBreadcrumb();
-    loadAiFolders();
-    _syncRegButton();
-    var hintM = $("hint");
-    if (hintM) {
-      hintM.className = "banner ok";
-      hintM.textContent =
-        "\uD504\uB85C\uADF8\uB7A8\uC744 \uC120\uD0DD\uD55C \uB4A4 \uCEA0\uD398\uC778 \u2192 WKF \uC21C\uC73C\uB85C \uB9E4\uD551\uD569\uB2C8\uB2E4. SQL\uC740 \uC720\uC9C0\uB429\uB2C8\uB2E4.";
-    }
+    _releaseCurrentLock(function () {
+      _clearShellSelection();
+      ctx.phase = "ST3";
+      ctx.listMode = "FOLDER";
+      ctx.bareLevel = opts.showProgramCrumb ? "program" : "";
+      _showSqlSide(false);
+      setInputEnabled(true);
+      renderBreadcrumb();
+      loadAiFolders();
+      _syncRegButton();
+      var hintM = $("hint");
+      if (hintM) {
+        hintM.className = "banner ok";
+        hintM.textContent =
+          "\uC774 \uC870\uAC74\uC744 \uC4F8 \uD504\uB85C\uADF8\uB7A8\uBD80\uD130 \uACE0\uB974\uC138\uC694. \uCEA0\uD398\uC778 \u2192 WKF \uC21C\uC785\uB2C8\uB2E4.";
+      }
+    });
   }
 
   function _loadRegisteredSql() {
     if (!SHELL_MODE) return;
     post(
       "testWooAiStudioContext.jssp",
-      { action: "listRegisteredSql", limit: 10 },
+      { action: "listRegisteredSql", limit: 50 },
       function (res) {
         ctx.registeredSql = (res && res.ok && res.items) ? res.items : [];
         if (ctx.listMode === "SQL") renderListPane();
@@ -1175,7 +1307,7 @@ try {
     if (!row || !row.id) return;
     if (!row.workflow_id && !row.campaign_id) {
       showErr(
-        "\uC774 SQL\uC758 WKF\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uC0C8 SQL\uB85C \uC9C4\uD589\uD558\uC138\uC694."
+        "\uC774 \uC870\uAC74\uC758 WKF\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uC0C8 \uC870\uAC74\uC73C\uB85C [\uB300\uC0C1 \uB9CC\uB4E4\uAE30]\uD558\uC138\uC694."
       );
       return;
     }
@@ -1231,7 +1363,7 @@ try {
               id: row.workflow_id,
               name: row.workflow_name || "",
               label: row.workflow_label || row.workflow_name || ""
-            });
+            }, { showSqlList: true });
           }
         });
       },
@@ -1259,6 +1391,31 @@ try {
     renderBreadcrumb();
   }
 
+  function _crumbLabel(obj, fallback) {
+    if (!obj) return fallback;
+    var lab = _trim(obj.label || "");
+    var nam = _trim(obj.name || "");
+    if (lab) {
+      var cut = lab.indexOf(" / ");
+      if (cut > 0) lab = lab.substring(0, cut);
+      return lab;
+    }
+    return nam || fallback;
+  }
+
+  function _wfSqlCount(row) {
+    if (!row) return 0;
+    if (row.sqlCount != null) return Number(row.sqlCount) || 0;
+    if (row.sql_count != null) return Number(row.sql_count) || 0;
+    return 0;
+  }
+
+  function _wfListText(row) {
+    var lab = _crumbLabel(row, row && row.name ? row.name : "WKF");
+    var nam = row && row.name ? String(row.name) : "";
+    return lab + " / " + nam + " / " + _wfSqlCount(row);
+  }
+
   function renderBreadcrumb() {
     var el = $("twInfoText");
     if (!el) return;
@@ -1283,48 +1440,77 @@ try {
       el.appendChild(a);
     }
 
-    var ph = String(ctx.phase || "ST0");
-    addCrumb("\uC870\uAC74", ph === "ST0", null);
-    addSep();
+    var mode = String(ctx.listMode || "SQL");
+    var onSqlHome = mode === "SQL";
     addCrumb(
-      "SQL",
-      ph === "ST1" || ph === "ST2",
+      "SQL\uC120\uD0DD",
+      onSqlHome,
       function () { _enterSqlList(); }
     );
+    if (onSqlHome) return;
+
+    if (mode === "FOLDER") {
+      if (ctx.bareLevel === "program") {
+        addSep();
+        addCrumb("Program", true, null);
+      }
+      return;
+    }
+
     if (ctx.folder) {
       addSep();
       addCrumb(
-        ctx.folder.label || ctx.folder.name || "Program",
-        ph === "ST3" && !ctx.campaign,
+        "Program: " + _crumbLabel(ctx.folder, "Program"),
+        false,
         function () {
           navToProgram();
         }
       );
-      if (ctx.campaign) {
-        addSep();
-        addCrumb(
-          ctx.campaign.label || ctx.campaign.name || "Campaign",
-          ph === "ST4" && !ctx.workflow,
-          function () {
-            navToCampaignList();
-          }
-        );
-      }
-      if (ctx.workflow) {
-        addSep();
-        addCrumb(
-          ctx.workflow.label || ctx.workflow.name || "WKF",
-          ph === "ST5" || ph === "ST6",
-          null
-        );
-      }
     }
-    if (state.aiSqlId) {
-      var sqlSp = document.createElement("span");
-      sqlSp.appendChild(
-        document.createTextNode(" | SQL: ai_sql_id=" + state.aiSqlId)
+
+    if (mode === "CAMPAIGN") {
+      addSep();
+      addCrumb(
+        ctx.campaign
+          ? ("Campaign: " + _crumbLabel(ctx.campaign, "Campaign"))
+          : "Campaign",
+        true,
+        null
       );
-      el.appendChild(sqlSp);
+      return;
+    }
+
+    if (ctx.campaign) {
+      addSep();
+      addCrumb(
+        "Campaign: " + _crumbLabel(ctx.campaign, "Campaign"),
+        false,
+        function () {
+          navToCampaignList();
+        }
+      );
+    }
+
+    if (mode === "WKF" && !ctx.workflow) {
+      addSep();
+      addCrumb("Workflow", true, null);
+      return;
+    }
+
+    if (ctx.workflow) {
+      addSep();
+      addCrumb(
+        "Workflow: " + _crumbLabel(ctx.workflow, "WKF"),
+        false,
+        function () {
+          navToWkfList();
+        }
+      );
+    }
+
+    if (mode === "WKFSQL") {
+      addSep();
+      addCrumb("SQL\uBAA9\uB85D(Workflow)", true, null);
     }
   }
 
@@ -1337,6 +1523,9 @@ try {
       ctx.openHint = "";
       ctx.campaign = null;
       ctx.campaigns = [];
+      ctx.folder = null;
+      ctx.wkfs = [];
+      ctx.bareLevel = "program";
       ctx.stack = [_sqlStackFrame()];
       if (!EMBED) WORKFLOW_NAME = "";
       _showSqlSide(false);
@@ -1361,6 +1550,7 @@ try {
       ctx.workflow = null;
       ctx.openHint = "";
       ctx.campaign = null;
+      ctx.bareLevel = "campaign";
       if (!EMBED) WORKFLOW_NAME = "";
       _showSqlSide(false);
       ctx.listMode = "CAMPAIGN";
@@ -1370,11 +1560,10 @@ try {
         {
           phase: "ST3",
           listMode: "FOLDER",
-          folder: ctx.folder
-            ? { id: ctx.folder.id, name: ctx.folder.name, label: ctx.folder.label }
-            : null,
+          folder: null,
           campaign: null,
-          workflow: null
+          workflow: null,
+          bareLevel: "program"
         }
       ];
       setInputEnabled(true);
@@ -1385,22 +1574,86 @@ try {
     });
   }
 
+  function navToWkfList() {
+    if (!SHELL_MODE || !ctx.campaign) {
+      navToCampaignList();
+      return;
+    }
+    _releaseCurrentLock(function () {
+      var keepSql = !!(state.passed && _trim(state.sql));
+      if (!keepSql) _restoreLatestDraftIfNeeded();
+      ctx.workflow = null;
+      ctx.openHint = "";
+      ctx.bareLevel = "";
+      if (!EMBED) WORKFLOW_NAME = "";
+      _showSqlSide(false);
+      ctx.listMode = "WKF";
+      ctx.phase = "ST5";
+      setInputEnabled(true);
+      _refreshOpenButtons();
+      renderBreadcrumb();
+      loadWkfs();
+      _syncRegButton();
+    });
+  }
+
   function _refreshOpenButtons() {
-    var on = !!(ctx.workflow && ctx.workflow.id);
+    var on = !!(ctx.workflow && ctx.workflow.id && _wfSchemaBound());
     var b1 = $("btnTwOpenWkf");
     var b2 = $("btnTwGotoWkf");
     if (b1) b1.disabled = !on;
     if (b2) b2.disabled = !on;
+    _syncOtherWkfBtn();
+  }
+
+  function _syncOtherWkfBtn() {
+    var b = $("btnTwOtherWkf");
+    if (!b) return;
+    if (_wfSchemaBound() && String(ctx.phase || "") === "ST6") {
+      _rmCls(b, "hidden");
+      b.disabled = false;
+    } else {
+      _addCls(b, "hidden");
+      b.disabled = true;
+    }
+  }
+
+  function applyToOtherWkf() {
+    if (!state.passed || !_trim(state.sql)) return;
+    ctx.workflow = null;
+    state.commitOk = false;
+    _resetInjectFlags();
+    _clearOverwriteArm();
+    _refreshOpenButtons();
+    _beginMapping();
+  }
+
+  function _tryOpenWkf(pk) {
+    var url =
+      "xtk://open/?schema=xtk:workflow&form=xtk:workflow&pk=" +
+      encodeURIComponent(String(pk));
+    try {
+      var a = document.createElement("a");
+      a.href = url;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      if (a.click) a.click();
+    } catch (eA) {}
   }
 
   function showOpenHint() {
+    if (!_wfSchemaBound()) {
+      showErr("\uBA3C\uC800 WKF\uC5D0 \uBC18\uC601\uD55C \uB4A4 \uC5F4 \uC218 \uC788\uC2B5\uB2C8\uB2E4.");
+      return;
+    }
     if (!ctx.workflow || !ctx.workflow.id) {
       showErr("\uBA3C\uC800 WKF\uB97C \uC120\uD0DD\uD558\uC138\uC694.");
       return;
     }
+    _tryOpenWkf(ctx.workflow.id);
     var hint =
       ctx.openHint ||
-      ("Explorer\uC5D0\uC11C \uD574\uB2F9 WKF\uB97C \uC5F4\uC5B4 \uC8FC\uC138\uC694 (name=" +
+      ("\uBC18\uC601 \uC804\uC5D0 \uC5F4\uC5B4 \uB454 WKF \uCC3D\uC740 \uB2EB\uACE0, Explorer\uC5D0\uC11C \uB2E4\uC2DC \uC5EC\uC138\uC694 (name=" +
         ctx.workflow.name +
         ", id=" +
         ctx.workflow.id +
@@ -1462,7 +1715,8 @@ try {
       listMode: "SQL",
       folder: null,
       campaign: null,
-      workflow: null
+      workflow: null,
+      bareLevel: ""
     };
   }
 
@@ -1492,7 +1746,8 @@ try {
             name: ctx.workflow.name,
             label: ctx.workflow.label
           }
-        : null
+        : null,
+      bareLevel: ctx.bareLevel || ""
     });
   }
 
@@ -1514,6 +1769,278 @@ try {
     );
   }
 
+  function _isSqlBrowse() {
+    if (ctx.listMode !== "SQL") return false;
+    if (_cacheListDrafts().length) return false;
+    if (state.passed && _trim(state.sql)) return false;
+    return true;
+  }
+
+  function _sqlRowHay(row) {
+    return _trim((row && row.nl_request) || "") + " " +
+      _trim((row && row.title) || "") + " " +
+      _trim((row && row.workflow_label) || "") + " " +
+      _trim((row && row.workflow_name) || "") + " " +
+      _trim((row && row.program_label) || "") + " " +
+      _trim((row && row.campaign_label) || "");
+  }
+
+  function _filterRegistered(rows, q) {
+    var list = rows || [];
+    q = _trim(q || "").toLowerCase();
+    if (!q) return list;
+    var out = [];
+    var i, hay;
+    for (i = 0; i < list.length; i++) {
+      hay = _sqlRowHay(list[i]).toLowerCase();
+      if (hay.indexOf(q) >= 0) out.push(list[i]);
+    }
+    return out;
+  }
+
+  function _uniqPush(bag, tok) {
+    var i;
+    if (!tok) return;
+    for (i = 0; i < bag.length; i++) {
+      if (bag[i] === tok) return;
+    }
+    bag.push(tok);
+  }
+
+  function _canonParamName(k) {
+    var s = String(k || "");
+    if (!s || s.charAt(0) === "_") return "";
+    if (s.indexOf("_") >= 0) {
+      return s.replace(/_([a-zA-Z])/g, function (_, c) {
+        return String(c).toUpperCase();
+      });
+    }
+    return s;
+  }
+
+  function _paramKeyFromPlan(plan) {
+    var seen = {};
+    var keys = [];
+    function addParams(params) {
+      var k, ck;
+      if (!params) return;
+      for (k in params) {
+        if (!params.hasOwnProperty(k)) continue;
+        ck = _canonParamName(k);
+        if (!ck || seen[ck]) continue;
+        seen[ck] = 1;
+        keys.push(ck);
+      }
+    }
+    var inc = (plan && plan.include) || [];
+    var i, j, any, ex;
+    for (i = 0; i < inc.length; i++) {
+      any = (inc[i] && inc[i].any) || [];
+      for (j = 0; j < any.length; j++) addParams(any[j] && any[j].params);
+    }
+    ex = (plan && plan.exclude) || [];
+    for (i = 0; i < ex.length; i++) addParams(ex[i] && ex[i].params);
+    keys.sort();
+    return keys.join("|");
+  }
+
+  function _splitParamKey(s) {
+    var out = [];
+    var parts = String(s || "").split("|");
+    var i, p;
+    for (i = 0; i < parts.length; i++) {
+      p = _trim(parts[i]);
+      if (p) _uniqPush(out, p);
+    }
+    return out;
+  }
+
+  function _intersectKeys(a, b) {
+    var hits = [];
+    var i, j;
+    for (i = 0; i < a.length; i++) {
+      for (j = 0; j < b.length; j++) {
+        if (a[i] === b[j]) {
+          hits.push(a[i]);
+          break;
+        }
+      }
+    }
+    return hits;
+  }
+
+  function _parseFragNames(raw) {
+    var names = [];
+    var arr = raw;
+    var i, it, nm;
+    if (!raw) return names;
+    if (typeof raw === "string") {
+      try {
+        arr = JSON.parse(raw);
+      } catch (eP) {
+        return names;
+      }
+    }
+    if (!arr || !arr.length) return names;
+    for (i = 0; i < arr.length; i++) {
+      it = arr[i];
+      nm = "";
+      if (typeof it === "string") nm = it;
+      else if (it) nm = String(it.name || it.fragment || "");
+      nm = _trim(nm).toLowerCase();
+      if (nm) _uniqPush(names, nm);
+    }
+    return names;
+  }
+
+  function _queryFragNames() {
+    return _parseFragNames(_extractUsedFragments(state.plan));
+  }
+
+  function _similarRegistered(rows) {
+    var list = rows || [];
+    var qKey = _paramKeyFromPlan(state.plan);
+    var qParts = _splitParamKey(qKey);
+    var qFrag = _queryFragNames();
+    var out = [];
+    var i, rKey, rParts, rFrag, hits, equal;
+    if (!qParts.length && !qFrag.length) return out;
+    for (i = 0; i < list.length; i++) {
+      rKey = list[i] && list[i].param_key ? String(list[i].param_key) : "";
+      rParts = _splitParamKey(rKey);
+      hits = [];
+      equal = false;
+      if (qParts.length && rParts.length) {
+        hits = _intersectKeys(qParts, rParts);
+        equal = qParts.length === rParts.length && hits.length === qParts.length;
+      } else if (qFrag.length) {
+        rFrag = _parseFragNames(list[i].used_fragments);
+        hits = _intersectKeys(qFrag, rFrag);
+      }
+      if (hits.length) {
+        out.push({
+          row: list[i],
+          hits: hits,
+          fragHits: equal ? hits : [],
+          score: (equal ? 100 : 0) + hits.length
+        });
+      }
+    }
+    out.sort(function (a, b) {
+      return b.score - a.score;
+    });
+    return out;
+  }
+
+  function _fillBrowseRows(rowsBox, regs) {
+    if (!rowsBox) return;
+    rowsBox.innerHTML = "";
+    var shown = _filterRegistered(regs || [], ctx.sqlFilter);
+    if (!shown.length) {
+      var emptyF = document.createElement("div");
+      emptyF.className = "side-empty";
+      emptyF.appendChild(document.createTextNode(
+        "\uB9DE\uB294 \uC870\uAC74\uC774 \uC5C6\uC2B5\uB2C8\uB2E4."
+      ));
+      rowsBox.appendChild(emptyF);
+      return;
+    }
+    _renderRegisteredRows(rowsBox, shown);
+  }
+
+  function _onSqlFilter() {
+    var inp = $("twSqlFilter");
+    if (inp) ctx.sqlFilter = inp.value;
+    var rowsBox = $("twSqlBrowseRows");
+    if (!rowsBox) {
+      renderListPane();
+      return;
+    }
+    _fillBrowseRows(rowsBox, ctx.registeredSql || []);
+  }
+
+  function _appendSqlSearch(box) {
+    var wrap = document.createElement("div");
+    wrap.className = "sql-search";
+    var lab = document.createElement("div");
+    lab.className = "sql-search-lab";
+    lab.appendChild(document.createTextNode(
+      "\uC870\uAC74 \uB610\uB294 WKF \uC774\uB984\uC73C\uB85C \uCC3E\uAE30"
+    ));
+    var inp = document.createElement("input");
+    inp.type = "text";
+    inp.id = "twSqlFilter";
+    inp.value = ctx.sqlFilter || "";
+    inp.onkeyup = _onSqlFilter;
+    try { inp.oninput = _onSqlFilter; } catch (eIn) {}
+    wrap.appendChild(lab);
+    wrap.appendChild(inp);
+    box.appendChild(wrap);
+  }
+
+  function _renderRegisteredRows(box, rows) {
+    var list = rows || [];
+    var rg;
+    for (rg = 0; rg < list.length; rg++) {
+      (function (row) {
+        var el = document.createElement("div");
+        el.className = "shell-item";
+        var nlLab = _trim(row.nl_request || row.title || "");
+        if (nlLab.length > 40) nlLab = nlLab.substring(0, 37) + "...";
+        var wfLab = row.workflow_label || row.workflow_name || "";
+        el.appendChild(document.createTextNode(
+          nlLab + (wfLab ? (" \u00B7 " + wfLab) : "")
+        ));
+        el.onclick = function () {
+          _jumpExistingSql(row);
+          return false;
+        };
+        box.appendChild(el);
+      })(list[rg]);
+    }
+  }
+
+  function _renderSimilarRows(box, scored) {
+    var list = scored || [];
+    var i;
+    for (i = 0; i < list.length; i++) {
+      (function (item) {
+        var row = item.row;
+        var el = document.createElement("div");
+        el.className = "shell-item";
+        var nlLab = _trim(row.nl_request || row.title || "");
+        if (nlLab.length > 40) nlLab = nlLab.substring(0, 37) + "...";
+        var wfLab = row.workflow_label || row.workflow_name || "";
+        var title = document.createElement("div");
+        title.appendChild(document.createTextNode(
+          nlLab + (wfLab ? (" \u00B7 " + wfLab) : "")
+        ));
+        el.appendChild(title);
+        if (item.fragHits && item.fragHits.length) {
+          var metaF = document.createElement("div");
+          metaF.className = "meta";
+          metaF.appendChild(document.createTextNode(
+            "\uAC19\uC740 \uC870\uAC74 \uAD6C\uC131"
+          ));
+          el.appendChild(metaF);
+        }
+        if (item.hits && item.hits.length) {
+          var meta = document.createElement("div");
+          meta.className = "meta";
+          meta.appendChild(document.createTextNode(
+            "param_key: " + item.hits.join("|")
+          ));
+          el.appendChild(meta);
+        }
+        el.onclick = function () {
+          _jumpExistingSql(row);
+          return false;
+        };
+        box.appendChild(el);
+      })(list[i]);
+    }
+  }
+
   function renderListPane() {
     var box = $("twDummyList");
     var title = $("twListTitle");
@@ -1524,56 +2051,64 @@ try {
     box.innerHTML = "";
 
     if (ctx.listMode === "SQL") {
-      if (title) title.textContent = "SQL \uBAA9\uB85D";
+      if (title) title.textContent = "\uB0B4 \uC870\uAC74";
       var draftsSql = _cacheListDrafts();
       var regs = ctx.registeredSql || [];
+      if (_isSqlBrowse()) {
+        if (!regs.length) {
+          var emptyB = document.createElement("div");
+          emptyB.className = "side-empty";
+          emptyB.appendChild(document.createTextNode(
+            "\uC800\uC7A5\uB41C \uC870\uAC74\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uC544\uB798\uC5D0 \uC870\uAC74\uC744 \uC785\uB825\uD55C \uB4A4 [\uB300\uC0C1 \uB9CC\uB4E4\uAE30]\uB97C \uB204\uB974\uC138\uC694."
+          ));
+          box.appendChild(emptyB);
+          return;
+        }
+        _appendSqlSearch(box);
+        _appendListSec(box, "\uC608\uC804\uC5D0 \uC4F4 \uC870\uAC74", true);
+        var rowsBox = document.createElement("div");
+        rowsBox.id = "twSqlBrowseRows";
+        box.appendChild(rowsBox);
+        _fillBrowseRows(rowsBox, regs);
+        return;
+      }
       if (!draftsSql.length && !regs.length && !(state.passed && _trim(state.sql))) {
         var emptyS = document.createElement("div");
         emptyS.className = "side-empty";
         emptyS.appendChild(document.createTextNode(
-          "\uC870\uAC74\uC744 [\uC0DD\uC131] \uD55C \uB4A4 [\uB4F1\uB85D]\uC744 \uB204\uB974\uBA74 \uC0C8 SQL\uACFC \uC720\uC0AC SQL\uC774 \uC5EC\uAE30 \uB098\uD0D5\uB2C8\uB2E4."
+          "\uC870\uAC74\uC744 [\uB300\uC0C1 \uB9CC\uB4E4\uAE30] \uD55C \uB4A4 [\uC774 \uC870\uAC74 \uC4F0\uAE30]\uB97C \uB204\uB974\uBA74 \uC5EC\uAE30 \uB098\uD0D5\uB2C8\uB2E4."
         ));
         box.appendChild(emptyS);
         return;
       }
-      _renderDraftRows(box);
-      if (state.passed && _trim(state.sql)) {
-        var goMap = document.createElement("div");
-        goMap.className = "shell-item";
-        goMap.appendChild(document.createTextNode(
-          "\uC774 \uC0C8 SQL\uB85C \uC9C4\uD589 (\uD504\uB85C\uADF8\uB7A8 \uC120\uD0DD)"
+      if (draftsSql.length) {
+        _appendListSec(box, "\uC774\uC5B4\uC11C \uD560 \uC791\uC5C5", true);
+        _renderDraftRows(box, true);
+        var draftHint = document.createElement("div");
+        draftHint.className = "side-empty";
+        draftHint.appendChild(document.createTextNode(
+          "\uD56D\uBAA9\uC744 \uB204\uB974\uBA74 \uADF8 \uC870\uAC74\uC73C\uB85C \uC774\uC5B4\uC11C \uC9C4\uD589\uD569\uB2C8\uB2E4."
         ));
-        goMap.onclick = function () {
-          _beginMapping();
-          return false;
-        };
-        box.appendChild(goMap);
+        box.appendChild(draftHint);
       }
-      for (var rg = 0; rg < regs.length; rg++) {
-        (function (row) {
-          var el = document.createElement("div");
-          el.className = "shell-item";
-          var nlLab = _trim(row.nl_request || row.title || "");
-          if (nlLab.length > 40) nlLab = nlLab.substring(0, 37) + "...";
-          var wfLab = row.workflow_label || row.workflow_name || "";
-          el.appendChild(document.createTextNode(
-            "[\uAE30\uC874(\uBC18\uC601\uB428)] " + nlLab + (wfLab ? (" \u00B7 " + wfLab) : "")
-          ));
-          el.onclick = function () {
-            _jumpExistingSql(row);
-            return false;
-          };
-          box.appendChild(el);
-        })(regs[rg]);
+      var similar = _similarRegistered(regs);
+      _appendListSec(box, "\uBE44\uC2B7\uD55C \uC608\uC804 \uC870\uAC74", !draftsSql.length);
+      if (!similar.length) {
+        var emptySim = document.createElement("div");
+        emptySim.className = "side-empty";
+        emptySim.appendChild(document.createTextNode(
+          "\uC9C0\uAE08 \uC785\uB825\uACFC \uAC81\uCE58\uB294 \uC608\uC804 \uC870\uAC74\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uAC12\uC774 \uAC19\uB2E4\uACE0 \uB2E8\uC815\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."
+        ));
+        box.appendChild(emptySim);
+      } else {
+        var simHint = document.createElement("div");
+        simHint.className = "side-empty";
+        simHint.appendChild(document.createTextNode(
+          "\uAC81\uCE5C \uB9D0\uB9CC \uBAA8\uC558\uC2B5\uB2C8\uB2E4. \uD56D\uBAA9\uC744 \uB204\uB974\uBA74 \uADF8 WKF\uB85C \uAC11\uB2C8\uB2E4."
+        ));
+        box.appendChild(simHint);
+        _renderSimilarRows(box, similar);
       }
-      var emptyHint = document.createElement("div");
-      emptyHint.className = "side-empty";
-      emptyHint.appendChild(document.createTextNode(
-        MATCH_ENABLED
-          ? "\uC720\uC0AC SQL\uC774 \uC5C6\uC73C\uBA74 \uC0C8 SQL\uB85C \uC9C4\uD589\uD569\uB2C8\uB2E4."
-          : "\uAE30\uC874(\uBC18\uC601\uB428)\uC740 \uCD5C\uADFC \uB4F1\uB85D\uBD84\uC785\uB2C8\uB2E4. \uC720\uC0AC\uB3C4 \uB2E8\uC815\uC740 Match OFF\uB77C \uD45C\uC2DC\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."
-      ));
-      box.appendChild(emptyHint);
       return;
     }
 
@@ -1662,7 +2197,8 @@ try {
         if (ctx.matchShown && isDiscover) {
           title.textContent = "\uAC12 \uB300\uC870 WKF";
         } else {
-          title.textContent = "WKF";
+          title.textContent =
+            "WKF(\uB77C\uBCA8\uBA85 / \uC778\uD130\uB110\uB124\uC784 / \uBC18\uC601SQL \uAC1C\uC218)";
         }
       }
       var createRow = document.createElement("div");
@@ -1720,13 +2256,20 @@ try {
           var progLabel =
             row.program_label || row.program_name || "?";
           var nlTxt = row.nl_request || "(NL \uC5C6\uC74C)";
+          var wfLine = _wfListText(row);
 
           if (isDiscover) {
             var d1 = document.createElement("div");
             d1.className = "nl-line";
             d1.textContent = nlTxt;
-            d1.title = nlTxt + " | " + wfLabel + " / " + wfName;
+            d1.title = nlTxt + " | " + wfLine;
             el.appendChild(d1);
+
+            var dId = document.createElement("div");
+            dId.className = "sid";
+            dId.textContent = wfLine;
+            dId.title = wfLine;
+            el.appendChild(dId);
 
             if (row.isIdentical) {
               var sameBadge = document.createElement("div");
@@ -1809,10 +2352,10 @@ try {
             }
             var line1 = document.createElement("div");
             line1.className = "sid";
-            var l1 = wfLabel + " / " + wfName;
+            var l1 = wfLine;
             if (row.locked) l1 += " \u2014 \uC7A0\uAE08: " + (row.locked_by || "?");
             line1.textContent = l1;
-            line1.title = wfLabel + " / " + wfName;
+            line1.title = wfLine;
             el.appendChild(line1);
           }
           el.onclick = function () {
@@ -1848,6 +2391,7 @@ try {
     ctx.workflow = null;
     ctx.openHint = "";
     ctx.wkfs = [];
+    ctx.bareLevel = "";
     ctx.phase = "ST4";
     ctx.listMode = "CAMPAIGN";
     setInfoBar(_folderInfoText());
@@ -1931,7 +2475,8 @@ try {
     );
   }
 
-  function _afterWkfBound(res) {
+  function _afterWkfBound(res, opts) {
+    opts = opts || {};
     ctx.phase = "ST5";
     setInfoBar(_folderInfoText());
     _refreshOpenButtons();
@@ -1939,18 +2484,17 @@ try {
       $("hint").className = "banner warn";
       $("hint").textContent =
         "WKF \uC120\uD0DD\uB428 (\uC7A0\uAE08 \uACBD\uACE0: " + res.lock_warning + ")";
+    } else if (opts.showSqlList) {
+      $("hint").className = "banner ok";
+      $("hint").textContent =
+        "\uC774 WKF\uC5D0 \uC4F4 \uC870\uAC74\uC785\uB2C8\uB2E4. \uB2E4\uB978 WKF\uB294 \uC704 \uBE0C\uB808\uB4DC\uD06C\uB7FC\uC5D0\uC11C \uBC14\uAFB8\uC138\uC694.";
     } else if (state.passed && _trim(state.sql)) {
       $("hint").className = "banner ok";
       $("hint").textContent =
-        "WKF \uC120\uD0DD\uB428. [\uB4F1\uB85D]\uC744 \uB204\uB974\uBA74 \uC774 SQL\uC774 \uBC18\uC601\uB429\uB2C8\uB2E4.";
+        "WKF \uC120\uD0DD\uB428. [WKF\uC5D0 \uB123\uAE30]\uB97C \uB204\uB974\uBA74 \uC774 \uC870\uAC74\uC744 \uC800\uC7A5\uD569\uB2C8\uB2E4.";
     }
     _syncRegButton();
-    if (_hasCompose() || (state.passed && _trim(state.sql))) {
-      _showSqlSide(false);
-      renderListPane();
-    } else {
-      loadSqlList();
-    }
+    loadSqlList({ selectCurrent: true });
   }
 
   function createCampaign() {
@@ -1965,7 +2509,7 @@ try {
         action: "createCampaign",
         program_id: ctx.folder.id,
         folder_id: ctx.folder.id,
-        label: "AI Campaign / " + (ctx.folder.label || ctx.folder.name)
+        label: "AI Campaign"
       },
       function (res) {
         setBusy(false);
@@ -1996,6 +2540,7 @@ try {
     ctx.wkfs = [];
     ctx.canCreateWkf = row.canCreateWkf !== false;
     if (row.wkfMax != null) ctx.wkfMax = row.wkfMax;
+    ctx.bareLevel = "";
     ctx.phase = "ST5";
     ctx.listMode = "WKF";
     ctx.matchMode = "";
@@ -2031,7 +2576,7 @@ try {
         action: "createWkf",
         campaign_id: ctx.campaign.id,
         operation_id: ctx.campaign.id,
-        label: "AI WKF / " + (ctx.campaign.label || ctx.campaign.name)
+        label: "AI WKF"
       },
       function (res) {
         setBusy(false);
@@ -2041,6 +2586,8 @@ try {
           return;
         }
         clearErr();
+        ctx.workflow = null;
+        _pushStack();
         ctx.workflow = {
           id: String(res.workflow.id || ""),
           name: String(res.workflow.name || ""),
@@ -2100,8 +2647,15 @@ try {
     }
   }
 
-  function selectWkf(row) {
+  function selectWkf(row, opts) {
     if (!row || !row.id) return;
+    opts = opts || {};
+    if (!ctx.workflow || String(ctx.workflow.id) !== String(row.id)) {
+      var keepWf = ctx.workflow;
+      ctx.workflow = null;
+      _pushStack();
+      ctx.workflow = keepWf;
+    }
     setBusy(true);
     post(
       "testWooAiStudioContext.jssp",
@@ -2128,7 +2682,7 @@ try {
         if (!EMBED) WORKFLOW_NAME = String(row.name || "");
         ctx.openHint = String(res.open_hint || "");
         if (!_hasCompose()) state.aiSqlId = null;
-        _afterWkfBound(res);
+        _afterWkfBound(res, opts);
       },
       function (err) {
         setBusy(false);
@@ -2156,26 +2710,36 @@ try {
       ctx.folder = prev.folder;
       ctx.campaign = prev.campaign || null;
       ctx.workflow = null;
+      ctx.bareLevel = prev.bareLevel || "";
       if (ctx.listMode === "SQL") {
         _enterSqlList();
         return;
       }
-      if (ctx.listMode === "WKF" && ctx.campaign) {
+      if (ctx.listMode === "WKFSQL" && ctx.campaign) {
+        ctx.listMode = "WKF";
+        if (ctx.phase !== "ST5") ctx.phase = "ST5";
+        setInfoBar(_folderInfoText());
+        setInputEnabled(true);
+        loadWkfs();
+      } else if (ctx.listMode === "WKF" && ctx.campaign) {
         if (ctx.phase !== "ST5") ctx.phase = "ST5";
         setInfoBar(_folderInfoText());
         setInputEnabled(true);
         loadWkfs();
       } else if (ctx.listMode === "CAMPAIGN" && ctx.folder) {
         ctx.campaign = null;
+        if (!ctx.bareLevel) ctx.bareLevel = "campaign";
         if (ctx.phase !== "ST4") ctx.phase = "ST4";
         setInfoBar(_folderInfoText());
         setInputEnabled(true);
         loadCampaigns();
-      } else if (ctx.folder) {
+      } else if (ctx.listMode === "FOLDER") {
+        ctx.folder = null;
+        ctx.campaign = null;
         if (ctx.phase !== "ST3") ctx.phase = "ST3";
         setInfoBar(_folderInfoText());
         setInputEnabled(true);
-        renderListPane();
+        loadAiFolders();
       } else {
         _enterSqlList();
         return;
@@ -2198,7 +2762,9 @@ try {
       ctx.matchShown = false;
       ctx.matchMode = "";
       ctx.registeredSql = [];
+      ctx.sqlFilter = "";
       ctx.stack = [];
+      ctx.bareLevel = "";
       _cacheClearAll();
       state.cacheId = null;
       _clearComposeState();
@@ -2206,12 +2772,13 @@ try {
       _refreshOpenButtons();
       renderBreadcrumb();
       renderListPane();
+      _loadRegisteredSql();
       _syncRegButton();
       var hintR = $("hint");
       if (hintR) {
         hintR.className = "banner warn";
         hintR.textContent =
-          "\uC870\uAC74\uC744 \uC785\uB825\uD55C \uB4A4 [\uC0DD\uC131]\uC744 \uB204\uB974\uC138\uC694. (\uD504\uB85C\uADF8\uB7A8/\uCEA0\uD398\uC778/\uC6CC\uD06C\uD50C\uB85C\uC6B0\uB294 SQL \uD6C4\uC5D0 \uC120\uD0DD \u00B7 WKF Max 15)";
+          "\uC870\uAC74\uC744 \uC785\uB825\uD55C \uB4A4 [\uB300\uC0C1 \uB9CC\uB4E4\uAE30]\uB97C \uB204\uB974\uC138\uC694. \uC624\uB978\uCABD\uC5D0\uC11C \uC608\uC804 \uC870\uAC74\uC744 \uACE0\uB974\uAC70\uB098 \uCC3E\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4.";
       }
     });
   }
@@ -2275,15 +2842,45 @@ try {
     _delPending.btn = null;
   }
 
-  function loadSqlList() {
+  function _injAt(it) {
+    return String(it && it.injected_at ? it.injected_at : "");
+  }
+
+  function _pickCurrentInjectedId(items) {
+    var bestId = 0;
+    var bestAt = "";
+    var i, at, id;
+    for (i = 0; i < items.length; i++) {
+      if (items[i].is_current) return Number(items[i].id);
+    }
+    for (i = 0; i < items.length; i++) {
+      at = _injAt(items[i]);
+      if (!at) continue;
+      id = Number(items[i].id);
+      if (!bestAt || at > bestAt || (at === bestAt && id > bestId)) {
+        bestAt = at;
+        bestId = id;
+      }
+    }
+    return bestId;
+  }
+
+  function loadSqlList(opts) {
+    opts = opts || {};
     var side = $("sideSql");
     if (!side) return;
     var wf = _activeWorkflowName();
     if (!wf) {
+      _resetInjectFlags();
       _showSqlSide(false);
+      _refreshOpenButtons();
       return;
     }
     _diag("loadSqlList start wf=" + wf);
+    if (SHELL_MODE) {
+      ctx.listMode = "WKFSQL";
+      renderBreadcrumb();
+    }
     _showSqlSide(true);
     post("testWooAiValidate.jssp", {
       action: "listSql",
@@ -2311,24 +2908,57 @@ try {
             "\uC67C\uCABD\uC5D0\uC11C [\uC0DD\uC131] \uD6C4 \uBC18\uB4DC\uC2DC [\uB4F1\uB85D]\uC744 \uB204\uB974\uC138\uC694. " +
             "\uC0DD\uC131\uB9CC\uC73C\uB85C\uB294 \uC5EC\uAE30\uC5D0 \uC548 \uB0A9\uB2C8\uB2E4.";
         }
+        _resetInjectFlags();
+        _refreshOpenButtons();
+        _syncRegButton();
         _diag("loadSqlList items=0");
         return;
       }
       if (empty) empty.style.display = "none";
-      _diag("loadSqlList items=" + items.length);
+      var curId = _pickCurrentInjectedId(items);
+      ctx.currentInjectedId = curId || null;
+      ctx.wfHasInjected = !!curId;
+      items.sort(function (a, b) {
+        var ac = (a.is_current || Number(a.id) === Number(curId)) ? 1 : 0;
+        var bc = (b.is_current || Number(b.id) === Number(curId)) ? 1 : 0;
+        if (ac !== bc) return bc - ac;
+        var at = _injAt(a);
+        var bt = _injAt(b);
+        if (at !== bt) return at > bt ? -1 : 1;
+        var ad = String(a.creation_date || "");
+        var bd = String(b.creation_date || "");
+        if (ad !== bd) return ad > bd ? -1 : 1;
+        return Number(b.id) - Number(a.id);
+      });
+      _diag("loadSqlList items=" + items.length + " current=" + String(curId || 0));
       for (var i = 0; i < items.length; i++) {
         (function (it) {
+          var isCur = !!(it.is_current || (curId && Number(it.id) === Number(curId)));
           var el = document.createElement("div");
           el.className = "sql-item";
+          if (isCur) el.className += " current";
           if (state.aiSqlId && Number(state.aiSqlId) === Number(it.id)) el.className += " active";
           var row = document.createElement("div");
           row.className = "sid";
-          row.textContent = "ai_sql_id=" + String(it.id);
+          row.appendChild(document.createTextNode("ai_sql_id=" + String(it.id)));
+          if (isCur) {
+            var badge = document.createElement("span");
+            badge.className = "badge-now";
+            badge.textContent = "\uBC18\uC601\uB428";
+            row.appendChild(badge);
+          }
           var title = document.createElement("div");
           title.textContent = it.title || "(no title)";
           var meta = document.createElement("div");
           meta.className = "meta";
-          meta.textContent = String(it.status || "") + " | " + String(it.creation_date || "");
+          if (isCur) {
+            meta.textContent = "\uBC18\uC601\uB428 | " + String(it.injected_at || it.creation_date || "") +
+              (it.injected_by ? (" | " + it.injected_by) : "");
+          } else if (_injAt(it)) {
+            meta.textContent = "\uC774\uC804 \uBC18\uC601 | " + String(it.injected_at || "");
+          } else {
+            meta.textContent = String(it.status || "") + " | " + String(it.creation_date || "");
+          }
           var del = document.createElement("button");
           del.type = "button";
           del.className = "sql-del";
@@ -2349,6 +2979,21 @@ try {
           };
           box.appendChild(el);
         })(items[i]);
+      }
+      if (curId && !_hasCompose()) ctx.phase = "ST6";
+      _refreshOpenButtons();
+      _syncRegButton();
+      if (opts.selectCurrent && ctx.wfHasInjected) {
+        var hSel = $("hint");
+        if (hSel) {
+          hSel.className = "banner ok";
+          hSel.textContent = _hasCompose()
+            ? "\uC774 WKF\uC5D0\uB294 \uC774\uBBF8 \uBC18\uC601\uB41C SQL\uC774 \uC788\uC2B5\uB2C8\uB2E4. [WKF\uC5D0 \uB36E\uC5B4\uC4F0\uAE30]\uB85C \uC9C0\uAE08 \uC870\uAC74\uC744 \uB123\uC2B5\uB2C8\uB2E4."
+            : "\uC774 WKF\uC5D0 \uBC18\uC601\uB41C \uC870\uAC74\uC785\uB2C8\uB2E4. \uB2E4\uB978 SQL\uC744 \uC4F0\uB824\uBA74 \uBAA9\uB85D\uC5D0\uC11C \uACE0\uB978 \uB4A4 [WKF\uC5D0 \uB36E\uC5B4\uC4F0\uAE30]\uB97C \uB204\uB974\uC138\uC694.";
+        }
+      }
+      if (opts.selectCurrent && curId && !_hasCompose()) {
+        if (Number(state.aiSqlId) !== Number(curId)) loadSqlItem(curId);
       }
     }, function (e) {
       var empty = $("sqlListEmpty");
@@ -2394,7 +3039,7 @@ try {
             "Deleted ai_sql_id=" + id +
             (title ? (" (" + title + ")") : "");
         }
-        loadSqlList();
+        loadSqlList({ selectCurrent: true });
       }, function (e) {
         showErr(String(e && e.message ? e.message : e));
       });
@@ -2442,6 +3087,7 @@ try {
             if (v.chips) renderChips(v.chips);
             renderGates(v.results || []);
             _syncRegButton();
+            _refreshOpenButtons();
           }
           renderSql(state.sql);
           renderSummaryHint(
@@ -2469,15 +3115,85 @@ try {
     });
   }
 
+  function _paramScalar(v) {
+    if (v == null || v === "") return "";
+    if (Object.prototype.toString.call(v) === "[object Array]") {
+      var bits = [];
+      var i, s;
+      for (i = 0; i < v.length; i++) {
+        s = _paramScalar(v[i]);
+        if (s) bits.push(s);
+      }
+      return bits.join(", ");
+    }
+    if (typeof v === "object") {
+      if (v.db != null && v.db !== "") return String(v.db);
+      if (v.en != null && v.en !== "") return _paramScalar(v.en);
+      return "";
+    }
+    return String(v);
+  }
+
+  function _chipValueText(c) {
+    var p = (c && c.params) || {};
+    var bits = [];
+    var ageMin = p.ageMin;
+    var ageMax = p.ageMax;
+    if (ageMin != null && ageMin !== "" && ageMax != null && ageMax !== "") {
+      bits.push(String(ageMin) + "~" + String(ageMax));
+    }
+    var k, val;
+    for (k in p) {
+      if (!p.hasOwnProperty(k)) continue;
+      if (!k || k.charAt(0) === "_") continue;
+      if (k === "ageMin" || k === "ageMax") continue;
+      val = _paramScalar(p[k]);
+      if (val) bits.push(val);
+    }
+    if (!bits.length) {
+      if (ageMin != null && ageMin !== "") bits.push(String(ageMin));
+      else if (ageMax != null && ageMax !== "") bits.push(String(ageMax));
+    }
+    return bits.join(", ");
+  }
+
+  function _chipDisplay(c) {
+    var val = _chipValueText(c);
+    if (val) return val;
+    return _trim((c && c.label) || "");
+  }
+
+  function _chipInterp(chips) {
+    var inc = [];
+    var exc = [];
+    var i, lab;
+    for (i = 0; i < chips.length; i++) {
+      lab = _chipDisplay(chips[i]);
+      if (!lab) continue;
+      if (chips[i].role === "exclude") exc.push(lab);
+      else inc.push(lab);
+    }
+    var parts = [];
+    if (inc.length) parts.push(inc.join(", "));
+    if (exc.length) parts.push("\uC81C\uC678 " + exc.join(", "));
+    return parts.join(" \u00B7 ");
+  }
+
   function renderChips(chips) {
     var box = $("chips"); box.innerHTML = "";
     var list = chips || [];
+    var line = $("chipLine");
+    if (line) {
+      var interp = _chipInterp(list);
+      line.textContent = interp;
+      line.style.display = interp ? "block" : "none";
+    }
     for (var i = 0; i < list.length; i++) {
       (function (c) {
         var el = document.createElement("span"); el.className = "chip";
         el.innerHTML = "<span></span><button type='button' title='remove'>×</button>";
-        var tag = c.role === "exclude" ? "EXCEPT" : (c.op || "AND");
-        el.firstChild.textContent = "[" + tag + "] " + c.label;
+        var tag = c.role === "exclude" ? "\uC81C\uC678" : "\uD3EC\uD568";
+        el.firstChild.textContent = tag + " " + _chipDisplay(c);
         var btn = el.getElementsByTagName("button")[0];
         if (btn) btn.onclick = function () { removeChip(c); };
         box.appendChild(el);
@@ -2551,11 +3267,26 @@ try {
   function renderGates(results) {
     var box = $("gates"); box.innerHTML = "";
     var list = results || [];
-    for (var i = 0; i < list.length; i++) {
+    var allOk = list.length > 0;
+    var i;
+    for (i = 0; i < list.length; i++) {
+      if (!(list[i] && list[i].ok)) allOk = false;
+    }
+    if (allOk) {
+      var okEl = document.createElement("div");
+      okEl.className = "gate";
+      okEl.innerHTML =
+        "<span class='g-ok'>\uC900\uBE44\uB428</span> " +
+        "\uC774 \uC870\uAC74\uC73C\uB85C \uB300\uC0C1 SQL\uC774 \uC900\uBE44\uB410\uC2B5\uB2C8\uB2E4.";
+      box.appendChild(okEl);
+      _rmCls($("cardGates"), "hidden");
+      return;
+    }
+    for (i = 0; i < list.length; i++) {
       var r = list[i];
       var el = document.createElement("div"); el.className = "gate";
       var ok = !!(r && r.ok);
-      var status = ok ? "\uD1B5\uACFC" : "\uC2E4\uD328";
+      var status = ok ? "\uD655\uC778" : "\uC2E4\uD328";
       var title = _gateTitle(r && r.gate);
       var detail = String((r && r.reason) || "");
       if (ok && !detail) detail = "\uC774 \uAC80\uC0AC\uB97C \uB9CC\uC871\uD588\uC2B5\uB2C8\uB2E4.";
@@ -2574,15 +3305,13 @@ try {
     var el = $("hint");
     if (!el) return;
     el.className = "banner ok";
-    var base = summary || "SQL\uC774 \uC900\uBE44\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
     if (showRegisterHint) {
       el.innerHTML =
-        esc(base) +
-        "<br/><strong>[\uB2E4\uC74C] \uC544\uB798 [\uB4F1\uB85D] \uBC84\uD2BC\uC744 \uB204\uB974\uC138\uC694.</strong> " +
-        "\uC0DD\uC131\uB9CC\uC73C\uB85C\uB294 SQL \uC774\uB825\uC5D0 \uC548 \uB0A9\uB2C8\uB2E4. " +
-        "\uB4F1\uB85D \uD6C4 \uC624\uB978\uCABD \uBAA9\uB85D\uC5D0 \uB098\uD0C0\uB0A9\uB2C8\uB2E4.";
+        "<strong>\uC774 \uC870\uAC74\uC73C\uB85C \uB300\uC0C1 SQL\uC774 \uC900\uBE44\uB410\uC2B5\uB2C8\uB2E4.</strong><br/>" +
+        "[\uC774 \uC870\uAC74 \uC4F0\uAE30]\uB97C \uB204\uB974\uBA74 \uC774\uC5B4\uC11C \uD560 \uC791\uC5C5\uC5D0 \uB123\uC2B5\uB2C8\uB2E4.";
     } else {
-      el.textContent = base;
+      el.textContent = summary ||
+        "\uC774 \uC870\uAC74\uC73C\uB85C \uB300\uC0C1 SQL\uC774 \uC900\uBE44\uB410\uC2B5\uB2C8\uB2E4.";
     }
   }
   function hideFunnel() { _addCls($("cardFunnel"), "hidden"); }
@@ -2626,7 +3355,7 @@ try {
       _wireDiagToggle();
       try {
         var dm0 = (typeof document.documentMode !== "undefined") ? String(document.documentMode) : "n/a(non-IE)";
-          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | match=" + (MATCH_ENABLED ? "1" : "0") + " | phase=" + ctx.phase + " | v=164";
+          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | match=" + (MATCH_ENABLED ? "1" : "0") + " | phase=" + ctx.phase + " | v=180";
         var bootReached = !!(window.__TW_BOOT_MSG__);
         if (bootReached) _diag(String(window.__TW_BOOT_MSG__));
         _diag(okMsg);
@@ -2660,10 +3389,12 @@ try {
       var btnReset = $("btnTwReset");
       var btnOpen = $("btnTwOpenWkf");
       var btnGoto = $("btnTwGotoWkf");
+      var btnOther = $("btnTwOtherWkf");
       if (btnBack) btnBack.onclick = function () { goBack(); return false; };
       if (btnReset) btnReset.onclick = function () { resetCtx(); return false; };
       if (btnOpen) btnOpen.onclick = function () { showOpenHint(); return false; };
       if (btnGoto) btnGoto.onclick = function () { showOpenHint(); return false; };
+      if (btnOther) btnOther.onclick = function () { applyToOtherWkf(); return false; };
       _refreshOpenButtons();
       var btnGen = $("btnGen");
       var btnReg = $("btnReg");
@@ -2689,11 +3420,13 @@ try {
         if (hint0) {
           hint0.className = "banner warn";
           hint0.textContent =
-            "\uC870\uAC74\uC744 \uC785\uB825\uD55C \uB4A4 [\uC0DD\uC131]\uC744 \uB204\uB974\uC138\uC694. (\uD504\uB85C\uADF8\uB7A8/\uCEA0\uD398\uC778/\uC6CC\uD06C\uD50C\uB85C\uC6B0\uB294 SQL \uD6C4\uC5D0 \uC120\uD0DD \u00B7 WKF Max 15)";
+            "\uC870\uAC74\uC744 \uC785\uB825\uD55C \uB4A4 [\uB300\uC0C1 \uB9CC\uB4E4\uAE30]\uB97C \uB204\uB974\uC138\uC694. \uC624\uB978\uCABD\uC5D0\uC11C \uC608\uC804 \uC870\uAC74\uC744 \uACE0\uB974\uAC70\uB098 \uCC3E\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4.";
         }
         setTimeout(function () {
-          try { renderListPane(); }
-          catch (eF) {
+          try {
+            renderListPane();
+            _loadRegisteredSql();
+          } catch (eF) {
             _diag("renderListPane throw: " + String(eF && eF.message ? eF.message : eF));
           }
         }, 0);

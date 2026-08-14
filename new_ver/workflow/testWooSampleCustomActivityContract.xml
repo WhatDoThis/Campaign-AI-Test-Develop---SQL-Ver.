@@ -1,19 +1,18 @@
 <!--
   testWooSampleCustomActivityContract.xml (AI 대상자 추출 액티비티 계약 샘플 · B안)
   ==================================================================================
-  Register 가 준 ai_sql_id 만 액티비티에 넣고, 런타임이 woo:testWooAiSql 에서 SQL 을 조회·실행한다.
-  이 시스템은 액티비티를 자동 생성하지 않는다. script 에 SQL 을 쓰지 않는다.
+  R6 INJ-8-2: registered sql_query 를 코드편집기(script)에 넣고 ai-sql-id 도 남긴다.
+  런타임은 환경에 따라 본문 또는 woo:testWooAiSql 조회. 액티비티 자동 생성은 하지 않는다.
 
-  [Contract — current · B]
+  [Contract — current · INJ-8-2]
   - WF XML 요소: ibankSqlDM (주) · 레거시 팔레트 xpath 환경은 customActivity
-  - Input: 자식 요소 ai-sql-id (long) = Register response ai_sql_id
-  - Canvas bind: woo:testWooAiWorkflowUi#ShellBind — SQL/script 미기록
-  - Runtime (7d · 저장소 외 uplus 라이브러리): load woo:testWooAiSql.@sql_query by id
-    → work table → transition
-  - Forbidden: <script> SQL inject (WorkflowIo 폐기 유지)
+  - Input: 자식 ai-sql-id (long) + script (CDATA, xpath=script · OOTB sqlDM/ibankSqlDM2 와 동일)
+  - Canvas bind: ShellBind — 서버가 registered 행을 읽어 script Write (SQL을 SOAP 인자로 안 보냄)
+  - Studio 커밋: Register → commitInject (락→주입→saveAiSql→해제)
+  - Forbidden: 게이트 미통과·임의 클라이언트 SQL · Spawn · J-9-5-2
 
   [Contract — discarded]
-  - Old: Register wrote SQL into <script> CDATA — DO NOT restore
+  - B안 ID-only (이력만, 편집기 공란) — R6에서 폐기
   - OOTB SQL Data Management (sql) 노드는 Inspect/Bind 대상이 아님
 -->
 <activities>
@@ -21,8 +20,9 @@
   <ibankSqlDM name="aiExtract" label="AI 대상자 추출"
               img="xtk:activities/execsql.png"
               x="240" y="88">
-    <!-- Runtime reads SQL from woo:testWooAiSql where @id = ai-sql-id -->
+    <!-- Runtime: editor script and/or woo:testWooAiSql where @id = ai-sql-id -->
     <ai-sql-id>0</ai-sql-id>
+    <script><![CDATA[]]></script>
     <transitions>
       <done enabled="true" label="Ok" name="done" target="changeDataSource"/>
     </transitions>

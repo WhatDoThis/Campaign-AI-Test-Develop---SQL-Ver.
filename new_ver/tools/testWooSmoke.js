@@ -8,7 +8,8 @@
  * [Main Functions]
  * ===========
  * - 1. 라이브러리 전역 정의 확인 (testWoo.* · fragContract 포함)
- * - 1b. FragContract — 축 identity·validateBind·렉시콘 분할(카탈로그 키⊂NL)
+ * - 1b. FragContract — 축 identity·validateBind·렉시콘 분할·`_group` 별칭·upsertGroup·별칭 토큰 경계(픽스처)
+ * - 1h. Compiler exclude-only — FROM universe + EXCEPT (NOT IN 금지, 픽스처 테이블)
  * - 1c. normalizeAtomicSlots — EnPivot 슬롯 통과 · KO 축 분할 없음
  * - 1d. parseFragmentJson — JSON 2개 → 첫 채택 + extraSlots (V0, 비과금)
  * - 1e. EnPivot — M1 슬롯 · 빈 glue drop · en_literal은 M2용 유지 · 캐시 시드 · concept 불변
@@ -286,6 +287,22 @@ function twStepFragContract() {
       twFail("1b.fragContract", "mergeLexiconSlots must copy EnPivot en_literal/concept");
       return false;
     }
+    var mergedLong = fc.mergeLexiconSlots(
+      [{ text: "인천", resolvedName: "woo__customer__region" },
+       { text: "10대", resolvedName: "woo__customer__age" }],
+      [{ text: "인천 거주 10대 고객", concept: "age_group" }]
+    );
+    var hasIncheon = false;
+    var hasAge = false;
+    var mi;
+    for (mi = 0; mi < (mergedLong || []).length; mi++) {
+      if (String(mergedLong[mi].text) === "인천") hasIncheon = true;
+      if (String(mergedLong[mi].text) === "10대") hasAge = true;
+    }
+    if (!hasIncheon || !hasAge) {
+      twFail("1b.fragContract", "long LLM span must not swallow lexicon 인천/10대");
+      return false;
+    }
     var incheonToks = fc.keywordsFromSlot({ text: "인천에 사는", concept: "region" });
     var hasRegion = false;
     var ki;
@@ -329,6 +346,196 @@ function twStepFragContract() {
       twFail("1b.fragContract", "validateBind 10/20 within _range should pass");
       return false;
     }
+    var gDom = {
+      region: {
+        required: true, type: "string",
+        nlMap: { "서울": { db: "서울", en: ["Seoul"] } },
+        enum: ["서울", "NorthA", "NorthB"]
+      },
+      _group: {
+        region: {
+          "북부권": {
+            members: ["NorthA", "NorthB", "Gone"],
+            src: "llm", verified: false, en: ["northern belt"]
+          }
+        }
+      }
+    };
+    var gCard = {
+      name: "woo__customer__region", tags: "region", label: "지역",
+      synonyms: "", sample_questions: [], param_domain: gDom, description: ""
+    };
+    var gLex = fc.collectLexicon([gCard]);
+    var gHasAlias = false;
+    var gli;
+    for (gli = 0; gli < gLex.length; gli++) {
+      if (String(gLex[gli].key) === "북부권") gHasAlias = true;
+    }
+    if (!gHasAlias) {
+      twFail("1b.fragContract", "collectLexicon must include _group alias");
+      return false;
+    }
+    var gIdx = fc.buildIndexFields({ slotText: "거주", param_domain: gDom, name: "woo__customer__region" });
+    if (!gIdx || String(gIdx.synonyms).indexOf("북부권") < 0) {
+      twFail("1b.fragContract", "buildIndexFields must include _group alias, got: " +
+        (gIdx && gIdx.synonyms));
+      return false;
+    }
+    var gHit = fc.domainMatchSlot(gDom, "북부권 거주");
+    if (!gHit || gHit.group !== true ||
+        Object.prototype.toString.call(gHit.value) !== "[object Array]" ||
+        gHit.value.length !== 2) {
+      twFail("1b.fragContract", "domainMatchSlot _group must bind candidate members only");
+      return false;
+    }
+    if (String(gHit.value[0]) !== "NorthA" || String(gHit.value[1]) !== "NorthB") {
+      twFail("1b.fragContract", "domainMatchSlot filtered members wrong: " +
+        String(gHit.value));
+      return false;
+    }
+    var gSeoul = fc.domainMatchSlot(gDom, "서울 사는");
+    if (!gSeoul || String(gSeoul.value) !== "서울" || gSeoul.group) {
+      twFail("1b.fragContract", "nlMap scalar must win over _group");
+      return false;
+    }
+    var gParams = fc.resolveNlParams(gDom, "북부권 사는 고객", { region: 1 });
+    if (!gParams ||
+        Object.prototype.toString.call(gParams.region) !== "[object Array]" ||
+        gParams.region.length !== 2) {
+      twFail("1b.fragContract", "resolveNlParams _group must return members[]");
+      return false;
+    }
+    var gScalar = fc.resolveNlParams(gDom, "서울 사는 고객", { region: 1 });
+    if (!gScalar || String(gScalar.region) !== "서울") {
+      twFail("1b.fragContract", "resolveNlParams scalar 서울 must stay scalar");
+      return false;
+    }
+    var gMerged = fc.mergeParamDomainJson(gDom, JSON.stringify({
+      region: { nlMap: { "서울": { db: "서울", en: ["Seoul"] } } },
+      _group: { region: { "북부권": { members: ["NorthA"], src: "llm", verified: false } } }
+    }));
+    var gKeep = gMerged && gMerged.domain && gMerged.domain.region &&
+      gMerged.domain.region.nlMap && gMerged.domain.region.nlMap["서울"];
+    if (!gKeep) {
+      twFail("1b.fragContract", "merge must not delete nlMap keys");
+      return false;
+    }
+    var gVb = fc.validateBind(gDom, { region: ["NorthA", "NorthB"] });
+    if (!gVb || !gVb.ok) {
+      twFail("1b.fragContract", "validateBind group members in enum should pass");
+      return false;
+    }
+    if (!fc.upsertGroup) {
+      twFail("1b.fragContract", "upsertGroup missing");
+      return false;
+    }
+    var upDom = fc.upsertGroup({
+      region: {
+        required: true, type: "string",
+        nlMap: { "서울": { db: "서울", en: ["Seoul"] } },
+        enum: ["서울", "NorthA", "NorthB"]
+      }
+    }, "region", "서부권", ["NorthA", "Gone", "NorthB"], {
+      src: "llm", verified: false, en: ["western belt"]
+    });
+    var upHit = fc.domainMatchSlot(upDom, "서부권");
+    if (!upHit || upHit.group !== true ||
+        Object.prototype.toString.call(upHit.value) !== "[object Array]" ||
+        upHit.value.length !== 2) {
+      twFail("1b.fragContract", "upsertGroup must filter to candidate members");
+      return false;
+    }
+    if (String(upHit.value[0]) !== "NorthA" || String(upHit.value[1]) !== "NorthB") {
+      twFail("1b.fragContract", "upsertGroup members wrong: " + String(upHit.value));
+      return false;
+    }
+    if (!upDom.region || !upDom.region.nlMap || !upDom.region.nlMap["서울"]) {
+      twFail("1b.fragContract", "upsertGroup must keep nlMap keys");
+      return false;
+    }
+    var m2g = fc.matchEnPivotSlot(upDom, { text: "서부권", surface: "서부권" });
+    if (!m2g || String(m2g.layer) !== "M2G" || m2g.group !== true) {
+      twFail("1b.fragContract", "matchEnPivotSlot _group must be M2G, got " +
+        (m2g && m2g.layer));
+      return false;
+    }
+    var longAlias = "abcdefghijklmnopqrstuvwxyz";
+    var upLong = fc.upsertGroup(upDom, "region", longAlias, ["NorthA"], { src: "llm" });
+    if (upLong && upLong._group && upLong._group.region &&
+        upLong._group.region[longAlias]) {
+      twFail("1b.fragContract", "upsertGroup must reject alias longer than 24");
+      return false;
+    }
+    var pDom = {
+      region: {
+        required: true, type: "string",
+        nlMap: {
+          "서울": { db: "서울", en: ["Seoul"] },
+          "교촌": { db: "NorthA", en: ["Bridge"] }
+        },
+        enum: ["서울", "NorthA", "NorthB"]
+      },
+      _group: {
+        region: {
+          "서부권": { members: ["NorthA", "NorthB"], src: "llm", verified: false }
+        }
+      }
+    };
+    var pMiss = fc.domainMatchSlot(pDom, "교촌도");
+    if (pMiss && String(pMiss.nl) === "교촌") {
+      twFail("1b.fragContract", "prefix alias must not match longer token");
+      return false;
+    }
+    var pSeoul = fc.domainMatchSlot(pDom, "서울은");
+    if (!pSeoul || String(pSeoul.value) !== "서울") {
+      twFail("1b.fragContract", "josa tail on exact db alias must still match");
+      return false;
+    }
+    var pGrp = fc.domainMatchSlot(pDom, "서부권에");
+    if (!pGrp || pGrp.group !== true) {
+      twFail("1b.fragContract", "group alias with 1-char tail must match");
+      return false;
+    }
+    var pRes = fc.resolveNlParams(pDom, "교촌도 사는", { region: 1 });
+    if (pRes && String(pRes.region) === "NorthA") {
+      twFail("1b.fragContract", "resolveNlParams must not bind prefix token");
+      return false;
+    }
+    var pCard = {
+      name: "woo__customer__region", tags: "region", label: "지역",
+      synonyms: "", sample_questions: [], param_domain: pDom, description: ""
+    };
+    var pLex = fc.collectLexicon([pCard]);
+    var pSplit = fc.splitByLexicon("교촌도 사는 고객", pLex);
+    var pHasShort = false;
+    var psi;
+    for (psi = 0; psi < (pSplit || []).length; psi++) {
+      if (String(pSplit[psi].text) === "교촌") pHasShort = true;
+    }
+    if (pHasShort) {
+      twFail("1b.fragContract", "splitByLexicon must not carve short key from longer token");
+      return false;
+    }
+    var rollHit = fc.domainMatchSlot({
+      region: {
+        nlMap: { "교촌": { db: "NorthA", en: ["Bridge"] } },
+        enum: ["서울", "NorthA", "NorthB"]
+      }
+    }, "교촌");
+    if (!rollHit || String(rollHit.value) !== "NorthA") {
+      twFail("1b.fragContract", "missing child must roll up to stored parent");
+      return false;
+    }
+    var fineHit = fc.domainMatchSlot({
+      region: {
+        nlMap: { "교촌": { db: "NorthA", en: ["Bridge"] } },
+        enum: ["서울", "NorthA", "NorthB", "교촌"]
+      }
+    }, "교촌");
+    if (!fineHit || String(fineHit.value) !== "교촌") {
+      twFail("1b.fragContract", "child in enum must win over stored parent");
+      return false;
+    }
     var codes = fc.errorCodes;
     if (!codes || !codes.AXIS_MISMATCH || !codes.BIND_TYPE) {
       twFail("1b.fragContract", "errorCodes incomplete");
@@ -339,6 +546,63 @@ function twStepFragContract() {
   } catch (e) {
     twFail("1b.fragContract", String(e.message || e));
     return false;
+  }
+}
+
+function twStepExcludeUniverse() {
+  if (!testWoo.compiler || !testWoo.compiler.compile) {
+    twFail("1h.excludeUniverse", "compiler.compile missing");
+    return false;
+  }
+  var prevGet = testWoo.fragments && testWoo.fragments.getByName;
+  try {
+    if (!testWoo.fragments) testWoo.fragments = {};
+    testWoo.fragments.getByName = function (n) {
+      if (String(n) !== "woo__customer__region") return null;
+      return {
+        name: "woo__customer__region",
+        status: "active",
+        is_current: true,
+        key_column: "sCustomer_id",
+        sql_text: "SELECT DISTINCT sCustomer_id FROM TwSmokeCust WHERE sRegion IN ({{region}})",
+        param_domain: { region: { required: true, type: "string" } },
+        label: "region"
+      };
+    };
+    var plan = {
+      grainKey: "sCustomer_id",
+      include: [],
+      exclude: [{
+        fragment: "woo__customer__region",
+        label: "region",
+        params: { region: "NorthA" }
+      }]
+    };
+    var out = testWoo.compiler.compile(plan);
+    var sql = String((out && out.sql) || "");
+    if (sql.indexOf("TwSmokeCust") < 0) {
+      twFail("1h.excludeUniverse", "universe table missing: " + sql);
+      return false;
+    }
+    if (!/\bEXCEPT\b|\bMINUS\b/i.test(sql)) {
+      twFail("1h.excludeUniverse", "EXCEPT/MINUS missing: " + sql);
+      return false;
+    }
+    if (/\bNOT\s+IN\b/i.test(sql)) {
+      twFail("1h.excludeUniverse", "NOT IN forbidden: " + sql);
+      return false;
+    }
+    if (sql.indexOf("NorthA") < 0) {
+      twFail("1h.excludeUniverse", "exclude bind missing: " + sql);
+      return false;
+    }
+    twPass("1h.excludeUniverse", "exclude-only → universe EXCEPT");
+    return true;
+  } catch (e) {
+    twFail("1h.excludeUniverse", String(e.message || e));
+    return false;
+  } finally {
+    if (testWoo.fragments) testWoo.fragments.getByName = prevGet;
   }
 }
 
@@ -657,6 +921,26 @@ function twStepEnMatch() {
     });
     if (!amb || !amb.ambiguous) {
       twFail("1g.enMatch", "M2 ambiguous expected, got " + JSON.stringify(amb));
+      return false;
+    }
+    var ageDom = {
+      _source: { concept: "customer_age", tier: "range" },
+      ageMin: { type: "int", enum: [10, 20, 30, 40] },
+      ageMax: { type: "int", enum: [20, 30, 40, 50] },
+      _bucket: {
+        nlMap: {
+          "10대": { db: { ageMin: 10, ageMax: 20 }, en: ["teens", "10s"] },
+          "20대": { db: { ageMin: 20, ageMax: 30 }, en: ["twenties", "20s"] }
+        }
+      }
+    };
+    var nDae = fc.matchEnPivotSlot(ageDom, {
+      text: "30대", surface: "30대", en_literal: "in their 30s",
+      concept: "customer_age", kind: "range"
+    });
+    if (!nDae || nDae.ambiguous || !nDae.value ||
+        Number(nDae.value.ageMin) !== 30 || Number(nDae.value.ageMax) !== 40) {
+      twFail("1g.enMatch", "N대 30~40 expected, got " + JSON.stringify(nDae));
       return false;
     }
     var now = new Date().getTime();
@@ -1249,6 +1533,7 @@ function twSummary() {
 
 if (twStepGlobals()) {
   twStepFragContract();
+  twStepExcludeUniverse();
   twStepNormalizeSlots();
   twStepParseMultiJson();
   twStepEnPivot();

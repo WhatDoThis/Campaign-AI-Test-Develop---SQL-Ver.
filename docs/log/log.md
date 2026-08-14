@@ -1,6 +1,47 @@
 # Log
 
 ## Log Index
+292. 2026-08-14 WKF SQL 반영=injected_at (v=180)
+291. 2026-08-14 param_key 유사 · WKFSQL 브레드크럼 (v=179)
+290. 2026-08-14 유사 목록=조건축 · 임시SQL Program 크럼 (v=178)
+289. 2026-08-14 WKF 목록 표기 · 브레드크럼 뎁스 (v=177)
+288. 2026-08-14 R6 — WF data 로드 E4X 가드 제거 (__v=162)
+287. 2026-08-14 브레드크럼 — Program:/Campaign:/Workflow: 접두
+286. 2026-08-14 R6 — data XML 로드 수정 · 브레드크럼 라벨만
+285. 2026-08-14 R6 — 커밋 트랜잭션 (락→주입→기록→해제)
+284. 2026-08-14 HUMAN PASS — 전남 사는 30대 고객 (N대 30~40)
+283. 2026-08-14 N대 — 번역 다히트 전에 30~40 묶음 (fragContract 175)
+282. 2026-08-14 UX-ST0 — 생성 후 비슷한 예전 조건 (v=172)
+281. 2026-08-14 UX-ST0 — 검색창 한글 조합 유지 (v=171)
+280. 2026-08-14 UX-ST0 — ST0 저장본 검색 + 칩 값 (v=170)
+279. 2026-08-14 R5 분기 B — 점프 후 해당 WKF SQL 이력 (v=169)
+278. 2026-08-14 HUMAN PASS — 복합 4축 NL (경기·Y·10~30대·남) gates 163
+277. 2026-08-14 gates enum — planCode∪nlMap·plan_code 별칭 (__v=163)
+276. 2026-08-14 compiler unused param — plan_code↔planCode 별칭 (__v=163)
+275. 2026-08-14 UX-ST1 repo — 멘트·임시=이어서·목록 분리 (v=168)
+274. 2026-08-14 INDEX §3 — 차수 답변 형식 (배포·테스트·짧게)
+273. 2026-08-14 진행판 핸드오프 — 다음 AI용 진행도·잔여·파일
+272. 2026-08-14 상용화 갭 — NL→SQL UI 레퍼런스 (ACC 비중심)
+271. 2026-08-14 상용화 여정 갭 — 추출≠제품 · C-1~C-7
+270. 2026-08-14 재개 3키+#174 닫힘 — 동일파일 흡수로 차수 단축
+269. 2026-08-14 HUMAN G5 PASS — 서울 빼고 universe EXCEPT
+268. 2026-08-14 G5 exclude-only — universe EXCEPT (include empty 허용)
+267. 2026-08-14 HUMAN G4 PASS — 판교도→경기 · G1/G6 유지
+266. 2026-08-14 G4 정책 — 닫힌 enum 편입 · 가장 구체적 값 우선
+265. 2026-08-14 G4 FAIL 판교도→경기 · 별칭 토큰 경계·M2C 단일추정 거절
+264. 2026-08-14 HUMAN #175-3 G1/G2/G6 PASS · G3는 가이드와 다른 입력
+263. 2026-08-14 #175-3 M2C 그룹 확장 · M2G 캐시 · Pass1 UNION 차단
+262. 2026-08-14 HUMAN G6 재확인 — 서울 남성 IN (2단계)
+261. 2026-08-13 #175-2 param_domain._group 읽기 경로
+260. 2026-08-13 HUMAN G6 PASS — 서울/인천/Z_PLAN IN 회귀
+259. 2026-08-13 #175-1 categorical IN({{param}}) · = 승격
+258. 2026-08-13 #174 V6 repo grep 0건 · #175 가이드 착수(0단계)
+257. 2026-08-13 HUMAN 전라도 사는 남성 — 게이트 PASS · 전남∪전북∩M
+256. 2026-08-13 gender enum:[] 게이트 오거절 — F가 nlMap에 있는데 실패
+255. 2026-08-13 HUMAN 클린환경 Foundry 164 PASS — 인천∩10대 SQL
+254. 2026-08-13 Foundry 게이트 전 도메인 스냅샷 — __sample__ G-C 0건 방지
+253. 2026-08-13 인천 오락가락 — NL캐시 __v · 긴 LLM스팬 미덮음 · 문장 별칭 금지
+252. 2026-08-13 HUMAN #251 smoke PASS (20/21, embed SKIP)
 251. 2026-08-13 인천 누락 — en_literal M2 보존 · merge 시 EnPivot 필드 복사
 250. 2026-08-13 「사는」 categorical glue가 Generate를 막던 구멍 수정
 249. 2026-08-13 Generate — 비조건 잔여(사는) 슬롯 드롭
@@ -254,6 +295,390 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+292. 2026-08-14 WKF SQL 반영=injected_at (v=180)
+Purpose: WKF SQL 목록의 반영 상태를 XML이 아니라 스키마 행으로만 본다. 2건 이상이면 가장 최근 주입 행을 표시하고, 클릭은 덮어쓰기, 이미 반영이면 WKF로 이동을 켠다.
+Changes:
+- schema `@injected_at` `@injected_by` `@inject_count` `@activity_name` `@prev_injected_id` `@injected_workflow_id`. 현재 반영=같은 WF에서 injected_at 최대
+- Register 2클릭 게이트=hasInjectedAiSql. 주입 성공 후 markAiSqlInjected (XML probeOccupied 폐기)
+- Studio: 반영됨 배지·자동 선택, 버튼 WKF에 덮어쓰기, WKF로 이동은 스키마 반영이면 활성
+Verification: HUMAN. 스키마 업데이트 후 repo 163 + v=180. 기존 행은 injected_at 빈값 → 한 번 넣기 후부터 반영됨
+Changed files: new_ver/schema/testWooAiSql.xml, new_ver/input_form/testWooAiSql.xml, new_ver/js/testWooRepository.js, new_ver/jssp/testWooAiRegister.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+291. 2026-08-14 param_key 유사 · WKFSQL 브레드크럼 (v=179)
+Purpose: 조사/NL 토큰 비교를 폐기하고 값 없는 조건축 키로 유사 목록을 만든다. WKF SQL 목록에서 Workflow 크럼으로 목록에 돌아간다.
+Changes:
+- schema `@param_key` (plan params 키 camelCase 정렬, 값 제외). Register 시 저장
+- 유사: param_key 교집합. 키 없으면 used_fragments 이름만. `_SIM_JOSA` 삭제
+- 브레드크럼: WKF 선택 후 `Workflow: 라벨`(클릭=목록) `> SQL목록(Workflow)` 읽기전용
+Verification: HUMAN. 스키마 업데이트 후 v=179. 충청 Z 저장본 + 충청 Y 생성 → 유사. WKF 선택 후 Workflow 크럼으로 목록 복귀
+Changed files: new_ver/schema/testWooAiSql.xml, new_ver/input_form/testWooAiSql.xml, new_ver/js/testWooCompiler.js, new_ver/js/testWooRepository.js, new_ver/jssp/testWooAiRegister.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+290. 2026-08-14 유사 목록=조건축 · 임시SQL Program 크럼 (v=178)
+Purpose: 같은 Param·다른 값(Y vs Z)이 유사 목록에서 빠지던 구멍과, 임시 SQL 클릭 시 Program 크럼 누락을 고친다.
+Changes:
+- 유사: 칩 값 비교 중단. fragment 이름 겹침 우선. NL은 조사·값접두(y요금제→요금제) 정규화
+- listRecentAiSql에 used_fragments. 행 메타는 「같은 조건 구성」·겹친 말(값 일치 단정 없음)
+- 임시 SQL 클릭 시 브레드크럼 `SQL선택 > Program`(읽기전용)
+Verification: HUMAN. v=178 + repo 161. 충청 Z 저장본 + 충청 Y 생성 → 유사에 Z 행
+Changed files: new_ver/js/testWooRepository.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+289. 2026-08-14 WKF 목록 표기 · 브레드크럼 뎁스 (v=177)
+Purpose: WKF 행을 라벨/인터널네임/반영SQL 개수만 보이게 하고, 브레드크럼이 목록(미선택)과 선택 깊이를 섞지 않게 한다.
+Changes:
+- WKF 제목 `WKF(라벨명 / 인터널네임 / 반영SQL 개수)`, 행은 짧은 라벨 / name / registered 건수
+- 브레드크럼은 listMode 기준. 목록 화면은 타입만(읽기전용), 선택 후에만 `타입: 라벨`
+- Program 클릭 시 folder를 비움. Campaign 클릭 시 Campaign 크럼만 남김. WKF 선택 시 그 WKF SQL 이력으로 진입
+Verification: HUMAN. Studio URL v=177. 아래 HUMAN 테스트
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+288. 2026-08-14 R6 — WF data 로드 E4X 가드 제거 (__v=162)
+Purpose: [WKF에 넣기]가 여전히 data XML missing. Rhino는 load/length를 JS function으로 안 본다.
+Changes:
+- typeof 검사 없이 load·toXMLString·length() 직접 호출
+- PoC-2와 같이 internalName 조회. children()으로 data/activities 탐색
+- 실패 시 id·자식 요소명을 오류에 붙여 다음 진단
+Verification: HUMAN. JS 라이브러리 162 재등록 후 [WKF에 넣기]
+Changed files: new_ver/js/testWooWorkflowUi.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+287. 2026-08-14 브레드크럼 — Program:/Campaign:/Workflow: 접두
+Purpose: 라벨만 보이던 크럼을 종류+라벨로 읽히게 한다.
+Changes:
+- SQL선택 > Program: 라벨 > Campaign: 라벨 > Workflow: 라벨
+Verification: HUMAN. v=176
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
+
+286. 2026-08-14 R6 — data XML 로드 수정 · 브레드크럼 라벨만
+Purpose: [WKF에 넣기]가 data XML missing으로 죽고, 브레드크럼 조건은 눌러도 반응이 없었다.
+Changes:
+- xtk.workflow.load 우선. data 메모/공백/중첩 activities를 모두 찾음
+- 브레드크럼: SQL선택 > Program라벨 > Campaign라벨 > WKF라벨. 조건 크럼 제거
+- 신규 생성 기본 라벨은 AI Campaign / AI WKF (부모 경로 붙이지 않음)
+Verification: HUMAN. v=175. 같은 WKF에 넣기 → 반영. 브레드크럼이 라벨만
+Changed files: new_ver/js/testWooWorkflowUi.js, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+285. 2026-08-14 R6 — 커밋 트랜잭션 (락→주입→기록→해제)
+Purpose: Register가 이력만 남기던 것을 WKF 액티비티 반영까지 한 트랜잭션으로 묶는다.
+Changes:
+- 락 실패·덮어쓰기 1클릭은 AiSql을 만들지 않음. 2클릭에만 덮어씀
+- 첫 ibankSqlDM에 registered SQL을 script+ai-sql-id로 Write. SOAP로 SQL 본문을 안 보냄
+- 반영 성공 후에만 [WKF 열기]·[다른 WKF에도 반영]. confirm/alert 없음. J-9-5-2 없음
+Verification: HUMAN. 빈 액티비티 반영 1 · 락 점유 실패 1 · 덮어쓰기 2클릭 1. 창 닫고 재오픈 시 편집기에 SQL
+Changed files: new_ver/js/testWooWorkflowUi.js, new_ver/js/testWooRepository.js, new_ver/jssp/testWooAiRegister.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/html/testWooAiStudio.js, new_ver/schema/testWooAiWorkflowUi.xml, new_ver/workflow/testWooSampleCustomActivityContract.xml, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/39_상용화_여정갭.md, docs/report/upgrade_plan/23_SQLFirst_AI명령문.md, docs/log/log.md
+
+284. 2026-08-14 HUMAN PASS — 전남 사는 30대 고객 (N대 30~40)
+Purpose: 운영자가 N대 생성 결과를 PASS로 회신했다. 「여러 항목과 맞음」은 없다.
+Changes:
+- 칩: 전남, 30~40. 준비됨
+- SQL: sRegion IN ('전남') INTERSECT iAge >= 30 AND iAge < 40
+- 다음: R5 점프 재확인 → R6. Match Option·COUNT 금지
+Verification: 운영자 화면 회신 (본 메시지).
+Changed files: docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/log/log.md
+
+283. 2026-08-14 N대 — 번역 다히트 전에 30~40 묶음 (fragContract 175)
+Purpose: 「전남 사는 30대 고객」이 값 30대를 여러 항목과 맞다고 멈추던 구멍을 막는다.
+Changes:
+- `30대`는 EN 토큰(30 / 30s / in their 30s)으로 나이 enum을 훑지 않고 {ageMin:30,ageMax:40}
+- _bucket 원문 키가 ageMin=30 접두 매칭보다 앞
+- EN 히트에서 숫자 1~2자리 토큰은 무시. heal-miss를 「여러 항목」으로 안 씀
+- 안내가 남으면 번역(en_literal)을 같이 보여 줌
+Verification: HUMAN. `전남 사는 30대 고객` → 전남 ∩ iAge 30~40. 「여러 항목과 맞음」 없음.
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+282. 2026-08-14 UX-ST0 — 생성 후 비슷한 예전 조건 (v=172)
+Purpose: NL 생성 뒤에 등록일 순 전체를 넣던 구멍을 막고, 지금 문장·칩 값과 겹치는 저장본만 보여 준다.
+Changes:
+- 분기1 ST0: 검색 + 예전에 쓴 조건(등록일). 클릭=WKF 점프
+- 분기2 생성 후: 이어서 할 작업(기존) + 비슷한 예전 조건(토큰 겹침). 클릭=같은 점프
+- Match Option 켜지 않음. 「포함/일치」 단정 없음. 행에 「겹친 말」 표시
+Verification: HUMAN. v=172. 경기·Y 생성 시 「전라도 사는 남성」이 아래에 안 나오거나 겹친 말만. 초기화는 검색 목록 유지.
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/39_상용화_여정갭.md, docs/log/log.md
+
+281. 2026-08-14 UX-ST0 — 검색창 한글 조합 유지 (v=171)
+Purpose: 글자마다 검색칸을 지우고 다시 만들어 자음·모음이 따로 들어가던 구멍을 막는다.
+Changes:
+- 타이핑 시 입력칸은 그대로 두고 아래 목록만 다시 그림
+- 목록 순서는 기존과 같음: `creation_date` 최신 등록이 위. 클릭 시각이 아님
+Verification: HUMAN. URL v=171. 「전라도」가 한 글자씩 조합. 자모 분리 없음.
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+280. 2026-08-14 UX-ST0 — ST0 저장본 검색 + 칩 값 (v=170)
+Purpose: 최초 진입·초기화에서 저장본을 바로 보고 타이핑으로 걸러 고르게 한다. 칩은 fragment 라벨 대신 바인딩 값을 보여 준다.
+Changes:
+- ST0/초기화: `listRegisteredSql` limit 50 로드. 검색창(즉시 필터). 클릭=`_jumpExistingSql`
+- 「대상 만들기」 후: 위 임시 / 아래 저장본. 검색 없음
+- 칩·해석 한 줄: params 값(경기, Y_PLAN, 10~40, M). 라벨은 값 없을 때만
+- R6 주입/열기 없음. Match Option 변경 없음
+Verification: HUMAN. URL v=170. 초기화→저장본+검색. 대상 만들기 후 검색 사라짐. 칩=값.
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/39_상용화_여정갭.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+279. 2026-08-14 R5 분기 B — 점프 후 해당 WKF SQL 이력 (v=169)
+Purpose: 예전에 쓴 조건 클릭이 WKF 고르기에서 멈추지 않고 그 WKF SQL 목록까지 들어가게 한다.
+Changes:
+- `_jumpExistingSql` → `selectWkf(..., { showSqlList: true })` → `loadSqlList`
+- 신규 매핑에서 WKF만 고른 경우는 기존처럼 목록 유지 (R6 주입 아님)
+Verification: HUMAN. 「예전에 쓴 조건」 클릭 → 제목 「이 WF SQL 이력」. 「WKF에 넣기」 재클릭 불필요.
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+278. 2026-08-14 HUMAN PASS — 복합 4축 NL (경기·Y·10~30대·남) gates 163
+Purpose: 운영자가 복합 조건 Generate를 PASS로 회신했다. R6 선구현은 하지 않는다.
+Changes:
+- SQL: 경기 ∩ Y_PLAN ∩ iAge 10~40 ∩ M. 준비됨
+- 진행판: 다음=R5 HUMAN (Program→Campaign→WKF). PASS면 R6
+- 칩 문구(거주 지역 조건…)는 U4 잔여. 이번 키 아님
+Verification: 운영자 PASS (본 회신). R5는 별도 HUMAN.
+Changed files: docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/log/log.md
+
+277. 2026-08-14 gates enum — planCode∪nlMap·plan_code 별칭 (__v=163)
+Purpose: SQL은 Y_PLAN인데 게이트가 planCode enum만 보고 오거절하던 구멍을 막는다.
+Changes:
+- PLAN 검사는 sql `{{}}` 키 기준. planCode↔plan_code spec 합침
+- enum∪nlMap. {db,en} 는 db만 비교
+- StudioContext expected gates=163
+Verification: HUMAN. 동일 문장 재생성. `param not in enum` 없이 준비됨. AI PASS 금지.
+Changed files: new_ver/js/testWooGates.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+276. 2026-08-14 compiler unused param — plan_code↔planCode 별칭 (__v=163)
+Purpose: 복합 NL에서 Pass1 extras/키 불일치로 compile이 죽던 구멍을 막는다.
+Changes:
+- `bindPlanParams`: sql `{{}}` 키만 유지. snake↔camel 별칭(plan_code↔planCode)
+- resolveNlParams 조회 키에도 별칭 포함
+- StudioContext expected compiler=163
+Verification: HUMAN. 입력 `경기도에 살고 Y요금제 쓰는 10대 20대 30대 남성 고객`. unused param 없어야 함. AI PASS 금지.
+Changed files: new_ver/js/testWooCompiler.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+275. 2026-08-14 UX-ST1 repo — 멘트·임시=이어서·목록 분리 (v=168)
+Purpose: 목록/임시/멘트를 마케터 카피로 바꾸고, 임시 클릭이 곧 매핑 이어가기가 되게 한다.
+Changes:
+- 「생성」→「대상 만들기」, 「등록」→「이 조건 쓰기」(WKF 있으면 「WKF에 넣기」)
+- 임시 클릭=`_restoreDraft`+`_beginMapping`. 「이 새 SQL로 진행」 행 제거
+- 목록 위=이어서 할 작업 / 아래=예전에 쓴 조건. 칩 해석 한 줄. 게이트 성공=U5 문장
+- unresolved는 경고+값. Match Option·R6·COUNT 미변경
+Verification: HUMAN. Studio URL v=168. AI PASS 금지.
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/39_상용화_여정갭.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+274. 2026-08-14 INDEX §3 — 차수 답변 형식 (배포·테스트·짧게)
+Purpose: 차수마다 운영자에게 줄 답변 뼈대를 고정한다.
+Changes:
+- `00_INDEX.md` §3: 시작 4줄 · 끝 4덩이(결과/배포/테스트/다음) · 종류별 표
+- 원칙: 할 일은 자세히, 설명은 짧게. 초보자=어디·뭘·뭐가 보이나
+- `01_진행판.md` 핸드오프에 §3 포인터
+Verification: 문서만.
+Changed files: docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+273. 2026-08-14 진행판 핸드오프 — 다음 AI용 진행도·잔여·파일
+Purpose: 다음 에이전트가 01만 읽고 UX-ST1을 이어가게 한다.
+Changes:
+- `01_진행판.md` 핸드오프 절. 추출 90 / 셸 25 / 상용 20. 키 25=끝20·부분2·미착수3
+- 참고 파일·다음=UX-ST1. P6 COUNT DEFERRED
+Verification: 문서만.
+Changed files: docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+272. 2026-08-14 상용화 갭 — NL→SQL UI 레퍼런스 (ACC 비중심)
+Purpose: 제품 축은 NL→SQL. ACC는 호스트. Cortex/Genie/Vanna/Amplitude UI를 1순위로 둔다.
+Changes:
+- 39 §1 교체. §5 UI 우선(U1~U6). §6 기능 제안 P1~P6(P6 COUNT는 DEFERRED)
+- Adobe/Journey는 반영 단계만
+Verification: 문서만.
+Changed files: docs/report/upgrade_plan/39_상용화_여정갭.md, docs/log/log.md
+
+271. 2026-08-14 상용화 여정 갭 — 추출≠제품 · C-1~C-7
+Purpose: 키 개수 %가 제품 완료처럼 보인 오류를 고친다. WKF 열기·주입·목록 UX는 키 4개여도 여정 후반 전부다.
+Changes:
+- `39_상용화_여정갭.md`: Adobe Query/Journey Draft·Publish 대조. C-1~C-7
+- 진행판 분모=ST0~ST6. 추출 ~90% · 셸 ~25% · 상용 ~20%
+- 임시 클릭+「이 새 SQL로 진행」은 중복 단계(C-5)
+Verification: 문서만. R6/UX 코드 없음.
+Changed files: docs/report/upgrade_plan/39_상용화_여정갭.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+270. 2026-08-14 재개 3키+#174 닫힘 — 동일파일 흡수로 차수 단축
+Purpose: #170/#168-B/#172는 #174와 같은 llm·enPivot·fragContract 로직. 재구현 없이 가이드를 닫아 남은 차수를 줄인다.
+Changes:
+- 34/35/36/37 상태 `[x]`. 진행판·INDEX·ReportIndex·추적표 재개 배너 제거
+- #175 5단계·R6~R8은 파일/선행이 달라 묶지 않음
+- 코드 변경 없음
+Verification: 문서만. HUMAN 추가 없음.
+Changed files: docs/report/upgrade_plan/34_Pass0_슬롯원자분할_170.md, docs/report/upgrade_plan/35_Generate_값바인딩_168B.md, docs/report/upgrade_plan/36_FragContract_공유계약.md, docs/report/upgrade_plan/37_ENPivot_CanonicalLayer_174.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+269. 2026-08-14 HUMAN G5 PASS — 서울 빼고 universe EXCEPT
+Purpose: exclude-only 배포 후 HUMAN 실측. 전체 대상 EXCEPT 서울 IN. NOT IN 없음.
+Changes:
+- 요약 `[AND] 전체 대상` · `[EXCEPT] 서울 거주 고객 (region=서울)`
+- 칩 EXCEPT만. 게이트 3통과
+- SQL: `FROM testWooSampleCustomer` EXCEPT `sRegion IN ('서울')`. include empty 해소
+- #175 G1/G2/G4/G5/G6 PASS. 잔여 G3(도메인 수술)·5단계 verified UI
+Verification: HUMAN 붙여넣기 1건. AI PASS 자체 처리 아님.
+Changed files: docs/report/upgrade_plan/38_값확장_GroupExpansion_175.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+268. 2026-08-14 G5 exclude-only — universe EXCEPT (include empty 허용)
+Purpose: HUMAN `서울 빼고`가 plan.include empty로 Generate 실패. exclude-only는 전체 대상 EXCEPT.
+Changes:
+- 원인: Pass1이 서울을 exclude만 넣고 include를 비움. 검증/컴파일러가 include 필수
+- llm 177: include 빈+exclude 있음 허용. polarity=exclude는 exclude[]로. Pass1 프롬프트에 universe 창작 금지
+- compiler 162: exclude fragment FROM으로 `SELECT DISTINCT grain FROM table` 후 EXCEPT. NOT IN 없음
+- gates 162: 동일. Context expected llm=177 compiler=162 gates=162
+- smoke 1h: TwSmokeCust + NorthA 픽스처
+Verification: HUMAN — 177+162+162+Context. `서울 빼고` → EXCEPT `IN ('서울')`. NOT IN 아님. G1/G6 한 건 유지.
+Changed files: new_ver/js/testWooLlm.js, new_ver/js/testWooCompiler.js, new_ver/js/testWooGates.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/report/upgrade_plan/38_값확장_GroupExpansion_175.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+267. 2026-08-14 HUMAN G4 PASS — 판교도→경기 · G1/G6 유지
+Purpose: 개정 G4(닫힌 enum 편입) HUMAN 실측. 판교∉후보일 때 경기 IN. G1/G6 SQL 유지.
+Changes:
+- `판교도` → 칩 `(판교 → 경기)` · `sRegion IN ('경기')` · 게이트 3통과
+- `전라도에 사는 남성 고객` → `IN ('M')` ∩ `IN ('전남','전북')`. 칩 제목은 `(전남)`이나 params=전남,전북 (표시만, SQL PASS)
+- `서울 사는 남성` → `IN ('서울')` ∩ `IN ('M')`
+- 3단계 G4 [x]. 4단계 토큰경계 [x] 흡수. 다음=G5 HUMAN 또는 5단계 UI
+Verification: HUMAN 붙여넣기 3건. G3 미실시. 판교∈enum 케이스는 샘플에 값 없어 이번 라운드 제외.
+Changed files: docs/report/upgrade_plan/38_값확장_GroupExpansion_175.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+266. 2026-08-14 G4 정책 — 닫힌 enum 편입 · 가장 구체적 값 우선
+Purpose: G4를 ‘없는 말은 거절’에서 ACC Alias cleansing + 차원 finest-grain으로 바꾼다. 자식이 후보에 없으면 상위 편입, 있으면 자식.
+Changes:
+- 레퍼런스: Campaign Alias cleansing(닫힌 enum에만 별칭 매핑) · 분석 차원 parent-child rollup · Ads는 타깃 불가 세부를 가용 상위/인근으로
+- M2C 단일멤버 거절 제거. 프롬프트: 후보에 없는 세부는 부모 후보 1개
+- domainMatch/resolveNl: enum 우선. 별칭이 지금 후보면 저장된 상위 대신 그 값
+- 토큰 경계는 유지(짧은 키⊂긴 토큰 금지). 지명 리터럴 없음. 스모크 교촌→NorthA / enum에 교촌이면 교촌
+- fragContract 174 · llm 176 · Context 동기
+Verification: HUMAN — 174+176+Context. `판교도`→경기 IN(판교 없음). G1 전라도 IN 유지. 판교가 enum에 생기면 경기 아님.
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/report/upgrade_plan/38_값확장_GroupExpansion_175.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+265. 2026-08-14 G4 FAIL 판교도→경기 · 별칭 토큰 경계·M2C 단일추정 거절
+Purpose: HUMAN이 `판교도`만 입력했는데 heal/부분문자열/M2C가 `경기` IN을 만들었다. 짧은 별칭이 긴 토큰을 삼키지 못하게 한다.
+Changes:
+- HUMAN G4 FAIL: 칩 `거주 지역 조건 (판교 → 경기)` · `IN ('경기')`. 라이브 nlMap `판교`⊂`판교도` + 단일멤버 추정
+- domainMatchSlot/resolveNlParams/splitByLexicon: `_boundHas` 토큰 경계. 그룹·정확 db만 1글자 꼬리 허용
+- `_enHit` 부분문자열 제거. EN 히트여도 원문 토큰이 짧은 별칭과 충돌하면 무시
+- M2C: 멤버 1개이고 원문에 그 db가 없으면 miss+`_negative`. 프롬프트에 parent region 금지(지명 리터럴 없음)
+- fragContract 173 · llm 175 · Context 동기. 스모크 픽스처 `교촌도`/`서부권에`/`서울은`
+Verification: HUMAN — fragContract 173 + llm 175 + Context.jssp. `판교도` SQL 없음. G1 전라도 IN·G6 서울 IN 재확인.
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/report/upgrade_plan/38_값확장_GroupExpansion_175.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+264. 2026-08-14 HUMAN #175-3 G1/G2/G6 PASS · G3는 가이드와 다른 입력
+Purpose: 3단계 배포 후 Studio SQL/칩으로 G1·G2·G6를 채점한다. 가이드 G3(전남 부재)는 이번 입력과 다르다.
+Changes:
+- G1: `전라도 거주 (region=전남,전북)` 칩 1장 ∩ `남성`. SQL `IN ('전남','전북')` INTERSECT `IN ('M')`. UNION 없음. **PASS**
+- G2: G1과 동일 SQL/칩. 저널 groupExpand 원문은 없음(화면 동일으로 PASS)
+- G6: `서울`∩`M` IN 유지. **PASS**
+- 라벨 G3: 칩 `거주 지역 조건 (판교 → 경기)` · `IN ('경기')`. 가이드 G3(전남 탈락+부분커버) 아님. heal/별칭 경로. 가이드 G4(`판교도` SQL 없음)도 미확인
+Verification: HUMAN Studio 원문. G4는 `판교도` 그 문자열로 재확인. 4단계 미착수.
+Changed files: docs/report/upgrade_plan/38_값확장_GroupExpansion_175.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+263. 2026-08-14 #175-3 M2C 그룹 확장 · M2G 캐시 · Pass1 UNION 차단
+Purpose: 상위어 1슬롯을 LLM⊆CANDIDATES 멤버로 풀어 한 frag IN으로 묶고, 실패 시 UNION으로 떨어지지 않게 한다.
+Changes:
+- M2/M3 miss → `_tryGroupExpand` (stage groupExpand). 멤버는 enum/nlMap db(+고유 en)만. `_group` 기록
+- 재입력은 M2G(`_group` 별칭). heal miss는 `_negative`를 찍지 않음(찍으면 같은 턴 M2C가 스킵됨)
+- 확장 실패·llm_fail → unresolved `ambiguous_group`/`ambiguous`. range만 Pass1 유지
+- 같은 frag include는 `_collapseSameFragmentPlan`으로 배열 병합. `_matchCard`는 ambiguous 카드 히트 금지
+- Studio litmus v=167 · Context llm=174 enPivot=174 fragContract=172. 스모크 1b upsertGroup 픽스처 `서부권`
+Verification: HUMAN — 아래 배포목록. G1 `전라도에 사는 남성 고객` 한 region IN∩gender. G2 재입력 저널에 groupExpand 없음. G4 `판교도` SQL 없음. G6 서울 IN 유지. AI가 G1 PASS 처리 금지.
+Changed files: new_ver/js/testWooLlm.js, new_ver/js/testWooFragContract.js, new_ver/js/testWooEnPivot.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/tools/testWooSmoke.js, docs/report/upgrade_plan/38_값확장_GroupExpansion_175.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+262. 2026-08-14 HUMAN G6 재확인 — 서울 남성 IN (2단계)
+Purpose: #175-2 배포 후 단일값 IN 회귀가 유지되는지 확인. 전라도 G1이 아님.
+Changes:
+- `서울 거주` ∩ `남성` → sRegion IN('서울') ∩ sGender IN('M'). 게이트 3종 통과
+- 진단: TW-BOOT v=166 · js ok v=164(스태일 문자열) · URL에 Studio `v=` 없음. libs 키가 fragContract/enPivot 미포함이라 allMatch expected=159로 보임. SQL은 서버 compiler=161
+- 라이브 `_group` 없음. 전라도는 이 시점까지 UNION
+Verification: HUMAN SQL 원문.
+Changed files: docs/log/log.md
+
+261. 2026-08-13 #175-2 param_domain._group 읽기 경로
+Purpose: 상위어 별칭을 param_domain JSON에서 읽어 렉시콘·색인·매칭·바인딩에 쓴다. 쓰기는 3단계.
+Changes:
+- `_group.<param>.<alias>={members,src,verified,en}`. 멤버는 enum/nlMap 후보 교집합만
+- collectLexicon·buildIndexFields·domainMatchSlot·resolveNlParams·mergeParamDomainJson
+- nlMap 키 삭제 금지. 전라도/전북 리터럴 없음. 스모크 픽스처만 `북부권`/`NorthA`
+- fragContract __v=171 · Context expected 171
+Verification: HUMAN — fragContract 171 + Context.jssp. 선택 smoke 1b. G6 한 건 재확인. 전라도는 아직 UNION.
+Changed files: new_ver/js/testWooFragContract.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/report/upgrade_plan/38_값확장_GroupExpansion_175.md, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+260. 2026-08-13 HUMAN G6 PASS — 서울/인천/Z_PLAN IN 회귀
+Purpose: #175-1 배포 후 단일값 SQL이 IN이고 age 범위는 유지되는지 확인.
+Changes:
+- `서울 사는 남성` → sRegion IN('서울') ∩ sGender IN('M') 게이트 통과
+- `인천 거주 10대 고객` → IN('인천') ∩ iAge>=10 AND iAge<20
+- `경기 살면서 Z요금제` → IN('경기') ∩ sPlan_code IN('Z_PLAN'). Foundry plan frag 신규
+- V6: 콘솔 JS는 repo 복사(하드코딩 없음). URL `v=` 없음·클라 v=164는 스태일 가능, 서버 compiler=161 foundry=165로 SQL은 신코드
+- 실현성 문구의 plan_label vs SQL plan_code 불일치는 표시 이슈. SQL 바인딩은 맞음
+Verification: HUMAN SQL 원문.
+Changed files: docs/log/log.md
+
+259. 2026-08-13 #175-1 categorical IN({{param}}) · = 승격
+Purpose: 단일값도 IN. 라이브 `=` 템플릿은 컴파일 시 승격해 콘솔 SQL 수정을 막는다. 배열 bind는 IN 자리에서만 join.
+Changes:
+- fragContract: promoteEqPlaceholderToIn · sampleBind 배열 join · validateBind 원소별 enum. __v=170
+- compiler: 치환 전 IN 승격 · 배열은 IN({{p}}) 아니면 throw. __v=161
+- foundry: 프롬프트 IN 강제 · persist 전 승격. __v=165
+- gates: 배열 params 원소별 enum. __v=161
+- Context expectedByMod 동기
+- 전라도 G1(한 frag IN)은 2~3단계. 이번은 인프라만
+Verification: HUMAN — 아래 배포목록. G6: 서울/인천/남성 단일값 SQL이 IN ('…') 이고 건수 동일. 전라도는 아직 UNION.
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooCompiler.js, new_ver/js/testWooFoundry.js, new_ver/js/testWooGates.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/report/upgrade_plan/38_값확장_GroupExpansion_175.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+258. 2026-08-13 #174 V6 repo grep 0건 · #175 가이드 착수(0단계)
+Purpose: 5단계 후 매칭 경로에 한국어 값/컬럼 하드코딩이 없는지 측정하고, #175 가이드를 카탈로그에 올린다.
+Changes:
+- 매칭 경로(EnPivot/FragContract/Llm generatePlan): JOSA_TAIL·NOISE_WORD 없음. 서울/인천/전북/전남/전라도/남성/여성/10대 리터럴 0
+- 제외: 토큰 문자클래스 가-힣, 스모크 픽스처, Foundry 프롬프트 iAge 예시(생성축·매칭 사전 아님)
+- `38_값확장_GroupExpansion_175.md` 신설. INDEX·진행판·ReportIndex·추적표 GE-1
+- V6 HUMAN PASS 아님(콘솔 교차 대기)
+Changed files: docs/report/upgrade_plan/38_값확장_GroupExpansion_175.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/37_ENPivot_CanonicalLayer_174.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+257. 2026-08-13 HUMAN 전라도 사는 남성 — 게이트 PASS · 전남∪전북∩M
+Purpose: gender enum 수정 후 재생성. 검증 통과. SQL UNION 전남/전북 INTERSECT sGender='M'.
+Changes:
+- 칩 라벨이 둘 다 '전라도 거주'(param은 전남/전북). SQL 무관
+- #175 IN() 아님. 같은 region frag 두 번 바인딩
+Verification: HUMAN SQL 확인.
+Changed files: docs/log/log.md
+
+256. 2026-08-13 gender enum:[] 게이트 오거절 — F가 nlMap에 있는데 실패
+Purpose: `전라도 거주하는 여성고객` SQL(여성∩전남∪전북)은 맞았으나 PLAN이 enum:[]에 F를 없다고 거절. ACC enum FQN이 sampleGender와 불일치.
+Changes:
+- gates: enum 빈 배열이면 nlMap db 값으로 검사(여성→F). 빈 enum=전면 거절 금지
+- toolkit: enumeration 이름 로컬/FQN/접미사 매칭. 라벨 맵 공백이면 probe_values
+- __v toolkit=161 gates=160
+Verification: HUMAN — toolkit+gates+Context.jssp. gender frag 삭제 없이 같은 NL 재생성. 게이트 통과.
+Changed files: new_ver/js/testWooGates.js, new_ver/js/testWooToolkit.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+255. 2026-08-13 HUMAN 클린환경 Foundry 164 PASS — 인천∩10대 SQL
+Purpose: frag/queue 삭제 후 `인천 거주 10대 고객` 재생성. Foundry processed=1 failed=0. region+age publish. SQL INTERSECT 인천∩10대.
+Changes:
+- 1차 패스. 2차 `인천 사는 10대 이상 20대 미만`도 동일 범위 SQL(의도 일치)
+- describe_schema woo:customer 오탐 후 sampleCustomer로 복구
+- region `_bucket`이 단일값 nlMap을 복제(다음 정리 후보, 이번 SQL 무관)
+Verification: HUMAN SQL 확인. #175 미착수.
+Changed files: docs/log/log.md
+
+254. 2026-08-13 Foundry 게이트 전 도메인 스냅샷 — __sample__ G-C 0건 방지
+Purpose: frag 전체 삭제 후 첫 생성에서 LLM이 {{region}}만 내고 nlMap이 비어 sampleBind가 '__sample__'이 됨. probe_sql(인천)은 6건인데 G-C는 0건.
+Changes:
+- generateFragmentForSlot: validateFragment 전에 _attachDomainSnapshot
+- enum/nlMap이 채워진 뒤 sampleBindSql → 실존 값으로 G-C
+- foundry __v=164
+Verification: HUMAN — woo:testWooFoundry.js + Context.jssp. 큐 실패 행 처리 후 `인천 거주 10대 고객` 재생성. Foundry G-C 통과·region frag publish.
+Changed files: new_ver/js/testWooFoundry.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+253. 2026-08-13 인천 오락가락 — NL캐시 __v · 긴 LLM스팬 미덮음 · 문장 별칭 금지
+Purpose: `인천 거주 10대`는 되고 `…고객`은 안 된 이유. 도메인에 인천은 이미 있음. 문장 해시 캐시·긴 슬롯 덮어쓰기·NL 전체 heal 별칭.
+Changes:
+- EnPivot 캐시 키에 __v. 배포 후 구추출 재사용 금지
+- mergeLexiconSlots: LLM 스팬이 렉시콘 키보다 길면 덮지 않음
+- attachAlias: 공백·12자 초과 거부. _slotTextForFrag NL 전체 폴백 삭제
+- smoke 1b 긴 스팬이 인천/10대를 삼키지 않는지
+- __v enPivot=173 llm=173 fragContract=169
+Verification: HUMAN — JS 3개+Context.jssp+스모크. `인천 거주 10대 고객`과 `인천 거주 10대` 둘 다 인천∩10대.
+Changed files: new_ver/js/testWooEnPivot.js, testWooFragContract.js, testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+252. 2026-08-13 HUMAN #251 smoke PASS (20/21, embed SKIP)
+Purpose: 172 스모크 스크립트·라이브러리 재등록 후 WKF93 전 스텝 통과. SKIP 8은 embedEnabled=false 전제.
+Changes:
+- 1e 메시지 `glue drop + en_literal keep` 확인 → 신 스크립트 적재
+- 1b merge 복사 포함 fragContract PASS
+- 7 pass0 first='서울' · 9 library_cache_hit id=33851
+Verification: Studio 4문장 미완. 다음=`인천 거주 10대 고객` 인천+10대 SQL.
+Changed files: docs/log/log.md
 
 251. 2026-08-13 인천 누락 — en_literal M2 보존 · merge 시 EnPivot 필드 복사
 Purpose: 171이 concept 없는 en_literal 슬롯을 버려 인천(M2)이 사라지고 10대만 SQL이 나왔다. glue(사는)는 concept 없으면 skip.
