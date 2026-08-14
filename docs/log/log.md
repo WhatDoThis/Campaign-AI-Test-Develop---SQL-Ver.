@@ -1,6 +1,7 @@
 # Log
 
 ## Log Index
+293. 2026-08-14 새 SQL 쓰기 · 해시 중복은 행 재사용 (v=181)
 292. 2026-08-14 WKF SQL 반영=injected_at (v=180)
 291. 2026-08-14 param_key 유사 · WKFSQL 브레드크럼 (v=179)
 290. 2026-08-14 유사 목록=조건축 · 임시SQL Program 크럼 (v=178)
@@ -295,6 +296,15 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+293. 2026-08-14 새 SQL 쓰기 · 해시 중복은 행 재사용 (v=181)
+Purpose: 임시 SQL로 이미 반영된 WKF에 들어가면 덮어쓰기 2클릭이 아니라 목록에 추가(넣기)로 가게 한다. 같은 SQL을 여러 번 넣어도 행이 늘지 않게 한다.
+Changes:
+- SQL 목록 맨 위 `[새 SQL 쓰기]` 행. 임시 조건 선택 시 버튼=`WKF에 넣기`. 기존 행 클릭만 `덮어쓰기`
+- Register: 신규 SQL(해시 없음)=1클릭 넣기. 다른 저장본 해시=2클릭. 동일 해시는 save 없이 그 id 재사용+주입
+- 기존 행 클릭 전 임시 조건은 putDraft로 보관 → 새 SQL 쓰기로 복귀
+Verification: HUMAN. JSSP v=181 + Register. 스키마/repo 재배포 없음. 임시 SQL→기존 WKF→넣기 1클릭·목록 1행 추가. 같은 조건 재넣기→행 수 그대로
+Changed files: new_ver/jssp/testWooAiRegister.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
 
 292. 2026-08-14 WKF SQL 반영=injected_at (v=180)
 Purpose: WKF SQL 목록의 반영 상태를 XML이 아니라 스키마 행으로만 본다. 2건 이상이면 가장 최근 주입 행을 표시하고, 클릭은 덮어쓰기, 이미 반영이면 WKF로 이동을 켠다.

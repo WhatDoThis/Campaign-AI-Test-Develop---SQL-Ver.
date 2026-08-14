@@ -1,6 +1,6 @@
 <%/*
  * testWooAiStudioJs.jssp (Studio 클라이언트 JS 서빙)
- * new_ver/html/testWooAiStudio.js 와 동기 유지 · v=180 · injected_at 반영 상태.
+ * new_ver/html/testWooAiStudio.js 와 동기 유지 · v=181 · 새 SQL 쓰기 · 해시 중복 방지.
  */
 response.setContentType("text/javascript;charset=utf-8");
 try {
@@ -22,6 +22,7 @@ try {
  * - renderListPane / goBack / resetCtx — 브레드크럼은 listMode 기준(목록=타입만, 선택=타입:라벨)
  * - _wfListText — WKF 행 `라벨 / 인터널네임 / SQL개수`
  * - loadSqlList — injected_at(없으면 creation_date) 최대 행을 반영됨으로 표시. 클릭 후 버튼=덮어쓰기
+ * - _appendNewSqlRow — 임시 조건 [새 SQL 쓰기]. 넣기=신규 행, 같은 SQL 해시는 행 재사용
  * - putDraft / _cacheListDrafts — R2 미반영 SQL 캐시(twStudioCache)
  * - renderChips / _chipDisplay — 칩·해석 한 줄은 params 값 우선(U4)
  *
@@ -38,7 +39,7 @@ try {
  * - intent create/reuse UI 폐기 — 분기는 목록 데이터(R4+)
  * - ST0 최초 진입 시 NL 즉시 활성(폴더 선지정 게이트 없음)
  * - Draft는 saveAiSql/DB 금지 — Register 성공 시만 DB
- * - Served /woo/testWooAiStudioJs.jssp?v=180 · 스키마 반영(injected_at)이면 [WKF로 이동] 활성
+ * - Served /woo/testWooAiStudioJs.jssp?v=181 · 새 SQL 쓰기 · 스키마 반영이면 [WKF로 이동]
  * - Foundry done 자동 재생성은 after_foundry(재큐잉 금지)
  */
 (function () {
@@ -1164,6 +1165,69 @@ try {
     ctx.currentInjectedId = null;
   }
 
+  function _latestDraft() {
+    var drafts = _cacheListDrafts();
+    return drafts.length ? drafts[0] : null;
+  }
+
+  function _showNewSqlRow() {
+    if (_hasCompose() && !state.aiSqlId) return true;
+    return !!_latestDraft();
+  }
+
+  function _selectNewSqlWrite() {
+    _clearDelPending();
+    _clearOverwriteArm();
+    if (_hasCompose() && !state.aiSqlId) {
+      _syncRegButton();
+      loadSqlList();
+      var hKeep = $("hint");
+      if (hKeep) {
+        hKeep.className = "banner ok";
+        hKeep.textContent =
+          "\uC9C0\uAE08 \uC870\uAC74\uC785\uB2C8\uB2E4. [WKF\uC5D0 \uB123\uAE30]\uB97C \uB204\uB974\uBA74 \uC774 WKF \uBAA9\uB85D\uC5D0 \uCD94\uAC00\uD569\uB2C8\uB2E4.";
+      }
+      return;
+    }
+    var d = _latestDraft();
+    if (d) {
+      _restoreDraft(d);
+      loadSqlList();
+      return;
+    }
+  }
+
+  function _appendNewSqlRow(box) {
+    if (!box) return;
+    var el = document.createElement("div");
+    el.className = "sql-item new-sql";
+    if (!state.aiSqlId && _hasCompose()) el.className += " active";
+    var row = document.createElement("div");
+    row.className = "sid";
+    row.appendChild(document.createTextNode("\uC0C8 SQL \uC4F0\uAE30"));
+    var title = document.createElement("div");
+    var label = "";
+    if (_hasCompose() && !state.aiSqlId) label = state.nl || "";
+    else {
+      var d = _latestDraft();
+      label = d ? String(d.nl_request || "") : "";
+    }
+    if (label.length > 48) label = label.substring(0, 45) + "...";
+    title.textContent = label || "(\uC784\uC2DC \uC870\uAC74)";
+    var meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent =
+      "\uBBF8\uBC18\uC601 \u00B7 [WKF\uC5D0 \uB123\uAE30]\uB85C \uC774 WKF\uC5D0 \uCD94\uAC00";
+    el.appendChild(row);
+    el.appendChild(title);
+    el.appendChild(meta);
+    el.onclick = function () {
+      _selectNewSqlWrite();
+      return false;
+    };
+    box.appendChild(el);
+  }
+
   /* ST3~ST5(WKF 미선택): [등록] 비활성. SQL목록은 브레드크럼/뒤로. 생성 직후 [등록]→목록은 유지. */
   function _isMappingWithoutWkf() {
     if (!SHELL_MODE) return false;
@@ -1177,7 +1241,7 @@ try {
     if (!el) return;
     if (_overwriteArmed) {
       el.textContent = "\uB36E\uC5B4\uC4F0\uB824\uBA74 \uB2E4\uC2DC \uD074\uB9AD";
-    } else if (ctx.wfHasInjected && _activeWorkflowName()) {
+    } else if (ctx.wfHasInjected && _activeWorkflowName() && state.aiSqlId) {
       el.textContent = "WKF\uC5D0 \uB36E\uC5B4\uC4F0\uAE30";
     } else if (_activeWorkflowName()) {
       el.textContent = "WKF\uC5D0 \uB123\uAE30";
@@ -2901,20 +2965,31 @@ try {
         return;
       }
       if (!items.length) {
-        if (empty) {
-          empty.style.display = "";
-          empty.textContent =
-            "SQL \uC774\uB825\uC774 \uBE44\uC5B4 \uC788\uC2B5\uB2C8\uB2E4. " +
-            "\uC67C\uCABD\uC5D0\uC11C [\uC0DD\uC131] \uD6C4 \uBC18\uB4DC\uC2DC [\uB4F1\uB85D]\uC744 \uB204\uB974\uC138\uC694. " +
-            "\uC0DD\uC131\uB9CC\uC73C\uB85C\uB294 \uC5EC\uAE30\uC5D0 \uC548 \uB0A9\uB2C8\uB2E4.";
+        var showNew0 = _showNewSqlRow();
+        if (!showNew0) {
+          if (empty) {
+            empty.style.display = "";
+            empty.textContent =
+              "SQL \uC774\uB825\uC774 \uBE44\uC5B4 \uC788\uC2B5\uB2C8\uB2E4. " +
+              "\uC67C\uCABD\uC5D0\uC11C [\uC0DD\uC131] \uD6C4 \uBC18\uB4DC\uC2DC [\uB4F1\uB85D]\uC744 \uB204\uB974\uC138\uC694. " +
+              "\uC0DD\uC131\uB9CC\uC73C\uB85C\uB294 \uC5EC\uAE30\uC5D0 \uC548 \uB0A9\uB2C8\uB2E4.";
+          }
+          _resetInjectFlags();
+          _refreshOpenButtons();
+          _syncRegButton();
+          _diag("loadSqlList items=0");
+          return;
         }
+      }
+      if (empty) empty.style.display = "none";
+      if (_showNewSqlRow()) _appendNewSqlRow(box);
+      if (!items.length) {
         _resetInjectFlags();
         _refreshOpenButtons();
         _syncRegButton();
-        _diag("loadSqlList items=0");
+        _diag("loadSqlList items=0 newSql=1");
         return;
       }
-      if (empty) empty.style.display = "none";
       var curId = _pickCurrentInjectedId(items);
       ctx.currentInjectedId = curId || null;
       ctx.wfHasInjected = !!curId;
@@ -2987,8 +3062,8 @@ try {
         var hSel = $("hint");
         if (hSel) {
           hSel.className = "banner ok";
-          hSel.textContent = _hasCompose()
-            ? "\uC774 WKF\uC5D0\uB294 \uC774\uBBF8 \uBC18\uC601\uB41C SQL\uC774 \uC788\uC2B5\uB2C8\uB2E4. [WKF\uC5D0 \uB36E\uC5B4\uC4F0\uAE30]\uB85C \uC9C0\uAE08 \uC870\uAC74\uC744 \uB123\uC2B5\uB2C8\uB2E4."
+          hSel.textContent = _hasCompose() && !state.aiSqlId
+            ? "\uBAA9\uB85D \uC704 [\uC0C8 SQL \uC4F0\uAE30]\uAC00 \uC9C0\uAE08 \uC870\uAC74\uC785\uB2C8\uB2E4. [WKF\uC5D0 \uB123\uAE30]\uB85C \uCD94\uAC00\uD569\uB2C8\uB2E4."
             : "\uC774 WKF\uC5D0 \uBC18\uC601\uB41C \uC870\uAC74\uC785\uB2C8\uB2E4. \uB2E4\uB978 SQL\uC744 \uC4F0\uB824\uBA74 \uBAA9\uB85D\uC5D0\uC11C \uACE0\uB978 \uB4A4 [WKF\uC5D0 \uB36E\uC5B4\uC4F0\uAE30]\uB97C \uB204\uB974\uC138\uC694.";
         }
       }
@@ -3059,6 +3134,7 @@ try {
 
   function loadSqlItem(id) {
     clearErr();
+    if (_hasCompose() && !state.aiSqlId) putDraft();
     _diag("loadSqlItem id=" + id);
     post("testWooAiValidate.jssp", { action: "getSql", ai_sql_id: id }, function (res) {
       if (!res || !res.ok || !res.item) {
@@ -3355,7 +3431,7 @@ try {
       _wireDiagToggle();
       try {
         var dm0 = (typeof document.documentMode !== "undefined") ? String(document.documentMode) : "n/a(non-IE)";
-          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | match=" + (MATCH_ENABLED ? "1" : "0") + " | phase=" + ctx.phase + " | v=180";
+          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | match=" + (MATCH_ENABLED ? "1" : "0") + " | phase=" + ctx.phase + " | v=181";
         var bootReached = !!(window.__TW_BOOT_MSG__);
         if (bootReached) _diag(String(window.__TW_BOOT_MSG__));
         _diag(okMsg);

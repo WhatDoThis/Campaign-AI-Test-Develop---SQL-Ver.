@@ -13,14 +13,14 @@
  *
  * [Dependencies]
  * =========
- * - /woo/testWooAiStudioJs.jssp?v=180 — 클라이언트 IIFE (injected_at 반영 상태 · 덮어쓰기)
+ * - /woo/testWooAiStudioJs.jssp?v=181 — 클라이언트 IIFE (새 SQL 쓰기 · 해시 중복 시 행 재사용)
  * - Option testWooAiMatchEnabled — 1/true만 ON
  * - input_form testWooExtendWorkflow — urlViewer height=630(embed 본문+70 정합)
  *
  * [Invariants]
  * ===========
  * - MSHTML: fetch/Promise/flex/CSS변수 금지 · 한글 HTML 엔티티
- * - litmus URL v=180 필수 — 스키마 반영 행 배지 · WKF에 덮어쓰기 · WKF로 이동
+ * - litmus URL v=181 필수 — 새 SQL 쓰기 · 넣기=신규 · 기존 행=덮어쓰기
  * - NL textarea·목록 고정 height(+70) — 단독 630 / embed 510
  */
 response.setContentType("text/html;charset=utf-8");
@@ -200,6 +200,8 @@ if (!_login) {
     .sql-item.current{border-color:#059669;background:#ecfdf5;}
     .sql-item.current:hover,.sql-item.current.active{border-color:#047857;background:#d1fae5;}
     .sql-item .badge-now{display:inline-block;font-size:.68rem;font-weight:700;padding:1px 6px;margin-left:6px;background:#d1fae5;color:#047857;border:1px solid #6ee7b7;}
+    .sql-item.new-sql{border-color:#f59e0b;background:#fffbeb;}
+    .sql-item.new-sql:hover,.sql-item.new-sql.active{border-color:#d97706;background:#fef3c7;}
     .sql-item.locked{opacity:0.55;cursor:not-allowed;background:#f8fafc;}
     .sql-item.locked:hover{border-color:#e2e8f0;background:#f8fafc;}
     .sql-item .sid{font-weight:700;color:#2563eb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -316,7 +318,7 @@ if (!_login) {
   <!-- 오류 시에만 표시(#136). 정상 시 숨기고 진단 패널에만 기록 -->
   <table id="twBootTable" width="100%" bgcolor="#FFFF00" border="0" cellspacing="0" cellpadding="3" class="tw-boot-show">
     <tr><td>
-      <font id="twBootFont" face="Tahoma" size="2" color="#000000">TW-BOOT v=180 | loading&#x2026;</font>
+      <font id="twBootFont" face="Tahoma" size="2" color="#000000">TW-BOOT v=181 | loading&#x2026;</font>
     </td></tr>
   </table>
   <div id="twBoot" class="tw-boot-show">Studio boot&#x2026;</div>
@@ -335,7 +337,7 @@ if (!_login) {
         r = amp < 0 ? rest : rest.substring(0, amp);
       }
     } catch (eR) {}
-    var msg = "TW-BOOT v=180 | documentMode=" + dm + " | embed=" + emb + " | match=" + (window.__TW_MATCH_ENABLED__ ? "1" : "0") + " | _r=" + (r || "-");
+    var msg = "TW-BOOT v=181 | documentMode=" + dm + " | embed=" + emb + " | match=" + (window.__TW_MATCH_ENABLED__ ? "1" : "0") + " | _r=" + (r || "-");
     var font = document.getElementById("twBootFont");
     if (font) font.innerHTML = msg;
     var el = document.getElementById("twBoot");
@@ -414,8 +416,8 @@ if (!_login) {
     </div>
   </div>
 
-  <!-- v=180 · injected_at 반영 상태 · 덮어쓰기 · Match OFF 유지 -->
-  <script type="text/javascript" src="/woo/testWooAiStudioJs.jssp?v=180"></script>
+  <!-- v=181 · 새 SQL 쓰기 · 해시 중복 행 재사용 · Match OFF 유지 -->
+  <script type="text/javascript" src="/woo/testWooAiStudioJs.jssp?v=181"></script>
 </body>
 </html>
 <%
