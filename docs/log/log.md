@@ -1,6 +1,8 @@
 # Log
 
 ## Log Index
+316. 2026-08-21 llm 187 — _negKey Rhino 구문 오류 수정
+315. 2026-08-21 #175 회귀 — region M3 axis·cands=0 rescue (v=186)
 314. 2026-08-21 Phase Gate — 기존 구현 회귀 검증으로 정정
 313. 2026-08-21 #176 C1~C3 — Clarify Chips repo (v=185)
 312. 2026-08-21 완성 로드맵 — 남은 일만 파도 1~3으로 고정
@@ -317,6 +319,24 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+316. 2026-08-21 llm 187 — _negKey Rhino 구문 오류 수정
+Purpose: Generate `[Generate] missing ) in parenthetical` — _tryMatchOrExpand 삽입 시 _negKey 함수 헤더가 깨진 Rhino parse error.
+Changes:
+- testWooLlm.js: _negKey 선언 복구 · __v=187
+- StudioContext expectedByMod llm=187 · Studio v=187
+Verification: node --check testWooLlm.js PASS
+Changed files: new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
+
+315. 2026-08-21 #175 회귀 — region M3 axis·cands=0 rescue (v=186)
+Purpose: `전라도` 슬롯 cands=0→Foundry infeasible 회귀 수정. enPivot concept=region vs fragment residential_region M3 불일치.
+Changes:
+- fragContract 186: conceptsAxisMatch · M3 axis 동치
+- llm 186: axis attach · cands=0 rescue→groupExpand · debug rescue
+- StudioContext expectedByMod · Studio v=186
+- smoke: M3 region/residential_region
+Verification: smoke 1b.fragContract PASS
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/tools/testWooSmoke.js, docs/log/log.md
 
 314. 2026-08-21 Phase Gate — 기존 구현 회귀 검증으로 정정
 Purpose: Phase Gate를 “새 아이디어 금지”가 아니라 로드맵 작업이 #175/#176 등 기존 구현을 침해하지 않게 검증하는 절차로 정정.

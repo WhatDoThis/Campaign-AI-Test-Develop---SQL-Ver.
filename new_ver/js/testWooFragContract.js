@@ -4,7 +4,7 @@
  * Stage A / libraryLookup / Foundry publish / Dedup / Compiler가
  * 각자 복제하던 축·색인·커버·샘플바인딩을 한곳에서 제공한다.
  * 같은 tags/name 축 frag는 값 사전 공백이어도 재사용하고, 별칭은 검증 후 merge한다.
- * NL 매칭은 M1 원문⊂문장 → M2 en[] → M3 concept. {db,en} 바인딩은 db만. litmus __v=185.
+ * NL 매칭은 M1 원문⊂문장 → M2 en[] → M3 concept(axis 동치). {db,en} 바인딩은 db만. litmus __v=186.
  * 모호 슬롯은 promptHints(합집합+멤버 ≤5). 클릭은 NL 보강. 감사시각은 슬롯당 GROUP BY 1회.
  * 닫힌 enum이 있으면 후보=enum만. 별칭 db가 enum에 없으면 별칭 키(라이브 값)를 씀.
  * N대는 번역 전 {ageMin:N,ageMax:N+10}. N대~M대는 {ageMin:N,ageMax:M+10}.
@@ -22,7 +22,7 @@
  * - collectLexicon / splitByLexicon / mergeLexiconSlots / splitCompoundSlots — 카탈로그 값⊂NL 분할. identityOnly면 synonyms 제외. 한 슬롯 다축이면 자름. LLM 스팬이 더 길면 덮지 않음
  * - stemToken / isNoiseResidue — no-op (5단계: KO 사전 삭제)
  * - normalizeParamDomain / domainMatchSlot / yearMonthHits / entryDb — 값 매칭. N월→YYYY-MM. N대는 _bucket. `_group` 별칭→members[]
- * - matchEnPivotSlot / conceptOf / kindCompatible — M1→M2G(`_group`)→M2→M3 매칭. N대는 EN 다히트 전에 묶음
+ * - matchEnPivotSlot / conceptOf / conceptsAxisMatch / kindCompatible — M1→M2G→M2→M3. M3는 concept axis 동치
  * - isNegative / markNegative / inHealCooldown / stampHeal — _negative·heal 쿨다운
  * - validateBind / attachAlias / mergeParamDomainJson — 바인딩 검증(배열은 원소별 enum)·별칭 보완(문장·공백 별칭 거부)·도메인 merge(`_group` 보존, nlMap 키 삭제 금지)
  * - sampleBindSql — {{param}} 검증/Dedup용 샘플 치환(유일 구현). 배열은 'a','b'
@@ -1660,6 +1660,20 @@ testWoo.fragContract = (function () {
     return src && src.concept ? String(src.concept) : "";
   }
 
+  function _conceptsAxisMatch(slotConcept, domainConcept, kind) {
+    var sc = String(slotConcept || "");
+    var dc = String(domainConcept || "");
+    if (!sc || !dc) return false;
+    if (sc === dc) return true;
+    var sa = _axisFromConcept(sc, kind);
+    var da = _axisFromConcept(dc, "");
+    return !!(sa && da && sa === da);
+  }
+
+  function conceptsAxisMatch(slotConcept, domainConcept, kind) {
+    return _conceptsAxisMatch(slotConcept, domainConcept, kind);
+  }
+
   function _domainKind(domain) {
     var src = domain && domain._source;
     var t = src ? String(src.tier || src.kind || "").toLowerCase() : "";
@@ -1788,7 +1802,8 @@ testWoo.fragContract = (function () {
         ambiguous: true, hits: hits
       };
     var locked = conceptOf(domain);
-    if (concept && locked && concept === locked && kindCompatible(kind, domain))
+    if (concept && locked && _conceptsAxisMatch(concept, locked, kind) &&
+        kindCompatible(kind, domain))
       return {
         layer: "M3", param: "", nl: "", value: null,
         ambiguous: false, hits: [], concept: locked, kindOk: true
@@ -2747,6 +2762,7 @@ testWoo.fragContract = (function () {
     yearMonthHits: yearMonthHits,
     matchEnPivotSlot: matchEnPivotSlot,
     conceptOf: conceptOf,
+    conceptsAxisMatch: conceptsAxisMatch,
     kindCompatible: kindCompatible,
     isNegative: isNegative,
     markNegative: markNegative,
@@ -2773,4 +2789,4 @@ testWoo.fragContract = (function () {
     scoreCard: scoreCard
   };
 })();
-testWoo.fragContract.__v = "185";
+testWoo.fragContract.__v = "186";

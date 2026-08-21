@@ -14,14 +14,14 @@
  *
  * [Dependencies]
  * =========
- * - /woo/testWooAiStudioJs.jssp?v=185 — 클라이언트 IIFE (debug 트레이스)
+ * - /woo/testWooAiStudioJs.jssp?v=187 — 클라이언트 IIFE (debug 트레이스)
  * - Option testWooAiMatchEnabled — 1/true만 ON
  * - input_form testWooExtendWorkflow — urlViewer height=630(embed 본문+70 정합)
  *
  * [Invariants]
  * ===========
  * - MSHTML: fetch/Promise/flex/CSS변수 금지 · 한글 HTML 엔티티
- * - litmus URL v=185 필수 — 진단 debug 트레이스
+ * - litmus URL v=187 필수 — 진단 debug 트레이스
  * - NL textarea·목록 고정 height(+70) — 단독 630 / embed 510
  */
 response.setContentType("text/html;charset=utf-8");
@@ -329,7 +329,7 @@ if (!_login) {
   <!-- 오류 시에만 표시(#136). 정상 시 숨기고 진단 패널에만 기록 -->
   <table id="twBootTable" width="100%" bgcolor="#FFFF00" border="0" cellspacing="0" cellpadding="3" class="tw-boot-show">
     <tr><td>
-      <font id="twBootFont" face="Tahoma" size="2" color="#000000">TW-BOOT v=185 | loading&#x2026;</font>
+      <font id="twBootFont" face="Tahoma" size="2" color="#000000">TW-BOOT v=187 | loading&#x2026;</font>
     </td></tr>
   </table>
   <div id="twBoot" class="tw-boot-show">Studio boot&#x2026;</div>
@@ -348,7 +348,7 @@ if (!_login) {
         r = amp < 0 ? rest : rest.substring(0, amp);
       }
     } catch (eR) {}
-    var msg = "TW-BOOT v=185 | documentMode=" + dm + " | embed=" + emb + " | match=" + (window.__TW_MATCH_ENABLED__ ? "1" : "0") + " | _r=" + (r || "-");
+    var msg = "TW-BOOT v=187 | documentMode=" + dm + " | embed=" + emb + " | match=" + (window.__TW_MATCH_ENABLED__ ? "1" : "0") + " | _r=" + (r || "-");
     var font = document.getElementById("twBootFont");
     if (font) font.innerHTML = msg;
     var el = document.getElementById("twBoot");
@@ -432,8 +432,8 @@ if (!_login) {
     </div>
   </div>
 
-  <!-- v=185 · debug 트레이스 · Match OFF 유지 -->
-  <script type="text/javascript" src="/woo/testWooAiStudioJs.jssp?v=185"></script>
+  <!-- v=187 · debug 트레이스 · Match OFF 유지 -->
+  <script type="text/javascript" src="/woo/testWooAiStudioJs.jssp?v=187"></script>
 </body>
 </html>
 <%

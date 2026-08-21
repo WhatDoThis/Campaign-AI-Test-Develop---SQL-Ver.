@@ -669,6 +669,30 @@ function twStepFragContract() {
       twFail("1b.fragContract", "resolveNlParams scalar 서울 must stay scalar");
       return false;
     }
+    var resDom = {
+      region: {
+        required: true, type: "string",
+        enum: ["전남", "전북", "서울"],
+        nlMap: { "서울": { db: "서울", en: ["Seoul"] } }
+      },
+      _source: {
+        schema: "woo:testWooSampleCustomer", xpath: "@region",
+        concept: "residential_region", tier: "enum"
+      }
+    };
+    if (!fc.conceptsAxisMatch("region", "residential_region", "categorical")) {
+      twFail("1b.fragContract", "conceptsAxisMatch region/residential_region");
+      return false;
+    }
+    var m3Axis = fc.matchEnPivotSlot(resDom, {
+      text: "전라도", surface: "전라도", concept: "region",
+      en_literal: "Jeolla-do", kind: "categorical"
+    });
+    if (!m3Axis || String(m3Axis.layer) !== "M3") {
+      twFail("1b.fragContract", "M3 axis concept region/residential_region got " +
+        (m3Axis && m3Axis.layer));
+      return false;
+    }
     var liveDom = {
       plan_code: {
         required: true, type: "string",

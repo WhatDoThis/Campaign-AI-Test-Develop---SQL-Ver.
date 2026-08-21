@@ -13,7 +13,7 @@ response.setContentType("application/json;charset=utf-8");
  * - listWkfs / createWkf — Campaign 하위 WKF(Max 15, sqlCount=반영 SQL 건수)
  * - listRegisteredSql — 최근 반영 SQL + WKF/Program 점프 메타(분기 B)
  * - selectWkf / releaseLock — soft-lock 획득·해제(CSRF)
- * - libVersions — 로드된 testWoo.* 모듈 __v JSON (expectedByMod: foundry=170 llm=185 enPivot=178 fragContract=185 env=160 cfg=160 common=160 feasibility=164 toolkit=164 gates=163 compiler=166 repo=163 workflowUi=162 fragments=166)
+ * - libVersions — 로드된 testWoo.* 모듈 __v JSON (expectedByMod: foundry=170 llm=187 enPivot=178 fragContract=186 env=160 cfg=160 common=160 feasibility=164 toolkit=164 gates=163 compiler=166 repo=163 workflowUi=162 fragments=166)
  *
  * [Dependencies]
  * =========
@@ -59,8 +59,8 @@ try {
     loadLibrary("woo:testWooWorkflowUi.js");
     // 모듈별 기대 __v. 기본 159. heal 경로만 올림(전체 강제 재배포 방지).
     var expectedByMod = {
-      llm: "185", toolkit: "164", enPivot: "178",
-      fragContract: "185", fragments: "166", compiler: "166",
+      llm: "187", toolkit: "164", enPivot: "178",
+      fragContract: "186", fragments: "166", compiler: "166",
       foundry: "170", dedup: "160", feasibility: "164", gates: "163",
       env: "160", cfg: "160", common: "160",
       repo: "163", workflowUi: "162"

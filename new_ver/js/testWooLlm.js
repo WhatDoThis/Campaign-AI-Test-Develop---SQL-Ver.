@@ -1,7 +1,7 @@
 /*
  * testWooLlm.js (LLM Pass0·Pass1 파이프라인)
  * ==================================================
- * litmus 동기 __v=185 (분할 자식은 unmatched 유지. debug 트레이스. clarifyPick 요청단위 IN).
+ * litmus 동기 __v=187 (_negKey 구문 회귀 수정 · #175 rescue 유지).
  * EnPivot(전체 문장 1콜, 캐시만 스킵) 후 Pass1. 추출 실패 시 재입력(Pass0 우회 금지).
  * 최종 SQL은 쓰지 않음. 동기 HttpClientRequest만 사용.
  *
@@ -313,7 +313,10 @@ testWoo.llm = (function () {
         if (name && String(card.name) === name) { addHit(card); continue; }
         if (!fc) continue;
         srcConcept = fc.conceptOf ? fc.conceptOf(card.param_domain) : "";
-        if (sc.concept && srcConcept && String(sc.concept) === srcConcept &&
+        if (sc.concept && srcConcept &&
+            (String(sc.concept) === srcConcept ||
+              (fc.conceptsAxisMatch &&
+                fc.conceptsAxisMatch(sc.concept, srcConcept, sc.kind))) &&
             fc.axesCompatible(card, sc)) {
           addHit(card);
           continue;
@@ -328,10 +331,60 @@ testWoo.llm = (function () {
         if (fc.domainMatchSlot && fc.domainMatchSlot(card.param_domain, sc.text) &&
             fc.axesCompatible(card, sc))
           addHit(card);
+        else if (sc.concept && fc.axesCompatible && fc.axesCompatible(card, sc)) {
+          var axH = fc.axisFromSlot ? fc.axisFromSlot(sc) : [];
+          if (axH.length) addHit(card);
+        }
       }
       if (hits.length) sc.candidates = hits;
     }
     return slotCandidates;
+  }
+
+  function _rescueAxisCard(sc, pack) {
+    if (!sc || !pack || !pack.cards || !pack.cards.length) return null;
+    var fc = testWoo.fragContract;
+    if (!fc || !fc.axesCompatible || !fc.axisFromSlot) return null;
+    if (!sc.concept) return null;
+    var hints = fc.axisFromSlot(sc);
+    if (!hints.length) return null;
+    var ci, card, picked = null;
+    for (ci = 0; ci < pack.cards.length; ci++) {
+      card = pack.cards[ci];
+      if (!card || !fc.axesCompatible(card, sc)) continue;
+      if (!picked) { picked = card; continue; }
+      if (fc.matchEnPivotSlot) {
+        var m0 = fc.matchEnPivotSlot(picked.param_domain, sc);
+        var m1 = fc.matchEnPivotSlot(card.param_domain, sc);
+        if (m1 && m1.layer && (!m0 || !m0.layer)) picked = card;
+      }
+    }
+    return picked;
+  }
+
+  function _tryMatchOrExpand(sc, pack) {
+    if (!sc.candidates || !sc.candidates.length) {
+      var rescued = _rescueAxisCard(sc, pack);
+      if (rescued) {
+        sc.candidates = [rescued];
+        try {
+          if (typeof twDbg === "function")
+            twDbg("rescue", _slotBrief(sc) + " → " + String(rescued.name || ""));
+        } catch (eRs) { /* skip */ }
+      }
+    }
+    if (!sc.candidates || !sc.candidates.length) return { kind: "empty" };
+    var expE = _tryGroupExpand(sc, sc.candidates[0], null);
+    if (expE && expE.ok)
+      return { kind: "matched", slot: _matchedSlot(sc, expE.card, expE.match) };
+    if (expE && expE.skip === "range")
+      return { kind: "range", slot: sc };
+    return {
+      kind: "unresolved",
+      item: _unresolvedItem(sc, "value_not_in_domain", {
+        fragment: String(sc.candidates[0].name || "")
+      })
+    };
   }
 
   function _negKey(sc) {
@@ -1094,48 +1147,51 @@ testWoo.llm = (function () {
             testWoo.enPivot.isNonConditionSlot(sc)) continue;
         if (!_hasHangul(sc.text) && !_hasHangul(sc.en_literal)) continue;
       }
-      if (!sc.candidates || !sc.candidates.length) {
-        if (_isNoiseResidue(sc.text)) continue;
-        if (testWoo.enPivot && testWoo.enPivot.isNonConditionSlot &&
-            testWoo.enPivot.isNonConditionSlot(sc)) continue;
-        try {
-          if (typeof twDbg === "function")
-            twDbg("unmatched", "empty " + _slotBrief(sc) +
-              " cands=" + ((sc.candidates && sc.candidates.length) || 0));
-        } catch (eE) { /* skip */ }
-        empty.push(sc.text);
-        emptySlots.push({
+      if (_isNoiseResidue(sc.text)) continue;
+      if (testWoo.enPivot && testWoo.enPivot.isNonConditionSlot &&
+          testWoo.enPivot.isNonConditionSlot(sc)) continue;
+      var tail = _tryMatchOrExpand(sc, pack);
+      if (tail.kind === "matched") {
+        _afterMatch(sc, tail.slot.candidates && tail.slot.candidates[0], tail.slot);
+        continue;
+      }
+      if (tail.kind === "range") {
+        matchedSlots.push({
           id: sc.id,
           text: sc.text,
           hintedCategory: sc.hintedCategory || "",
           searchKeywords: sc.searchKeywords || [],
           resolvedName: sc.resolvedName || "",
           concept: sc.concept || null,
-          en_literal: sc.en_literal || ""
+          en_literal: sc.en_literal || "",
+          candidates: sc.candidates
         });
-      } else {
-        var expE = _tryGroupExpand(sc, sc.candidates[0], null);
-        if (expE && expE.ok) {
-          _afterMatch(sc, expE.card, _matchedSlot(sc, expE.card, expE.match));
-          continue;
-        }
-        if (expE && expE.skip === "range") {
-          matchedSlots.push({
-            id: sc.id,
-            text: sc.text,
-            hintedCategory: sc.hintedCategory || "",
-            searchKeywords: sc.searchKeywords || [],
-            resolvedName: sc.resolvedName || "",
-            concept: sc.concept || null,
-            en_literal: sc.en_literal || "",
-            candidates: sc.candidates
-          });
-          continue;
-        }
-        unresolved.push(_unresolvedItem(sc, "value_not_in_domain", {
-            fragment: String(sc.candidates[0].name || "")
-          }));
+        continue;
       }
+      if (tail.kind === "unresolved") {
+        try {
+          if (typeof twDbg === "function")
+            twDbg("unresolved", _slotBrief(sc) + " " +
+              String((tail.item && tail.item.reason) || ""));
+        } catch (eUr) { /* skip */ }
+        unresolved.push(tail.item);
+        continue;
+      }
+      try {
+        if (typeof twDbg === "function")
+          twDbg("unmatched", "empty " + _slotBrief(sc) +
+            " cands=" + ((sc.candidates && sc.candidates.length) || 0));
+      } catch (eE) { /* skip */ }
+      empty.push(sc.text);
+      emptySlots.push({
+        id: sc.id,
+        text: sc.text,
+        hintedCategory: sc.hintedCategory || "",
+        searchKeywords: sc.searchKeywords || [],
+        resolvedName: sc.resolvedName || "",
+        concept: sc.concept || null,
+        en_literal: sc.en_literal || ""
+      });
     }
     if (unresolved.length) {
       return {
@@ -2112,4 +2168,4 @@ testWoo.llm = (function () {
     _readResponseBody: _readResponseBody
   };
 })();
-testWoo.llm.__v = "185";
+testWoo.llm.__v = "187";
