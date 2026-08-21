@@ -12,7 +12,8 @@
 
 ### 샘플 시드 표준 (`new_ver/workflow/testWooSampleSeed.js`)
 
-- 대상: **`woo:testWooSampleCustomer`**, **`woo:testWooSampleSubscription`** 만 (테스트 전용 mart)
+- 대상: **`woo:testWooSampleCustomer`**, **`woo:testWooSampleSubscription`** (`testWooSampleSeed.js`)
+- 추가 mart: **`woo:testWooSampleDevice`**, **`woo:testWooSampleBill`**, **`woo:testWooSampleApp`** (`testWooSampleSeed2.js`, 기존 customer_id만)
 - 적재: `_writeCustomer` / `_writeSubscription` → E4X doc + `xtk.session.Write(insert)`
 - 삭제: id 조회 후 `Write(delete)` — SQL DELETE 아님
 - 실행: **워크플로우 JavaScript code** activity (DB 클라이언트·수동 SQL 아님)

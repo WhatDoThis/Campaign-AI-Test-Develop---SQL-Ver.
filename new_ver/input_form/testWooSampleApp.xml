@@ -1,0 +1,15 @@
+<!--
+woo:testWooSampleApp (Test Woo Sample App Form)
+form name = 스키마 name. 고객당 앱채널 1건.
+-->
+<form _cs="Test Woo Sample App" entity-schema="woo:testWooSampleApp" img="xtk:form.png"
+      label="Test Woo Sample App" name="testWooSampleApp" namespace="woo" type="notebook"
+      xtkschema="xtk:form">
+  <container label="App">
+    <input xpath="@customer_id"/>
+    <input xpath="@app_status"/>
+    <input xpath="@push_consent"/>
+    <input xpath="@last_login"/>
+    <input xpath="@channel"/>
+  </container>
+</form>

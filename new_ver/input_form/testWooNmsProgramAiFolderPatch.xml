@@ -1,0 +1,21 @@
+<!--
+  testWooXtkFolderAiFolderPatch.xml (파일명 레거시 · 대상은 xtk:folder)
+  =====================================================================
+  Folder properties > Advanced parameters… > Internal data 최하단.
+
+  [대상] Input forms / xtk:folder
+  [위치] lib/formAdvancedParam 안 @fullName 다음 · Audit separator 직전
+
+  [Prereq]
+  - woo:folder + woo:program 스키마 · Update database structure
+  - woo:testWooExtendFolder 등록 (entity-schema=nms:program)
+
+  [Insert]
+-->
+
+        <form colspan="2" label="AI Studio folder" ref="woo:testWooExtendFolder:lib/aiFolderFlag"/>
+
+<!--
+  [대안 인라인]
+        <input colspan="2" label="AI Studio folder" type="checkbox" xpath="@isAiFolder"/>
+-->

@@ -1,21 +1,26 @@
 <%
 response.setContentType("application/json;charset=utf-8");
 /*
- * testWooAiValidate.jssp (검증·카운트·카탈로그·SQL목록 통합)
- * ==========================================================
- * setContentType은 KA-14685대로 최상단.
- * 게이트: plan fragment DB active (allowedNames 폐기).
+ * testWooAiValidate.jssp (검증·카운트·SQL 이력 API)
+ * ==================================================
+ * plan gates 재실행·COUNT·fragment catalog·WKF별 SQL CRUD.
+ * setBindPick/getBindPick으로 폼 Apply용 ai_sql_id를 Option에 저장.
  *
- * [Endpoint]
- * =======================
- * POST /woo/testWooAiValidate.jssp
- *   action=validate|count|catalog|listSql|getSql|deleteSql|setBindPick|getBindPick
+ * [Main Functions]
+ * ===========
+ * - validate — compile+runAll gates 결과
+ * - count — 대상자 수 집계
+ * - catalog — active fragment 목록
+ * - listSql / getSql / deleteSql — WKF SQL 이력(CSRF: delete)
+ * - setBindPick / getBindPick — workflow별 선택 id Option
+ * - listRecentNl / pushRecentNl — 로그인별 최근 NL 질문(답변 없음)
  *
  * [Dependencies]
  * =========
  * - woo:testWooCommon.js (+ Config/Fragments/Compiler/Gates/Repository by action)
- * - setBindPick: Studio SQL 클릭/등록 → Option 에 선택 id 저장 (폼 Apply 가 읽음)
- * - deleteSql: CSRF + repo.deleteAiSql (이력 행 삭제)
+ * - right testWooAiSqlGenerate · schema woo:testWooAiSql, woo:testWooAiFragment
+ * - Option testWooAiBindPick_{login} · testWooAiNlRecent_{login}
+ * - action별 loadLibrary 직후 twRequireLib (#160)
  */
 try {
   TW_RESPONSE = response;
@@ -45,14 +50,70 @@ try {
     _runGetBindPick(p);
   } else if (action === "deletesql") {
     _runDeleteSql(p);
+  } else if (action === "listrecentnl") {
+    _runListRecentNl();
+  } else if (action === "pushrecentnl") {
+    _runPushRecentNl(p);
   } else {
     throw new Error(
       "unknown action: " + action +
-      " (validate|count|catalog|listSql|getSql|deleteSql|setBindPick|getBindPick)"
+      " (validate|count|catalog|listSql|getSql|deleteSql|setBindPick|getBindPick|listRecentNl|pushRecentNl)"
     );
   }
 } catch (e) {
   handleApiError(e);
+}
+
+function _twRecentNlOptionName() {
+  var login = "anon";
+  try {
+    if (application.operator && application.operator.login)
+      login = String(application.operator.login);
+  } catch (eLogin) {}
+  return "testWooAiNlRecent_" + login;
+}
+
+function _parseRecentNl(raw) {
+  var arr = [];
+  try { arr = JSON.parse(String(raw || "[]")); } catch (eP) { arr = []; }
+  if (!arr || typeof arr.length !== "number") return [];
+  var out = [];
+  var i, s;
+  for (i = 0; i < arr.length && out.length < 8; i++) {
+    s = String(arr[i] == null ? "" : arr[i]).replace(/^\s+|\s+$/g, "");
+    if (s.length > 240) s = s.substring(0, 240);
+    if (s) out.push(s);
+  }
+  return out;
+}
+
+function _runListRecentNl() {
+  var key = _twRecentNlOptionName();
+  var raw = "";
+  try { raw = String(getOption(key) || ""); } catch (eGet) { raw = ""; }
+  jsonOut({ ok: true, items: _parseRecentNl(raw), option: key });
+}
+
+function _runPushRecentNl(p) {
+  var q = String(p.text != null ? p.text : (p.nl || "")).replace(/^\s+|\s+$/g, "");
+  if (q.length > 240) q = q.substring(0, 240);
+  var key = _twRecentNlOptionName();
+  if (!q) {
+    jsonOut({ ok: true, items: [], option: key });
+    return;
+  }
+  var raw = "";
+  try { raw = String(getOption(key) || ""); } catch (eGet) { raw = ""; }
+  var cur = _parseRecentNl(raw);
+  var next = [q];
+  var i;
+  for (i = 0; i < cur.length && next.length < 8; i++) {
+    if (cur[i] !== q) next.push(cur[i]);
+  }
+  try { setOption(key, JSON.stringify(next)); } catch (eSet) {
+    throw new Error("pushRecentNl failed: " + eSet);
+  }
+  jsonOut({ ok: true, items: next, option: key });
 }
 
 function _twBindPickOptionName() {
@@ -110,16 +171,24 @@ function _runGetBindPick(p) {
 
 function _runCatalog() {
   loadLibrary("woo:testWooConfig.js");
+  loadLibrary("woo:testWooFragContract.js");
   loadLibrary("woo:testWooFragments.js");
+  twRequireLib("woo:testWooFragments.js", (typeof testWoo !== "undefined") && testWoo.fragments);
   jsonOut({ ok: true, categories: testWoo.fragments.listCategories() });
 }
 
 function _runCount(p) {
-  if (!p.plan) throw new Error("plan missing");
+  if (!p.plan) throw new Error("Validate/count: plan missing");
   loadLibrary("woo:testWooConfig.js");
+  loadLibrary("woo:testWooFragContract.js");
   loadLibrary("woo:testWooFragments.js");
+  loadLibrary("woo:testWooToolkit.js");
   loadLibrary("woo:testWooCompiler.js");
   loadLibrary("woo:testWooGates.js");
+  twRequireLib("woo:testWooFragContract.js", (typeof testWoo !== "undefined") && testWoo.fragContract);
+  twRequireLib("woo:testWooFragments.js", (typeof testWoo !== "undefined") && testWoo.fragments);
+  twRequireLib("woo:testWooCompiler.js", (typeof testWoo !== "undefined") && testWoo.compiler);
+  twRequireLib("woo:testWooGates.js", (typeof testWoo !== "undefined") && testWoo.gates);
   var compiled = testWoo.compiler.compile(p.plan);
   jsonOut({
     ok: true,
@@ -132,11 +201,17 @@ function _runCount(p) {
 }
 
 function _runValidate(p) {
-  if (!p.plan) throw new Error("plan missing");
+  if (!p.plan) throw new Error("Validate: plan missing");
   loadLibrary("woo:testWooConfig.js");
+  loadLibrary("woo:testWooFragContract.js");
   loadLibrary("woo:testWooFragments.js");
+  loadLibrary("woo:testWooToolkit.js");
   loadLibrary("woo:testWooCompiler.js");
   loadLibrary("woo:testWooGates.js");
+  twRequireLib("woo:testWooFragContract.js", (typeof testWoo !== "undefined") && testWoo.fragContract);
+  twRequireLib("woo:testWooFragments.js", (typeof testWoo !== "undefined") && testWoo.fragments);
+  twRequireLib("woo:testWooCompiler.js", (typeof testWoo !== "undefined") && testWoo.compiler);
+  twRequireLib("woo:testWooGates.js", (typeof testWoo !== "undefined") && testWoo.gates);
 
   var compiled = testWoo.compiler.compile(p.plan);
   var results = testWoo.gates.runAll(p.plan, compiled.sql);
@@ -159,7 +234,8 @@ function _runListSql(p) {
   var wf = String(p.workflow_name || p.workflowName || "").replace(/^\s+|\s+$/g, "");
   if (!wf) throw new Error("workflow_name missing");
   loadLibrary("woo:testWooRepository.js");
-  if (!testWoo.repo || typeof testWoo.repo.listAiSqlByWorkflow !== "function") {
+  twRequireLib("woo:testWooRepository.js", (typeof testWoo !== "undefined") && testWoo.repo);
+  if (typeof testWoo.repo.listAiSqlByWorkflow !== "function") {
     throw new Error(
       "testWoo.repo.listAiSqlByWorkflow missing — redeploy JS Code woo:testWooRepository.js " +
       "(uses xtk.queryDef; local new_ver already has the function)"
@@ -177,7 +253,8 @@ function _runGetSql(p) {
   var id = p.ai_sql_id != null ? p.ai_sql_id : p.id;
   if (id == null || id === "") throw new Error("ai_sql_id missing");
   loadLibrary("woo:testWooRepository.js");
-  if (!testWoo.repo || typeof testWoo.repo.getAiSqlById !== "function") {
+  twRequireLib("woo:testWooRepository.js", (typeof testWoo !== "undefined") && testWoo.repo);
+  if (typeof testWoo.repo.getAiSqlById !== "function") {
     throw new Error(
       "testWoo.repo.getAiSqlById missing — redeploy JS Code woo:testWooRepository.js"
     );
@@ -195,7 +272,8 @@ function _runDeleteSql(p) {
   var id = p.ai_sql_id != null ? p.ai_sql_id : p.id;
   if (id == null || id === "") throw new Error("ai_sql_id missing");
   loadLibrary("woo:testWooRepository.js");
-  if (!testWoo.repo || typeof testWoo.repo.deleteAiSql !== "function") {
+  twRequireLib("woo:testWooRepository.js", (typeof testWoo !== "undefined") && testWoo.repo);
+  if (typeof testWoo.repo.deleteAiSql !== "function") {
     throw new Error(
       "testWoo.repo.deleteAiSql missing — redeploy JS Code woo:testWooRepository.js"
     );

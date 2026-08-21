@@ -1,18 +1,24 @@
 /*
- * testWooGates.js (최소 검증 · server-side)
- * ========================================
- * CNF plan + G1 구문 + param_domain + DB active fragment.
- * Stage A 후보 밖 거절은 LLM Pass1 전용.
- * fragmentSqlContract: sql_text가 grain 단일 SELECT인지 (등록·컴파일 전 계약).
+ * testWooGates.js (Plan·Fragment 검증 게이트)
+ * ==================================================
+ * litmus 동기 __v=163 (planCode enum∪nlMap·plan_code 별칭).
+ * CNF plan·fragment sql_text·param_domain 최소 검증.
+ * Stage A 후보 밖 fragment 거절은 LLM Pass1 전용.
+ * enum은 nlMap db와 합친다. {db,en} 는 db만. snake↔camel 별칭. 배열 params는 원소별.
+ * #168-B: fragmentSqlContract는 {{param}} 템플릿 허용(치환 전). 최종 SQL만 unresolved 금지.
  *
  * [Main Functions]
  * ===========
- * - g1Syntax / validatePlan / runAll / fragmentSqlContract / validateFragment / checkScopePlan
+ * - g1Syntax — SELECT-only·금지 구문 정적 검사
+ * - validatePlan — plan 구조·active fragment·SCOPE
+ * - runAll — plan+compile 전체 게이트 일괄 실행
+ * - fragmentSqlContract — sql_text grain 단일 SELECT 계약
+ * - validateFragment — fragment 등록 필드 검증
+ * - checkScopePlan — plan scope_key 일관성
  *
  * [Dependencies]
  * =========
- * - testWoo.fragments.getByName
- * - loadLibrary("woo:testWooGates.js")
+ * - testWoo.fragments.getByName — active fragment 존재 확인
  */
 var testWoo = testWoo || {};
 testWoo.gates = (function () {
@@ -23,12 +29,15 @@ testWoo.gates = (function () {
   }
 
   // 1. [G1] syntax
-  function g1Syntax(sql) {
+  // opts.allowParamPlaceholders: fragment 템플릿(sql_text) 검사용 — {{param}} 허용
+  function g1Syntax(sql, opts) {
+    opts = opts || {};
     var raw = String(sql || "");
     if (/"/.test(raw)) return _fail("G1", "quoted identifiers (\") forbidden");
     var s = _stripSqlNoise(raw);
     if (/<%|%>/.test(s)) return _fail("G1", "JST token (<% %>) found");
-    if (/\{\{/.test(s)) return _fail("G1", "unresolved {{param}} token");
+    if (!opts.allowParamPlaceholders && /\{\{/.test(s))
+      return _fail("G1", "unresolved {{param}} token");
     if (s.indexOf(";") >= 0) return _fail("G1", "semicolon forbidden");
     if (/\b(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|MERGE)\b/i.test(s))
       return _fail("G1", "DDL/DML forbidden");
@@ -37,15 +46,19 @@ testWoo.gates = (function () {
   }
 
   // 2. fragment sql_text 계약 — SELECT 리스트가 grain 컬럼 하나 (등록 전·컴파일 시)
+  // #167/#168-B: 저장본은 {{param}} 템플릿. 치환 전 계약 검사에서는 placeholder 허용.
   function fragmentSqlContract(sqlText, keyColumn) {
     var s = _stripSqlNoise(String(sqlText || ""));
     if (!String(sqlText || "").replace(/\s+/g, ""))
       return _fail("FRAG", "sql_text empty");
     if (/^\s*WITH\b/i.test(s))
       return _fail("FRAG", "sql_text must not start with WITH (subquery wrap 불가)");
-    var syn = g1Syntax(sqlText);
+    var syn = g1Syntax(sqlText, { allowParamPlaceholders: true });
     if (!syn.ok) return _fail("FRAG", syn.reason);
-    return _checkSelectIsGrain(s, keyColumn);
+    // grain 검사 시 {{param}} 토큰은 식별자가 아니므로 플레이스홀더를 제거한 뒤 본다
+    var sGrain = String(sqlText || "").replace(/\{\{\w+\}\}/g, "0");
+    sGrain = _stripSqlNoise(sGrain);
+    return _checkSelectIsGrain(sGrain, keyColumn);
   }
 
   // 3. CNF plan — active fragment + SCOPE
@@ -54,9 +67,10 @@ testWoo.gates = (function () {
     if (!plan.grainKey) return _fail("PLAN", "grainKey missing");
     if (_isArray(plan.unmatched) && plan.unmatched.length)
       return _fail("PLAN", "unmatched conditions remain: " + plan.unmatched.join(", "));
-    if (!_isArray(plan.include) || !plan.include.length)
-      return _fail("PLAN", "include empty");
+    if (!_isArray(plan.include)) plan.include = [];
     if (!_isArray(plan.exclude)) plan.exclude = [];
+    if (!plan.include.length && !plan.exclude.length)
+      return _fail("PLAN", "include empty");
 
     var scopeErr = checkScopePlan(plan);
     if (scopeErr) return _fail("SCOPE", scopeErr);
@@ -119,9 +133,15 @@ testWoo.gates = (function () {
     if (!domainParse.ok) return _fail("PLAN", path + ": param_domain JSON invalid: " + item.fragment);
     var domain = domainParse.value || {};
     var params = item.params || {};
-    for (var pk in domain) {
-      if (!domain.hasOwnProperty(pk)) continue;
-      var spec = domain[pk] || {};
+    // sql_text {{}} 만 검사. 도메인 키는 planCode↔plan_code 별칭으로 합친다.
+    var need = {};
+    var sql = String(f.sql_text || "");
+    var re = /\{\{(\w+)\}\}/g;
+    var m;
+    while ((m = re.exec(sql)) != null) need[m[1]] = 1;
+    for (var pk in need) {
+      if (!need.hasOwnProperty(pk)) continue;
+      var spec = _specForParam(domain, pk);
       var val = params[pk];
       var missing = (val == null || val === "");
       if (spec.required && missing)
@@ -133,11 +153,90 @@ testWoo.gates = (function () {
     return _ok("PLAN");
   }
 
-  function _checkTypeEnumRange(val, spec, path) {
+  function _aliasParamKey(key) {
+    var k = String(key || "");
+    if (!k) return "";
+    if (k.indexOf("_") >= 0)
+      return k.replace(/_([a-zA-Z])/g, function (_, c) {
+        return String(c).toUpperCase();
+      });
+    return k.replace(/[A-Z]/g, function (c) {
+      return "_" + String(c).toLowerCase();
+    });
+  }
+
+  function _enumDb(v) {
+    if (v == null) return null;
+    if (typeof v === "object" && !_isArray(v)) {
+      if (v.db != null && typeof v.db !== "object") return v.db;
+      return null;
+    }
+    return v;
+  }
+
+  function _addEnum(list, v) {
+    var dbv = _enumDb(v);
+    if (dbv == null || dbv === "") return;
+    var i;
+    for (i = 0; i < list.length; i++) {
+      if (String(list[i]) === String(dbv)) return;
+    }
+    list.push(dbv);
+  }
+
+  function _collectEnum(spec) {
+    var enumList = [];
+    if (!spec) return enumList;
+    var ei, nk;
     if (spec.enum && _isArray(spec.enum)) {
+      for (ei = 0; ei < spec.enum.length; ei++) _addEnum(enumList, spec.enum[ei]);
+    }
+    if (spec.nlMap && typeof spec.nlMap === "object") {
+      for (nk in spec.nlMap) {
+        if (!spec.nlMap.hasOwnProperty(nk)) continue;
+        _addEnum(enumList, spec.nlMap[nk]);
+      }
+    }
+    return enumList;
+  }
+
+  function _specForParam(domain, pk) {
+    var spec = (domain && domain[pk]) || null;
+    var alt = _aliasParamKey(pk);
+    var altSpec = (alt && alt !== pk && domain && domain[alt]) ? domain[alt] : null;
+    if (!spec && !altSpec) return {};
+    if (!spec) return altSpec;
+    if (!altSpec) return spec;
+    var out = {};
+    var k;
+    for (k in spec) {
+      if (spec.hasOwnProperty(k)) out[k] = spec[k];
+    }
+    var union = _collectEnum(spec);
+    var extra = _collectEnum(altSpec);
+    var xi;
+    for (xi = 0; xi < extra.length; xi++) _addEnum(union, extra[xi]);
+    if (union.length) out.enum = union;
+    if (spec.required || altSpec.required) out.required = true;
+    if (!out.type) out.type = spec.type || altSpec.type;
+    return out;
+  }
+
+  function _checkTypeEnumRange(val, spec, path) {
+    if (_isArray(val)) {
+      if (!val.length) return _fail("PLAN", "empty array param: " + path);
+      var ai;
+      for (ai = 0; ai < val.length; ai++) {
+        var rA = _checkTypeEnumRange(val[ai], spec, path + "[" + ai + "]");
+        if (!rA.ok) return rA;
+      }
+      return _ok("PLAN");
+    }
+    var enumList = _collectEnum(spec);
+    if (enumList.length) {
       var ok = false;
-      for (var i = 0; i < spec.enum.length; i++) {
-        if (String(spec.enum[i]) === String(val)) { ok = true; break; }
+      for (var i = 0; i < enumList.length; i++) {
+        if (String(enumList[i]) === String(val)) { ok = true; break; }
       }
       if (!ok) return _fail("PLAN", "param not in enum: " + path + "=" + val);
     }
@@ -236,8 +335,9 @@ testWoo.gates = (function () {
       if (!scopeGroups[sk]) scopeGroups[sk] = [];
       scopeGroups[sk].push({ group: groupIdx, role: role, fragment: item.fragment });
     }
-    for (var gi = 0; gi < plan.include.length; gi++) {
-      var any = plan.include[gi].any || [];
+    var incG = plan.include || [];
+    for (var gi = 0; gi < incG.length; gi++) {
+      var any = (incG[gi] && incG[gi].any) || [];
       for (var ai = 0; ai < any.length; ai++) noteScope(any[ai], gi, "include");
     }
     for (var ei = 0; ei < (plan.exclude || []).length; ei++)
@@ -366,3 +466,4 @@ testWoo.gates = (function () {
     checkScopePlan: checkScopePlan
   };
 })();
+testWoo.gates.__v = "163";

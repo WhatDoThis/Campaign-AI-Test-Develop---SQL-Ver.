@@ -1,0 +1,105 @@
+<%
+response.setContentType("application/json;charset=utf-8");
+/*
+ * testWooAiMatch.jssp (조건→WKF 매칭 API)
+ * ==================================================
+ * plan을 기준으로 기존 WKF/SQL과 유사도 매칭.
+ * dedup(Jaccard·hash)과 discover(값 대조) 모드를 지원한다.
+ *
+ * [Main Functions]
+ * ===========
+ * - matchByPlan — mode·threshold·campaign_id로 items 반환
+ * - disabled — Option OFF 시 빈 items + 안내 message
+ *
+ * [Dependencies]
+ * =========
+ * - woo:testWooCommon.js, Config, Fragments, Compiler, Lifecycle
+ * - woo:testWooRepository.js, WorkflowClone.js, Match.js
+ * - right testWooAiSqlGenerate · Option testWooAiMatchEnabled
+ *
+ * [Invariants]
+ * ===========
+ * - Option testWooAiMatchEnabled 기본 OFF — AI·코드가 ON 금지
+ * - OFF 시 plan 없이 disabled 빈 목록 (plan missing로 Generate와 혼동 금지)
+ * - UI "포함/일치" 단정 금지 — compare[] 값 대조 필수
+ * - Match ON 경로 loadLibrary 직후 twRequireLib (#160)
+ */
+try {
+  TW_RESPONSE = response;
+  TW_REQUEST = request;
+  TW_DOCUMENT = document;
+  loadLibrary("woo:testWooCommon.js");
+  requireRight("testWooAiSqlGenerate");
+
+  var p = readPayload();
+
+  var matchOn = false;
+  try {
+    var optRaw = String(getOption("testWooAiMatchEnabled") || "");
+    optRaw = optRaw.replace(/^\s+|\s+$/g, "").toLowerCase();
+    matchOn =
+      optRaw === "1" ||
+      optRaw === "true" ||
+      optRaw === "yes" ||
+      optRaw === "on";
+  } catch (eOpt) {
+    matchOn = false;
+  }
+  /* Option OFF면 plan 없이도 빈 목록 — plan missing로 Generate 실패처럼 보이지 않게 */
+  if (!matchOn) {
+    jsonOut({
+      ok: true,
+      disabled: true,
+      mode: String(p.mode || "dedup"),
+      items: [],
+      count: 0,
+      message:
+        "\uC870\uAC74 \uB9E4\uCE6D \uAE30\uB2A5\uC740 \uC815\uD655\uB3C4 \uAC1C\uC120 \uC911\uC785\uB2C8\uB2E4. \uC0C8 \uC870\uAC74\uC73C\uB85C \uC0DD\uC131\uD574 \uC8FC\uC138\uC694.",
+      campaign_id: String(p.campaign_id || p.operation_id || "")
+    });
+  } else {
+
+  if (!p.plan) throw new Error("Match: plan missing");
+
+  loadLibrary("woo:testWooConfig.js");
+  loadLibrary("woo:testWooFragContract.js");
+  loadLibrary("woo:testWooFragments.js");
+  loadLibrary("woo:testWooCompiler.js");
+  loadLibrary("woo:testWooLifecycle.js");
+  loadLibrary("woo:testWooRepository.js");
+  loadLibrary("woo:testWooWorkflowClone.js");
+  loadLibrary("woo:testWooMatch.js");
+  twRequireLib("woo:testWooFragments.js", (typeof testWoo !== "undefined") && testWoo.fragments);
+  twRequireLib("woo:testWooCompiler.js", (typeof testWoo !== "undefined") && testWoo.compiler);
+  twRequireLib("woo:testWooLifecycle.js", (typeof testWoo !== "undefined") && testWoo.lifecycle);
+  twRequireLib("woo:testWooRepository.js", (typeof testWoo !== "undefined") && testWoo.repo);
+  twRequireLib("woo:testWooWorkflowClone.js", (typeof testWoo !== "undefined") && testWoo.wfClone);
+  twRequireLib("woo:testWooMatch.js", (typeof testWoo !== "undefined") && testWoo.match);
+
+  var campaignId = String(p.campaign_id || p.operation_id || "");
+  var mode = String(p.mode || "dedup").replace(/^\s+|\s+$/g, "").toLowerCase();
+  if (mode !== "discover") mode = "dedup";
+  var thr =
+    p.threshold != null ? p.threshold : testWoo.match.JACCARD_THRESHOLD;
+  var result = testWoo.match.matchByPlan(p.plan, campaignId, {
+    threshold: thr,
+    mode: mode
+  });
+
+  jsonOut({
+    ok: true,
+    mode: result.mode || mode,
+    items: result.items,
+    count: result.count,
+    threshold: result.threshold,
+    matchKey: result.matchKey,
+    queryFragmentCount: result.queryFragmentCount,
+    scope: result.scope || "global",
+    topN: result.topN != null ? result.topN : null,
+    campaign_id: result.campaign_id
+  });
+  }
+} catch (e) {
+  handleApiError(e);
+}
+%>

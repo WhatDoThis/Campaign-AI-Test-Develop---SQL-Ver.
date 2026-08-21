@@ -2,6 +2,7 @@
 woo:testWooExtendWorkflow (Workflow 확장 Input form · Test Woo AI Studio)
 ====================================================================
 Studio(urlViewer) + 하단 Apply. urlViewer 는 container height 로 공간 예약(#130).
+urlViewer height=630 — Studio embed 작업영역 +70(NL textarea/목록) 정합.
 
 [판별 — Studio URL 칸]
 =========
@@ -37,7 +38,7 @@ schema testWooAiWorkflowUi → JS testWooWorkflowUi.js → 이 폼 (동시, Shel
 
       <enter>
         <!-- 1) SOAP 실패와 무관하게 urlViewer URL 이 항상 있도록 선행 설정 -->
-        <set expr="$(serverUrl) + '/woo/testWooAiStudio.jssp?workflowName=' + @internalName + '&amp;embed=1&amp;v=139'"
+        <set expr="$(serverUrl) + '/woo/testWooAiStudio.jssp?workflowName=' + @internalName + '&amp;embed=1&amp;v=150'"
              xpath="/tmp/@twStudioUrl"/>
         <soapCall name="ShellProbe" service="woo:testWooAiWorkflowUi">
           <param exprIn="[activities]" type="DOMElement"/>
@@ -65,13 +66,13 @@ schema testWooAiWorkflowUi → JS testWooWorkflowUi.js → 이 폼 (동시, Shel
             <param type="string" xpathOut="/tmp/@twStudioNonce"/>
           </soapCall>
           <!-- Reload: _r=tick (Iif/FormatDate 금지 — XTK-170016). tick 은 ShellPick -->
-          <set expr="$(serverUrl) + '/woo/testWooAiStudio.jssp?workflowName=' + @internalName + '&amp;embed=1&amp;v=139&amp;_r=' + [/tmp/@twStudioNonce]"
+          <set expr="$(serverUrl) + '/woo/testWooAiStudio.jssp?workflowName=' + @internalName + '&amp;embed=1&amp;v=150&amp;_r=' + [/tmp/@twStudioNonce]"
                xpath="/tmp/@twStudioUrl"/>
         </enter>
       </input>
 
-      <!-- height: Apply/재오픈 후 urlViewer 가 0높이로 접히는 것 방지 (#130) -->
-      <container colspan="3" height="560" name="twStudioViewer" nolabel="true">
+      <!-- height: Apply/재오픈 후 urlViewer 가 0높이로 접히는 것 방지 (#130) · +70 NL/목록 -->
+      <container colspan="3" height="630" name="twStudioViewer" nolabel="true">
         <input colspan="3" nolabel="true" sessionToken="true" type="UrlViewer" urlMode="true"
                urlExpr="[/tmp/@twStudioUrl]"/>
       </container>
@@ -115,7 +116,7 @@ schema testWooAiWorkflowUi → JS testWooWorkflowUi.js → 이 폼 (동시, Shel
             <param type="string" xpathOut="/tmp/@twStudioNonce"/>
           </soapCall>
           <!-- Apply 직후: _r 갱신 (Viewer 재로드용). FormatDate/Iif 금지 -->
-          <set expr="$(serverUrl) + '/woo/testWooAiStudio.jssp?workflowName=' + @internalName + '&amp;embed=1&amp;v=139&amp;_r=' + [/tmp/@twStudioNonce]"
+          <set expr="$(serverUrl) + '/woo/testWooAiStudio.jssp?workflowName=' + @internalName + '&amp;embed=1&amp;v=150&amp;_r=' + [/tmp/@twStudioNonce]"
                xpath="/tmp/@twStudioUrl"/>
           <set value="Applied. Save the workflow." xpath="/tmp/@testWooAiStatus"/>
         </enter>

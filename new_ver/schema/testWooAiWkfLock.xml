@@ -1,0 +1,39 @@
+<!--
+woo:testWooAiWkfLock (AI Studio WKF soft-lock · PoC-3 FAIL 경로)
+===============================================================
+코어 xtk:workflow @lockedBy 확장 대신 독립 테이블로 점유자 기록.
+J-9-6: 타 유저 점유 시 Studio 선택 차단.
+
+[Main Functions]
+===========
+- workflow_id + locked_by + locked_at CRUD (session.Write)
+- 기술 WF / Update database structure 영향 최소화
+
+[Attributes]
+=========
+- workflow_id  (string 64)  xtk:workflow @id (문자열)
+- workflow_name (string 64) internalName (조회 보조)
+- locked_by    (string 64)  operator login
+- locked_at    (datetime)   잠금 시각
+
+[Dependencies]
+=========
+- testWooWorkflowClone.js
+- 등록 후 Tools > Update database structure
+-->
+<srcSchema _cs="Test Woo AI WKF Lock (woo)" mappingType="sql" name="testWooAiWkfLock"
+           namespace="woo" label="Test Woo AI WKF Lock" labelSingular="WKF Lock"
+           xtkschema="xtk:srcSchema">
+
+  <element autopk="true" label="Test Woo AI WKF Lock" name="testWooAiWkfLock"
+           sqltable="testWooAiWkfLock">
+    <dbindex name="idx_wf_id" unique="true">
+      <keyfield xpath="@workflow_id"/>
+    </dbindex>
+
+    <attribute label="Workflow Id"   length="64" name="workflow_id"   type="string"/>
+    <attribute label="Workflow Name" length="64" name="workflow_name" type="string"/>
+    <attribute label="Locked By"     length="64" name="locked_by"     type="string"/>
+    <attribute label="Locked At"     name="locked_at" type="datetime"/>
+  </element>
+</srcSchema>

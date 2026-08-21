@@ -62,7 +62,7 @@ Before implementing:
 1. Syntax: Rhino-compatible JS, valid XML
 2. Contracts: JSSP response shapes match `pipeline-contracts.md`
 3. Connection: frontend `fetch` URLs match `/woo/*.jssp`
-4. Docstring: Korean header updated on modified code files
+4. Header: `.cursor/rules/module-header-docstring.mdc` (역할 / Main Functions / Dependencies)
 5. Log: append entry to `docs/log/log.md`
 
 ## External references priority

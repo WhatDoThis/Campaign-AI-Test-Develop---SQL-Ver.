@@ -1,8 +1,19 @@
 <%
 response.setContentType("application/json;charset=utf-8");
 /*
- * testWooAiQueueStatus.jssp — Foundry 큐 폴링 API
- * payload: { queueId } 또는 ?queueId=
+ * testWooAiQueueStatus.jssp (Foundry 큐 상태 API)
+ * ==================================================
+ * Generate가 enqueue한 request_queue 행의 진행 상태를 조회.
+ * Studio 클라이언트가 폴링하여 done/failed를 감지한다.
+ *
+ * [Main Functions]
+ * ===========
+ * - getQueueStatus — queueId→status·fragmentId·message·promptHints
+ *
+ * [Dependencies]
+ * =========
+ * - woo:testWooCommon.js, testWooRepository.js
+ * - right testWooAiSqlGenerate · schema woo:testWooAiRequestQueue
  */
 try {
   TW_RESPONSE = response;
@@ -23,7 +34,31 @@ try {
   if (!st) {
     jsonOut({ ok: false, error: "queue not found" });
   } else {
-    jsonOut({ ok: true, queue: st });
+    var dbg = [];
+    var ev = (st && st.evidenceLog) ? st.evidenceLog : [];
+    var ei, er;
+    for (ei = 0; ei < ev.length; ei++) {
+      er = ev[ei];
+      if (er && er.reason === "debugTrace" && er.lines && er.lines.length)
+        dbg = er.lines;
+    }
+    var promptHints = [];
+    var sr = (st && st.slotResults) || [];
+    var hi, hs;
+    for (hi = 0; hi < sr.length; hi++) {
+      hs = sr[hi] || {};
+      if (hs.promptHints && hs.promptHints.length) {
+        promptHints = hs.promptHints;
+        break;
+      }
+    }
+    jsonOut({
+      ok: true,
+      queue: st,
+      promptHints: promptHints,
+      debugOn: dbg.length > 0,
+      debugTrace: dbg
+    });
   }
 } catch (e) {
   handleApiError(e);

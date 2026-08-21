@@ -1,31 +1,23 @@
 /*
- * testWooProbe.js (읽기 전용 SQL 프로브 · server-side)
- * ====================================================
- * Foundry/게이트/dedup L3용 SELECT-only 실행. sqlExec 금지.
+ * testWooProbe.js (읽기 전용 SQL 프로브)
+ * ==================================================
+ * litmus 동기 __v=159 (#160 배포정합).
+ * Foundry·게이트·dedup L3용 SELECT-only 실행. sqlExec 금지.
+ * 방언별 LIMIT/TOP/FETCH 래핑은 limitSelect 단일 지점.
  *
  * [Main Functions]
  * ===========
- * - preflight() → {ok, code, message, dbms, dialectVerified} : 'sql' named right 사전 검증.
- *   PostgreSQL 이 아니면 logWarning 만 남기고 차단하지 않는다(방언 분기는 PG 만 실동 검증)
- * - run(sql, keyColumn, sampleLimit) → {ok, total, distinctKey, nullKey, sample, error, stage}
- * - dialect() / dialectFor(dbmsType) → {type, exceptOp, limitSelect}
- *   limitSelect(selectList, fromClause, whereSql, n, opts) 가 유일한 래핑 지점.
- *   opts={distinct,orderBy} — DISTINCT 위치는 방언별로 다르므로 selectList 에 넣지 않는다
- *   (T-SQL은 SELECT DISTINCT TOP n 순서). orderBy:null 이면 ORDER BY 생략(파생 테이블용).
- *   기본 ORDER BY 1 로 샘플 재현성 보장(Oracle FETCH FIRST / MSSQL TOP 은 정렬 없으면 비결정적)
- * - staticBlock(sql) → {ok, reason} : SELECT-only 정적 차단(주석 제거 후 금지 구문 검사)
- * - validKeyColumn(name) → boolean : keyColumn 식별자 화이트리스트
+ * - preflight — 'sql' named right 사전 검증
+ * - run — SQL+keyColumn → total·distinctKey·nullKey·sample
+ * - dialect — 현재 DBMS 방언 객체
+ * - dialectFor — dbmsType 인자 방언 객체(스모크용)
+ * - staticBlock — SELECT-only 정적 차단
+ * - validKeyColumn — keyColumn 식별자 화이트리스트
  *
  * [Dependencies]
  * =========
- * - sqlSelect / sqlGetInt (ACC server)
- * - application.getDBMSType
- * - loadLibrary("woo:testWooProbe.js")
- * Ref sqlSelect(format, query): 1번째 인자는 라벨이 아니라 결과 XML 스키마
- *   "docName,[fieldXPath:type[:length],]*" 이고 반환은 XML 객체(배열 아님).
- *   https://experienceleague.adobe.com/developer/campaign-api/api/f-sqlSelect.html
- * Ref sqlGetInt / sqlSelect 는 오퍼레이터 'sql' named right 필수 (없으면 예외).
- *   https://experienceleague.adobe.com/developer/campaign-api/api/f-sqlGetInt.html
+ * - sqlSelect·sqlGetInt — ACC server('sql' right 필수)
+ * - application.getDBMSType — exceptOp·limitSelect 분기
  */
 var testWoo = testWoo || {};
 testWoo.probe = (function () {
@@ -243,3 +235,4 @@ testWoo.probe = (function () {
     validKeyColumn: _validKeyColumn
   };
 })();
+testWoo.probe.__v = "159";

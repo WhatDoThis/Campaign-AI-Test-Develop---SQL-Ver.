@@ -20,6 +20,10 @@ Administration > Configuration > Navigation hierarchies > woo:testWooAiNav
 [배포 전 필수 치환]
 - 아래 views/view/@url 의 __CAMPAIGN_SERVER_URL__ 을 실제 Campaign 서버 베이스 URL 로 바꿀 것.
 - 실제 값은 new_ver/secrets/NEW_VER_SECRETS.md (git 제외) 참조.
+
+[1차 · Tools command]
+- PoC-0 PASS: view/viewType 유지 + rights="admin,testWooAiOperator".
+- Named right 이름은 환경별 HUMAN 확정(TBD). 임시로 메뉴 안 보이면 rights 완화 후 메모.
 -->
 <navtree entitySchema="xtk:navtree" img="nl:folders.png" label="[WOO] Test Woo AI"
          name="testWooAiNav" namespace="woo" xtkschema="xtk:navtree">
@@ -40,12 +44,9 @@ Administration > Configuration > Navigation hierarchies > woo:testWooAiNav
           <orderBy>
             <node expr="@name"/>
           </orderBy>
-          <!-- Foundry 스키마 Update 후 sysFilter 주석 해제
-          <sysFilter>
-            <condition expr="@status = 'verified'"/>
-            <condition boolOperator="AND" expr="@active = 0"/>
-          </sysFilter>
-          -->
+          <!-- 4차 자동승인: 신규 frag는 status=active · @active=1.
+               구 주석(verified AND active=0)은 승인 대기 전용이라 폐기.
+               전체 라이브러리 목록이 기본. 승인대기만 보려면 콘솔 필터 status=verified. -->
         </view>
       </nodeModel>
 
@@ -94,10 +95,13 @@ Administration > Configuration > Navigation hierarchies > woo:testWooAiNav
   </views>
 
   <commands>
+    <!-- PoC-0 PASS: 비문서화 view 유지 + rights 게이트 (1차 UI-1-1) -->
     <command label="Test Woo AI Studio" name="testWooAiStudio"
-             view="testWooAiStudio" viewType="view"/>
+             view="testWooAiStudio" viewType="view"
+             rights="admin,testWooAiOperator"/>
     <command label="Test Woo AI Gap Admin" name="testWooAiGapAdmin"
-             view="testWooAiGapAdmin" viewType="view"/>
+             view="testWooAiGapAdmin" viewType="view"
+             rights="admin,testWooAiOperator"/>
   </commands>
 
 </navtree>

@@ -1,17 +1,25 @@
 /*
- * testWooEnv.js (내장 튜닝·가드레일 상수 · server-side)
- * =====================================================
- * Git 버전관리 대상. 배포 후 값 변경 시 JS 라이브러리만 재등록하면 된다.
- * XtkOption은 시크릿 3개만: testWooAiLlmApiKey / Model / Endpoint
- * toolkit.totalCallBudget=132 (E-1: 3슬롯×36 + margin24). foundry.dailyBudget 미구현.
+ * testWooEnv.js (내장 튜닝·가드레일 상수)
+ * ==================================================
+ * litmus 동기 __v=160 (debug.enabled — 파이프라인 트레이스).
+ * Git 관리 상수. 배포 후 JS 라이브러리만 재등록하면 튜닝 반영.
+ * 시크릿은 XtkOption 3개만 — 나머지는 ENV 객체.
+ * #164: maxNewFragments=10 · tokenBudget=200000 · toolkit.totalCallBudget=384.
+ * #168-A: triage.domainProbeRowLimit · domainTtlDays (snapshotCap=valueProbeLimitMax 재사용).
  *
  * [Main Functions]
  * ===========
- * - getEnv — ENV 상수 객체 반환 (런타임 변경 없음)
+ * - getEnv — ENV 상수 객체 반환(런타임 변경 없음)
+ * - ENV — guard·llm·toolkit·foundry·triage·debug 등 내장 상수
  *
  * [Dependencies]
  * =========
- * - loadLibrary("woo:testWooEnv.js") — testWooConfig.js보다 먼저
+ * - loadLibrary("woo:testWooEnv.js") — testWooConfig.js보다 선로드
+ *
+ * [Options]
+ * =========
+ * - 시크릿 3개는 testWooConfig.js가 XtkOption에서 읽음(apiKey/model/endpoint)
+ * - llm.embedEnabled 기본 false — 스모크·승인 전 임베딩 과금 차단
  */
 var testWoo = testWoo || {};
 testWoo.env = (function () {
@@ -27,6 +35,15 @@ testWoo.env = (function () {
      * ------------------------------------------------------------------ */
     security: {
       allowedCidr: ""
+    },
+
+    /* ------------------------------------------------------------------
+     * debug — Studio #twDiag 파이프라인 트레이스
+     * enabled: true면 번역·슬롯 절단·매칭·Foundry 결정을 진단 패널에 남긴다.
+     *   끄려면 이 값만 false 로 바꾸고 Env.js 재등록.
+     * ------------------------------------------------------------------ */
+    debug: {
+      enabled: true
     },
 
     /* ------------------------------------------------------------------
@@ -68,7 +85,10 @@ testWoo.env = (function () {
       useProxy: false,
       pass0Examples: "",
       embedModel: "openai/text-embedding-3-small",
-      embedEnabled: true,
+      // 임베딩은 dedup L2 rerank 정렬에만 쓰이고 최종 verdict 에 영향이 없다(L0 해시/L3 대칭차집합이 결정).
+      // 게다가 publish 가 emb_* 를 저장하지 않아 캐시가 100% 미스이며 check() 마다 최대 9건을 재임베딩한다.
+      // 영속화(#155 Task 3) 코드는 반영됨. true 복구는 HUMAN 스모크+사용자 승인 후에만.
+      embedEnabled: false,
       pass0MaxTokens: 2048,
       pass1MaxTokens: 8192,
       triageMaxTokens: 4096,
@@ -100,9 +120,9 @@ testWoo.env = (function () {
       enabled: true,
       maxTurns: 6,
       batchSize: 3,
-      maxNewFragments: 3,
+      maxNewFragments: 10,
       namespaces: "woo",
-      tokenBudget: 60000,
+      tokenBudget: 200000,
       dailyBudget: 500000,
       gateRetries: 2,
       staleProcessingMinutes: 30
@@ -118,7 +138,10 @@ testWoo.env = (function () {
      * clarifyMaxRounds: ambiguous 재질의 상한 (슬롯당). 권장 2
      * partialExecutionAllowed: partially_infeasible 시 미리보기 SQL 허용
      * valueProbeLimit: probe_values DISTINCT 기본 limit. 권장 50, max 200
+     * valueProbeLimitMax: DISTINCT 샘플 상한(= #168 domainSnapshotCap 재사용, 중복키 금지)
      * valueProbeCardinalityCap: COUNT(DISTINCT) 초과 시 값 목록 생략. 권장 10000
+     * domainProbeRowLimit: #168-A R5 전 테이블 행수 가드. 초과 시 COUNT 생략→highCard
+     * domainTtlDays: param_domain._source 스냅샷 TTL(일). 만료 시에만 1회 갱신
      * ------------------------------------------------------------------ */
     triage: {
       enabled: true,
@@ -128,7 +151,9 @@ testWoo.env = (function () {
       partialExecutionAllowed: true,
       valueProbeLimit: 50,
       valueProbeLimitMax: 200,
-      valueProbeCardinalityCap: 10000
+      valueProbeCardinalityCap: 10000,
+      domainProbeRowLimit: 1000000,
+      domainTtlDays: 7
     },
 
     /* ------------------------------------------------------------------
@@ -142,15 +167,15 @@ testWoo.env = (function () {
     /* ------------------------------------------------------------------
      * toolkit — LLM tool calling 요청당 호출 상한 (OWASP LLM06)
      * totalCallBudget 산식:
-     *   maxNewFragments(3) * (triageCallBudget 12 + generateCallBudget 24) + margin 24
-     *   = 3*36 + 24 = 132
+     *   maxNewFragments(10) * (triageCallBudget 12 + generateCallBudget 24) + margin 24
+     *   = 10*36 + 24 = 384
      *   (maxNewFragments 만 올리면 total 도 같이 올려야 슬롯 2·3에서 기아 난다)
      * triageCallBudget / generateCallBudget: 단계별 상한 (setPhaseBudget).
      *   산출: triage ≈ maxTurns(6) × ~2콜, generate ≈ maxTurns(6) × attempts(3)
      * probeSql/probeValues/searchColumnsBudget: 다중 슬롯이 공유하는 요청 단위 상한(슬롯당 아님)
      * ------------------------------------------------------------------ */
     toolkit: {
-      totalCallBudget: 132,
+      totalCallBudget: 384,
       triageCallBudget: 12,
       generateCallBudget: 24,
       probeSqlBudget: 18,
@@ -186,3 +211,37 @@ testWoo.env = (function () {
 
   return { getEnv: getEnv, ENV: ENV };
 })();
+testWoo.env.__v = "160";
+
+testWoo.dbg = (function () {
+  "use strict";
+  var buf = [];
+  var on = null;
+  function enabled() {
+    if (on != null) return on;
+    try {
+      var e = testWoo.env && testWoo.env.getEnv ? testWoo.env.getEnv() : null;
+      on = !!(e && e.debug && e.debug.enabled);
+    } catch (eD) { on = false; }
+    return on;
+  }
+  function reset() {
+    buf = [];
+    on = null;
+  }
+  function add(step, msg) {
+    if (!enabled()) return;
+    var line = String(step || "dbg") + " | " + String(msg || "");
+    if (buf.length >= 80) return;
+    buf.push(line);
+    try { logInfo("[testWoo.dbg] " + line); } catch (eL) { /* non-ACC */ }
+  }
+  function take() {
+    return buf.slice(0);
+  }
+  return { enabled: enabled, reset: reset, add: add, take: take };
+})();
+
+function twDbg(step, msg) {
+  if (testWoo.dbg && testWoo.dbg.add) testWoo.dbg.add(step, msg);
+}

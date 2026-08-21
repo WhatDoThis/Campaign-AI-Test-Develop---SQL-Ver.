@@ -1,0 +1,50 @@
+---
+description: Korean module header docstring format for all Campaign AI code files
+alwaysApply: true
+---
+
+# Module header docstring (HUMAN READ)
+
+모든 코드 파일 상단 모듈 주석. 신규·수정 시 **같은 턴에 헤더도 맞출 것**.
+
+## 필수 섹션만 (그 외 기본 금지)
+
+```
+/*
+ * {파일명} ({역할 한 줄})
+ * ==================================================
+ * {역할 2~4줄 · 무엇을/언제/결과만 · 서술형 장문 금지}
+ *
+ * [Main Functions]
+ * ===========
+ * - fnName — 한 줄: 입력→하는 일→결과
+ * - …
+ *
+ * [Dependencies]
+ * =========
+ * - path/or/global — 어떻게 연결되는지 한 줄
+ * - Option/env key — 용도
+ */
+```
+
+## 작성 규칙
+
+| 항목 | 규칙 |
+|---|---|
+| 언어 | 설명=한국어 · 식별자(`testWoo.*`, 파일명, Option명)=원문 |
+| 역할 | 파일명 아래: **이 파일이 하는 일**만. 히스토리·차수번호·장황한 배경 넣지 말 것 |
+| Main Functions | **export/공개 API만**. private `_foo` 나열 금지. `이름 — 기능` 한 줄 |
+| Dependencies | 관련 `new_ver` 파일 · `testWoo.*` · schema · JSSP · Option/XtkOption · rights. **연결 방식** 명시 |
+| 가독성 | 불릿·짧은 절. 소설형 문단 금지 |
+| 추가 섹션 | **고중요도 파일만** Dependencies **아래**에 선택 추가 (예: `[Options]`, `[Invariants]`, `[Callers]`). 남발 금지 |
+
+## 금지
+
+- `[Endpoints/Classes/Functions]` 등 구 rule #6 장문 템플릿 복붙
+- 변경 이력 나열(`#133`, `#155`…)을 역할 문단에 길게 쌓기 — 필요 시 Main/Dependencies 한 줄 꼬리표만
+- 영어-only 헤더 (식별자 제외)
+
+## 적용 범위
+
+`new_ver/js`, `new_ver/jssp`, `new_ver/html`, schema/form/workflow XML 주석 가능 파일.  
+에이전트는 파일을 **수정할 때마다** 헤더가 위 형식인지 확인·갱신.

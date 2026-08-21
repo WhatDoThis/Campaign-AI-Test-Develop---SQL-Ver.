@@ -1,45 +1,41 @@
 /*
- * testWooToolkit.js (내부 툴킷 레지스트리 · server-side)
- * ==========================================================
- * OpenRouter tools용 spec/invoke. probe_values/search_columns + evidenceLog.
- * 스키마 파싱은 정규식이 아니라 E4X (속성 순서 자유 · label 누락 대응).
- *
- * 논리명/물리명 규칙: 도구는 논리 속성명(@name)과 물리 컬럼명(@sqlname)을 항상 함께
- * 노출하고(sqlColumn), 원시 SQL 에는 물리명만 쓴다. ACC 는 sqlname 생략 시 타입
- * 접두사를 붙여 생성하므로(customer_id → sCustomer_id) 논리명은 SQL 에서 실패한다.
- *
- * 실패 가시성: invoke 실패는 사유까지 logWarning 하고, search_columns 는 미허용·조회실패
- * namespace 를 skippedNamespaces + partialScan 으로 돌려준다. 조용히 건너뛰면
- * "조사했으나 0건"으로 위장되어 Triage 가 근거 없이 no_column 을 낸다.
- * 허용 namespace 는 cfg.foundry.namespaces 이며 오류 메시지에 목록을 함께 실어
- * 모델이 다음 턴에 자체 교정하도록 한다.
- *
- * 단계 예산(F-4): setPhaseBudget("triage"|"generate") 로 단계별 카운터를 분리한다.
- * 요청 전체 상한(totalCallBudget)은 유지하되, Triage 가 생성 예산을 잠식하지 않게 한다.
- * E-1: total/probe* 기본값은 env.toolkit 과 동일(132/18/14/18). 산식은 testWooEnv.js 주석.
+ * testWooToolkit.js (LLM Tool 레지스트리)
+ * ==================================================
+ * litmus 동기 __v=164 (search_columns 가 스키마 name/label 도 매칭. 감사 GROUP BY).
+ * OpenRouter tools용 spec·invoke·evidenceLog.
+ * Triage·Foundry가 schema 조사·probe_sql·search_columns 호출.
+ * #168-A: 탐색(툴) 결과를 frag._source 로 결정화. classifyField·fingerprint·TTL.
+ * #169: 요청 단위 invoke 캐시 · evidence에 resultCount/cacheHit/elapsedMs.
  *
  * [Main Functions]
  * ===========
- * - register / specs / invoke / env
- * - resetRequest(요청 단위 1회) / markPhase / setPhaseBudget / resetBudget(deprecated)
- * - getEvidenceLog / getEvidenceLogSince
- *
- * [Tools]
- * =========
- * - list_schemas / describe_schema : 스키마 목록·속성(name + sqlColumn + label + type)
- * - probe_sql / probe_values       : SELECT-only 실행 · 컬럼 DISTINCT 값 조사
- * - search_columns                 : 키워드로 name/label/sqlColumn 검색
+ * - register — tool name→handler 등록
+ * - specs — OpenRouter tools[] 스펙 반환
+ * - invoke — tool name+args 실행(동일 args는 요청 내 캐시, 예산 미차감)
+ * - env — 허용 namespace·예산 요약
+ * - resetRequest — 요청 단위 카운터·invoke 캐시 초기화
+ * - setPhaseBudget — triage|generate 단계 예산
+ * - markPhase — 현재 phase 표시
+ * - resetBudget — (deprecated) 전체 예산 리셋
+ * - getEvidenceLog — 누적 evidence 배열
+ * - getEvidenceLogSince — offset 이후 evidence
+ * - classifyField — schema+xpath → tier + toolCalls (메타데이터 판정). enum 속성명은 로컬/FQN 모두 매칭
+ * - listAuditColumns / auditMaxDates — datetime 수정/생성 컬럼 + 값별 MAX GROUP BY 1회
+ * - resolveDomain — 스냅샷 + _source(provenance·fingerprint)
+ * - refreshDomain — 기존 domain을 _source로 재스냅샷(후속 데이터 추가 반영)
+ * - pathFromGrain / findSchemaBySqlTable / resolveGrainSchema — 경로·스키마 추론
+ * - schemaFingerprint / checkSourceFreshness — 스키마 변화·TTL 판정
  *
  * [Dependencies]
  * =========
- * - testWoo.probe, testWoo.cfg, xtk.queryDef, application.getSchema
- * - loadLibrary("woo:testWooToolkit.js")
- * Ref sqlSelect(format, query): format="docName,@alias:type", 반환은 XML 객체
- *   https://experienceleague.adobe.com/developer/campaign-api/api/f-sqlSelect.html
- * Ref getSchema: 스크립트 종료까지 메모리에 유지 → namespace당 로드 상한 필요
- *   https://experienceleague.adobe.com/developer/campaign-api/api/m-Application-getSchema.html
- * Ref database-mapping(sqlname 접두사 규칙)
- *   https://experienceleague.adobe.com/en/docs/campaign-classic/using/configuring-campaign-classic/schema-reference/database-mapping
+ * - testWoo.probe — probe_sql·staticBlock·limitSelect
+ * - testWoo.cfg.getConfig — foundry.namespaces·toolkit 예산·triage 도메인 가드
+ * - xtk.queryDef·application.getSchema — describe_schema·search_columns
+ *
+ * [Invariants]
+ * =========
+ * - #168-A: 실행 경로에 특정 컬럼/enum 리터럴 하드코딩 금지(스키마 메타만)
+ * - 캡 초과는 partialScan/truncated + 개수로 알린다(조용히 자르지 않음)
  */
 var testWoo = testWoo || {};
 testWoo.toolkit = (function () {
@@ -56,6 +52,17 @@ testWoo.toolkit = (function () {
   var _evidenceLog = [];
   var _evidenceSeq = 0;
   var _schemaListCache = {};
+  var _classifyCache = {};
+  var _invokeCache = {};
+
+  // ACC schema type 문자열(Experience League schema-structure). 추측 추가 금지.
+  var RANGE_TYPES = {
+    byte: 1, short: 1, long: 1, int64: 1, double: 1, float: 1,
+    money: 1, percent: 1, date: 1, datetime: 1, datetimenotz: 1,
+    datetimetz: 1, timespan: 1, time: 1, timestamp: 1
+  };
+  var TEXT_HEAVY_TYPES = { memo: 1, html: 1, CDATA: 1, blob: 1, bin: 1 };
+  var FREE_TEXT_LEN = 200;
 
   // env.toolkit 과 동일하게 유지 (cfg 로드 실패 시 fallback). 산식은 testWooEnv.js 주석 참고.
   // total = maxNewFragments(3)*(triage 12 + generate 24) + margin 24 = 132
@@ -135,11 +142,54 @@ testWoo.toolkit = (function () {
     return s.length > 300 ? s.substring(0, 300) + "..." : s;
   }
 
-  function _appendEvidence(name, args, result) {
+  function _resultCountOf(result) {
+    if (!result || result.error) return 0;
+    if (result.matches && typeof result.matches.length === "number")
+      return result.matches.length;
+    if (result.schemas && typeof result.schemas.length === "number")
+      return result.schemas.length;
+    if (result.values && typeof result.values.length === "number")
+      return result.values.length;
+    if (result.columns && typeof result.columns.length === "number")
+      return result.columns.length;
+    if (result.links && typeof result.links.length === "number")
+      return result.links.length;
+    if (result.returnedAttributes != null) return Number(result.returnedAttributes) || 0;
+    if (result.distinctCount != null && !isNaN(Number(result.distinctCount)))
+      return Number(result.distinctCount);
+    if (result.ok === true && result.total != null) return Number(result.total) || 0;
+    return 0;
+  }
+
+  function _rawResultLength(result) {
+    try {
+      return String(JSON.stringify(result || {})).length;
+    } catch (eL) {
+      return 0;
+    }
+  }
+
+  function _invokeCacheKey(name, argsObj) {
+    var a = argsObj || {};
+    var keys = [];
+    for (var k in a) {
+      if (a.hasOwnProperty(k)) keys.push(k);
+    }
+    keys.sort();
+    var parts = [String(name)];
+    for (var i = 0; i < keys.length; i++) {
+      parts.push(keys[i] + "=" + String(a[keys[i]]));
+    }
+    return parts.join("|");
+  }
+
+  function _appendEvidence(name, args, result, meta) {
+    meta = meta || {};
     _evidenceSeq++;
     var matchCount = null;
     if (result && result.matches && typeof result.matches.length === "number")
       matchCount = result.matches.length;
+    var rc = meta.resultCount != null ? Number(meta.resultCount) : _resultCountOf(result);
     _evidenceLog.push({
       seq: _evidenceSeq,
       tool: name,
@@ -148,6 +198,12 @@ testWoo.toolkit = (function () {
       partialScan: !!(result && result.partialScan),
       schemaLoadFailed: !!(result && result.schemaLoadFailed),
       matchCount: matchCount,
+      resultCount: isNaN(rc) ? 0 : rc,
+      truncated: !!(result && result.truncated),
+      cacheHit: !!meta.cacheHit,
+      elapsedMs: meta.elapsedMs != null ? Number(meta.elapsedMs) : 0,
+      rawResultLength: meta.rawResultLength != null ?
+        Number(meta.rawResultLength) : _rawResultLength(result),
       at: formatDate(new Date(), "%4Y/%2M/%2D %02H:%02N:%02S")
     });
   }
@@ -177,6 +233,8 @@ testWoo.toolkit = (function () {
     _evidenceLog = [];
     _evidenceSeq = 0;
     _schemaListCache = {};
+    _classifyCache = {};
+    _invokeCache = {};
   }
 
   // 단계별 예산 카운터를 연다. markPhase 직전에 호출한다.
@@ -224,6 +282,28 @@ testWoo.toolkit = (function () {
   }
 
   function invoke(name, argsObj) {
+    var entry = _registry[String(name)];
+    if (!entry) return { error: "unknown tool: " + name };
+
+    // #169: 요청 단위 캐시 — 동일 키 재호출은 DB 미실행·예산 미차감
+    var cacheKey = _invokeCacheKey(name, argsObj);
+    if (_invokeCache.hasOwnProperty(cacheKey)) {
+      var cached = _invokeCache[cacheKey];
+      var rcHit = _resultCountOf(cached);
+      _appendEvidence(name, argsObj, cached, {
+        cacheHit: true,
+        elapsedMs: 0,
+        resultCount: rcHit,
+        rawResultLength: _rawResultLength(cached)
+      });
+      logInfo("[testWoo.toolkit] invoke name=" + name +
+        " args=" + _summarizeArgs(argsObj) +
+        " ok=" + !!(cached && !cached.error) +
+        " resultCount=" + rcHit +
+        " cacheHit=true elapsedMs=0");
+      return cached;
+    }
+
     var b = _budgets();
     if (_totalCalls >= b.total)
       return { error: "tool call budget exceeded (total " + b.total + ")" };
@@ -239,26 +319,36 @@ testWoo.toolkit = (function () {
     if (name === "search_columns" && _searchColumnsCalls >= b.searchColumns)
       return { error: "tool call budget exceeded (search_columns " + b.searchColumns + ")" };
 
-    var entry = _registry[String(name)];
-    if (!entry) return { error: "unknown tool: " + name };
-
     _totalCalls++;
     _phaseCalls++;
     if (name === "probe_sql") _probeCalls++;
     if (name === "probe_values") _probeValuesCalls++;
     if (name === "search_columns") _searchColumnsCalls++;
 
+    var t0 = new Date().getTime();
     var result;
     try {
       result = entry.impl(argsObj || {});
     } catch (e) {
       result = { error: String(e.message || e) };
     }
-    _appendEvidence(name, argsObj, result);
+    var elapsed = new Date().getTime() - t0;
+    if (!result.error) _invokeCache[cacheKey] = result;
+    var rc = _resultCountOf(result);
+    var rawLen = _rawResultLength(result);
+    _appendEvidence(name, argsObj, result, {
+      cacheHit: false,
+      elapsedMs: elapsed,
+      resultCount: rc,
+      rawResultLength: rawLen
+    });
     var ok = !!(result && !result.error);
-    // 실패 사유를 저널에 남긴다. ok=false 만 찍으면 원인 추적에 evidence_log 조회가 필요하다.
     logInfo("[testWoo.toolkit] invoke name=" + name +
-      " args=" + _summarizeArgs(argsObj) + " ok=" + ok);
+      " args=" + _summarizeArgs(argsObj) +
+      " ok=" + ok +
+      " resultCount=" + rc +
+      " truncated=" + !!(result && result.truncated) +
+      " cacheHit=false elapsedMs=" + elapsed);
     if (!ok)
       logWarning("[testWoo.toolkit] invoke failed name=" + name +
         " reason=" + String((result && result.error) || "unknown"));
@@ -389,7 +479,41 @@ testWoo.toolkit = (function () {
         id: String(r.@namespace) + ":" + String(r.@name)
       });
     }
-    return { schemas: rows };
+    // 캡을 올리지 않는다(메모리). 잘리면 반드시 partialScan 으로 알린다.
+    var capped = rows.length >= limit;
+    return {
+      schemas: rows,
+      scanned: rows.length,
+      listCap: limit,
+      partialScan: capped,
+      scanNote: capped
+        ? ("scanned " + rows.length + " of ≥" + rows.length +
+          " (list_schemas cap=" + limit + "; narrow keyword/namespace)")
+        : ("scanned " + rows.length)
+    };
+  }
+
+  function _primaryAttrNames(xml) {
+    var out = {};
+    for each (var k in xml..key) {
+      for each (var kf in k.keyfield) {
+        var xp = String(kf.@xpath || "");
+        if (xp.charAt(0) === "@") xp = xp.substring(1);
+        if (xp) out[xp.toLowerCase()] = true;
+      }
+    }
+    return out;
+  }
+
+  function _rootAutoPk(xml) {
+    var rootName = String(xml.@name || "");
+    for each (var el in xml.element) {
+      if (String(el.@name) === rootName) {
+        var ap = String(el.@autopk || "").toLowerCase();
+        return ap === "true" || ap === "1";
+      }
+    }
+    return false;
   }
 
   function _toolDescribeSchema(args) {
@@ -399,24 +523,58 @@ testWoo.toolkit = (function () {
     var ns = parts[0];
     var allowed = _allowedNamespaces();
     if (!allowed[ns]) return { error: "namespace not allowed" };
+    var offset = args.offset != null ? Number(args.offset) : 0;
+    if (isNaN(offset) || offset < 0) offset = 0;
     try {
       var xml = _schemaXml(id);
-      var cols = [];
+      var pkNames = _primaryAttrNames(xml);
+      var autoPk = _rootAutoPk(xml);
+      var allCols = [];
       for each (var a in xml..attribute) {
-        cols.push({
-          name: String(a.@name),
+        var an = String(a.@name || "");
+        var lenRaw = String(a.@length || "");
+        var lenNum = lenRaw ? Number(lenRaw) : 0;
+        if (isNaN(lenNum)) lenNum = 0;
+        allCols.push({
+          name: an,
           sqlColumn: _sqlColumnOf(a),
           label: String(a.@label || ""),
-          type: String(a.@type || "string")
+          type: String(a.@type || "string"),
+          enum: String(a.@enum || ""),
+          userEnum: String(a.@userEnum || ""),
+          length: lenNum,
+          isLink: false,
+          target: "",
+          isPrimary: !!pkNames[an.toLowerCase()],
+          isAutoPk: autoPk && !!pkNames[an.toLowerCase()]
         });
-        if (cols.length >= DESCRIBE_ATTR_CAP) break;
       }
       var links = [];
       for each (var l in xml..element) {
         if (String(l.@type) !== "link") continue;
-        links.push({ name: String(l.@name), target: String(l.@target || "") });
+        var ln = String(l.@name || "");
+        var tgt = String(l.@target || "");
+        links.push({
+          name: ln,
+          target: tgt,
+          type: "link",
+          isLink: true,
+          enum: "",
+          userEnum: "",
+          length: 0,
+          isPrimary: false,
+          isAutoPk: false
+        });
       }
-      return _capDescribe(id, cols, links);
+      var totalAttributes = allCols.length;
+      // offset 페이지 후 JSON 캡. 조용히 자르지 않고 coverage/nextOffset 제공.
+      var page = allCols.slice(offset);
+      if (page.length > DESCRIBE_ATTR_CAP) page = page.slice(0, DESCRIBE_ATTR_CAP);
+      return _capDescribe(id, page, links, {
+        offset: offset,
+        totalAttributes: totalAttributes,
+        totalLinks: links.length
+      });
     } catch (e) {
       // 조용한 실패 금지 — 스키마 로드 실패는 로그로 남기고 근거 없음을 명시한다.
       logWarning("[testWoo.toolkit.describe_schema] schema load failed: " + id +
@@ -425,17 +583,47 @@ testWoo.toolkit = (function () {
     }
   }
 
-  // 직렬화 4KB 초과 시 attribute를 잘라내고 truncated 표시 (LLM 컨텍스트 보호)
-  function _capDescribe(id, cols, links) {
-    var truncated = false;
-    var out = { schemaId: id, columns: cols, links: links, truncated: false };
-    while (cols.length > 1 && JSON.stringify(out).length > DESCRIBE_JSON_CAP) {
-      var keep = cols.length - 10;
-      cols = cols.slice(0, keep > 1 ? keep : 1);
-      truncated = true;
-      out = { schemaId: id, columns: cols, links: links, truncated: true };
+  // JSON 캡 초과 시 잘라내되 truncated·전체 N중 M·nextOffset 을 반드시 실음.
+  function _capDescribe(id, cols, links, meta) {
+    meta = meta || {};
+    var offset = meta.offset != null ? Number(meta.offset) : 0;
+    var totalAttributes = meta.totalAttributes != null ?
+      Number(meta.totalAttributes) : (cols ? cols.length : 0);
+    var working = [];
+    var ci;
+    for (ci = 0; ci < cols.length; ci++) working.push(cols[ci]);
+    var jsonTrunc = false;
+    var out = {
+      schemaId: id,
+      columns: working,
+      links: links,
+      truncated: false,
+      offset: offset,
+      totalAttributes: totalAttributes,
+      returnedAttributes: working.length,
+      totalLinks: meta.totalLinks != null ? meta.totalLinks : (links ? links.length : 0)
+    };
+    while (working.length > 1 && JSON.stringify(out).length > DESCRIBE_JSON_CAP) {
+      var keep = working.length - 10;
+      var next = [];
+      var kj;
+      var lim = keep > 1 ? keep : 1;
+      for (kj = 0; kj < lim; kj++) next.push(working[kj]);
+      working = next;
+      jsonTrunc = true;
+      out.columns = working;
+      out.returnedAttributes = working.length;
     }
-    out.truncated = truncated;
+    var end = offset + working.length;
+    var more = end < totalAttributes;
+    out.truncated = jsonTrunc || more || offset > 0;
+    out.returnedAttributes = working.length;
+    out.nextOffset = more ? end : null;
+    out.coverage = working.length + " of " + totalAttributes + " attributes";
+    if (offset > 0) out.coverage += " (offset " + offset + ")";
+    if (out.truncated)
+      out.truncateNote = "truncated:true — " + out.coverage +
+        (out.nextOffset != null ? ("; call again with offset=" + out.nextOffset) : "");
     return out;
   }
 
@@ -525,6 +713,673 @@ testWoo.toolkit = (function () {
     };
   }
 
+  function _domainCfg() {
+    var t = {};
+    try {
+      t = testWoo.cfg.getConfig().triage || {};
+    } catch (eC) {
+      try { t = testWoo.env.getEnv().triage || {}; } catch (eE) { t = {}; }
+    }
+    return {
+      snapshotCap: Number(t.valueProbeLimitMax) || 200,
+      rowLimit: Number(t.domainProbeRowLimit) || 1000000,
+      ttlDays: Number(t.domainTtlDays) || 7,
+      cardCap: Number(t.valueProbeCardinalityCap) || 10000
+    };
+  }
+
+  function _nowIso() {
+    var d = new Date();
+    function p(n) { return n < 10 ? "0" + n : String(n); }
+    return d.getUTCFullYear() + "-" + p(d.getUTCMonth() + 1) + "-" + p(d.getUTCDate()) +
+      "T" + p(d.getUTCHours()) + ":" + p(d.getUTCMinutes()) + ":" + p(d.getUTCSeconds()) + "Z";
+  }
+
+  function _xpathAttrName(xpath) {
+    var x = _trim(xpath || "");
+    if (x.charAt(0) === "@") x = x.substring(1);
+    return x;
+  }
+
+  function _findAttrMeta(schemaId, xpath) {
+    var want = _xpathAttrName(xpath).toLowerCase();
+    if (!want) return { ok: false, error: "xpath required" };
+    var xml;
+    try {
+      xml = _schemaXml(schemaId);
+    } catch (e) {
+      return { ok: false, error: String(e.message || e) };
+    }
+    var pkNames = _primaryAttrNames(xml);
+    var autoPk = _rootAutoPk(xml);
+    for each (var a in xml..attribute) {
+      var an = String(a.@name || "");
+      var sn = _sqlColumnOf(a);
+      if (an.toLowerCase() !== want && String(sn || "").toLowerCase() !== want) continue;
+      var lenRaw = String(a.@length || "");
+      var lenNum = lenRaw ? Number(lenRaw) : 0;
+      if (isNaN(lenNum)) lenNum = 0;
+      return {
+        ok: true,
+        kind: "attribute",
+        name: an,
+        sqlColumn: sn,
+        type: String(a.@type || "string"),
+        enumName: String(a.@enum || ""),
+        userEnumName: String(a.@userEnum || ""),
+        length: lenNum,
+        isLink: false,
+        target: "",
+        isPrimary: !!pkNames[an.toLowerCase()],
+        isAutoPk: autoPk && !!pkNames[an.toLowerCase()]
+      };
+    }
+    for each (var l in xml..element) {
+      if (String(l.@type) !== "link") continue;
+      var ln = String(l.@name || "");
+      if (ln.toLowerCase() !== want) continue;
+      return {
+        ok: true,
+        kind: "link",
+        name: ln,
+        sqlColumn: "",
+        type: "link",
+        enumName: "",
+        userEnumName: "",
+        length: 0,
+        isLink: true,
+        target: String(l.@target || ""),
+        isPrimary: false,
+        isAutoPk: false
+      };
+    }
+    return { ok: false, error: "xpath not found in schema" };
+  }
+
+  function _enumNameMatch(enName, want) {
+    var a = String(enName || "");
+    var b = String(want || "");
+    if (!a || !b) return false;
+    if (a === b) return true;
+    var al = a.toLowerCase();
+    var bl = b.toLowerCase();
+    if (al === bl) return true;
+    var aTail = al.indexOf(":") >= 0 ? al.substring(al.lastIndexOf(":") + 1) : al;
+    var bTail = bl.indexOf(":") >= 0 ? bl.substring(bl.lastIndexOf(":") + 1) : bl;
+    if (aTail === bTail) return true;
+    if (aTail && bTail && (aTail.indexOf(bTail) >= 0 || bTail.indexOf(aTail) >= 0))
+      return true;
+    return false;
+  }
+
+  function _enumLabelValueMap(schemaId, enumName) {
+    var out = {};
+    if (!enumName) return out;
+    var xml;
+    try {
+      xml = _schemaXml(schemaId);
+    } catch (e) {
+      return out;
+    }
+    for each (var en in xml.enumeration) {
+      if (!_enumNameMatch(String(en.@name || ""), enumName)) continue;
+      for each (var v in en.value) {
+        var vName = String(v.@name || "");
+        var vVal = String(v.@value != null ? v.@value : "");
+        if (!vVal) vVal = vName;
+        var lab = String(v.@label || vName);
+        if (lab) out[lab] = vVal;
+        if (vName) out[vName] = vVal;
+      }
+    }
+    return out;
+  }
+
+  function _estimateTableRows(schemaId) {
+    try {
+      var tbl = _resolveSqlTable(schemaId);
+      if (!_validIdent(tbl)) return { ok: false, error: "bad sqltable" };
+      return _sqlGetIntSafe("SELECT COUNT(*) FROM " + tbl);
+    } catch (e) {
+      return { ok: false, error: String(e.message || e) };
+    }
+  }
+
+  // #168-A: 메타데이터만으로 tier 판정. 컬럼명 리터럴 분기 금지.
+  function classifyField(schemaId, xpath, opts) {
+    opts = opts || {};
+    var sid = _trim(schemaId || "");
+    var xp = _trim(xpath || "");
+    var cacheKey = sid + "|" + xp + "|" + String(opts.snapshotCap != null ? opts.snapshotCap : "");
+    if (!opts.skipCache && _classifyCache[cacheKey])
+      return _classifyCache[cacheKey];
+
+    var result;
+    try {
+      result = _classifyFieldInner(sid, xp, opts);
+    } catch (eC) {
+      result = {
+        tier: "unknown",
+        evidence: "classify exception: " + String(eC.message || eC),
+        cost: "none",
+        toolCalls: [],
+        schemaId: sid,
+        xpath: xp
+      };
+    }
+    if (!opts.skipCache) _classifyCache[cacheKey] = result;
+    return result;
+  }
+
+  function _clsOut(tier, evidence, cost, toolCalls, schemaId, xpath, meta, extra) {
+    var o = {
+      tier: tier,
+      evidence: evidence,
+      cost: cost,
+      toolCalls: toolCalls || [],
+      schemaId: schemaId,
+      xpath: xpath
+    };
+    if (meta) o.meta = meta;
+    if (extra) {
+      for (var ek in extra) {
+        if (extra.hasOwnProperty(ek)) o[ek] = extra[ek];
+      }
+    }
+    return o;
+  }
+
+  function _classifyFieldInner(schemaId, xpath, opts) {
+    var dcfg = _domainCfg();
+    var snapCap = opts.snapshotCap != null ? Number(opts.snapshotCap) : dcfg.snapshotCap;
+    if (isNaN(snapCap) || snapCap < 1) snapCap = dcfg.snapshotCap;
+
+    var meta = _findAttrMeta(schemaId, xpath);
+    if (!meta.ok) {
+      return _clsOut("unknown", meta.error || "meta missing", "none", [],
+        schemaId, xpath, null, null);
+    }
+
+    // R1
+    if (meta.isLink || meta.kind === "link") {
+      return _clsOut("link", "isLink target=" + String(meta.target || ""), "none", [],
+        schemaId, xpath, meta, null);
+    }
+
+    // R2
+    if (meta.enumName || meta.userEnumName) {
+      return _clsOut("enum",
+        "enum=" + String(meta.enumName || "") + " userEnum=" + String(meta.userEnumName || ""),
+        "none", [], schemaId, xpath, meta, null);
+    }
+
+    var typ = String(meta.type || "").toLowerCase();
+
+    // R3
+    if (RANGE_TYPES[typ]) {
+      return _clsOut("range", "type=" + typ + " is numeric/temporal", "none", [],
+        schemaId, xpath, meta, null);
+    }
+
+    // R4
+    if (typ === "boolean") {
+      return _clsOut("enum", "type=boolean fixed two-value", "none", [],
+        schemaId, xpath, meta, null);
+    }
+
+    // S3 free text
+    if (TEXT_HEAVY_TYPES[typ] || (typ === "string" && meta.length > FREE_TEXT_LEN)) {
+      return _clsOut("highCard",
+        "free-text type/length type=" + typ + " length=" + meta.length,
+        "none", [], schemaId, xpath, meta, null);
+    }
+
+    // R5 string-like → COUNT(DISTINCT) with guards (probe_values 경로와 동일 SQL)
+    var rowEst = _estimateTableRows(schemaId);
+    if (rowEst.ok && rowEst.value > dcfg.rowLimit) {
+      return _clsOut("highCard",
+        "rowCount=" + rowEst.value + " > domainProbeRowLimit",
+        "count_star", ["probe_values"], schemaId, xpath, meta, null);
+    }
+
+    if (!meta.sqlColumn || !_validIdent(meta.sqlColumn)) {
+      return _clsOut("unknown", "sqlColumn missing for distinct probe", "none", [],
+        schemaId, xpath, meta, null);
+    }
+
+    var tbl;
+    try {
+      tbl = _resolveSqlTable(schemaId);
+    } catch (eT) {
+      return _clsOut("unknown",
+        "sqltable resolve failed: " + String(eT.message || eT),
+        "none", [], schemaId, xpath, meta, null);
+    }
+
+    var countQ = "SELECT COUNT(DISTINCT " + meta.sqlColumn + ") FROM " + tbl +
+      " WHERE " + meta.sqlColumn + " IS NOT NULL";
+    var cntR = _sqlGetIntSafe(countQ);
+    if (!cntR.ok) {
+      return _clsOut("unknown",
+        "COUNT(DISTINCT) failed: " + String(cntR.error || ""),
+        "count_distinct", ["probe_values"], schemaId, xpath, meta, null);
+    }
+    var dc = Number(cntR.value) || 0;
+    if (dc > snapCap) {
+      return _clsOut("highCard",
+        "COUNT(DISTINCT)=" + dc + " > snapshotCap=" + snapCap,
+        "count_distinct", ["probe_values"], schemaId, xpath, meta,
+        { distinctCount: dc });
+    }
+    return _clsOut("distinct",
+      "COUNT(DISTINCT)=" + dc + " <= snapshotCap=" + snapCap,
+      "count_distinct", ["probe_values"], schemaId, xpath, meta,
+      { distinctCount: dc });
+  }
+
+  function pathFromGrain(grainSchemaId, fieldSchemaId, xpath) {
+    var g = _trim(grainSchemaId || "");
+    var f = _trim(fieldSchemaId || "");
+    var xp = _trim(xpath || "");
+    if (!xp) return { ok: false, path: "", error: "xpath required" };
+    if (!xp || xp.charAt(0) !== "@") {
+      if (xp.charAt(0) !== "@") xp = "@" + _xpathAttrName(xp);
+    }
+    if (!g || !f || g === f) return { ok: true, path: xp, error: "" };
+    try {
+      var xml = _schemaXml(g);
+      for each (var l in xml..element) {
+        if (String(l.@type) !== "link") continue;
+        var tgt = String(l.@target || "");
+        if (tgt === f || tgt.indexOf(f) >= 0) {
+          return {
+            ok: true,
+            path: String(l.@name) + "/" + xp,
+            error: ""
+          };
+        }
+      }
+    } catch (eP) {
+      return { ok: false, path: "", error: String(eP.message || eP) };
+    }
+    return { ok: false, path: "", error: "no link from grain schema to field schema" };
+  }
+
+  // tier별 스냅샷. Foundry 최초 생성·TTL 갱신·miss 병합에서 호출.
+  function resolveDomain(schemaId, xpath, opts) {
+    opts = opts || {};
+    var sid = _trim(schemaId || "");
+    var xp = _trim(xpath || "");
+    if (xp && xp.charAt(0) !== "@") xp = "@" + _xpathAttrName(xp);
+
+    var cls = classifyField(sid, xp, {
+      snapshotCap: opts.snapshotCap,
+      skipCache: !!opts.skipCache
+    });
+    var dcfg = _domainCfg();
+    var discoveredBy = opts.discoveredBy;
+    if (!discoveredBy || !discoveredBy.length) {
+      discoveredBy = ["describe_schema"];
+      if (cls.toolCalls && cls.toolCalls.length) {
+        for (var dbi = 0; dbi < cls.toolCalls.length; dbi++)
+          discoveredBy.push(cls.toolCalls[dbi]);
+      }
+    }
+    var toolCallCount = opts.toolCallCount != null ?
+      Number(opts.toolCallCount) : (discoveredBy ? discoveredBy.length : 0);
+    var fp = "";
+    try { fp = schemaFingerprint(sid); } catch (eFp) { fp = ""; }
+    var source = {
+      schema: sid,
+      xpath: xp,
+      pathFromTarget: opts.pathFromTarget || "",
+      tier: cls.tier,
+      evidence: cls.evidence,
+      discoveredBy: discoveredBy,
+      toolCallCount: toolCallCount,
+      schemaFingerprint: fp,
+      freshness: "ok",
+      refreshedAt: _nowIso(),
+      truncated: false
+    };
+    if (opts.pathFromTarget == null || opts.pathFromTarget === "") {
+      var pfg = pathFromGrain(opts.grainSchemaId || sid, sid, xp);
+      if (pfg.ok) source.pathFromTarget = pfg.path;
+      else source.pathUnresolved = String(pfg.error || "unresolved");
+    }
+
+    var domain = { _source: source };
+    var meta = cls.meta || null;
+
+    if (cls.tier === "enum") {
+      var map = {};
+      if (meta && meta.enumName)
+        map = _enumLabelValueMap(sid, meta.enumName);
+      if (meta && meta.userEnumName) {
+        // userEnum 값은 플랫폼 저장소 — 스키마 내장 enumeration 이 없으면 라벨 맵만 비움
+        var um = _enumLabelValueMap(sid, meta.userEnumName);
+        for (var uk in um) if (um.hasOwnProperty(uk)) map[uk] = um[uk];
+      }
+      if (String(meta && meta.type || "").toLowerCase() === "boolean") {
+        map["true"] = "1";
+        map["false"] = "0";
+        map["예"] = "1";
+        map["아니오"] = "0";
+      }
+      var paramKey = _xpathAttrName(xp) || "value";
+      domain[paramKey] = {
+        required: true,
+        type: "string",
+        nlMap: map,
+        enum: []
+      };
+      var ev = [];
+      for (var mk in map) {
+        if (!map.hasOwnProperty(mk)) continue;
+        var mv = map[mk];
+        var dup = false;
+        for (var ei = 0; ei < ev.length; ei++) {
+          if (String(ev[ei]) === String(mv)) { dup = true; break; }
+        }
+        if (!dup) ev.push(mv);
+      }
+      domain[paramKey].enum = ev;
+      if (!ev.length) {
+        var pvE = _toolProbeValues({
+          schemaId: sid,
+          columnName: (meta && meta.name) ? meta.name : _xpathAttrName(xp),
+          limit: dcfg.snapshotCap
+        });
+        var valsE = (pvE && pvE.ok && pvE.values) ? pvE.values : [];
+        var viE, vvE;
+        for (viE = 0; viE < valsE.length; viE++) {
+          vvE = String(valsE[viE] || "");
+          if (!vvE) continue;
+          if (!map[vvE]) map[vvE] = vvE;
+          ev.push(vvE);
+        }
+        domain[paramKey].nlMap = map;
+        domain[paramKey].enum = ev;
+        source.evidence = String(source.evidence || "") +
+          " | enum labels empty, probe_values n=" + ev.length;
+        var hasPvE = false;
+        var pviE;
+        for (pviE = 0; pviE < discoveredBy.length; pviE++) {
+          if (discoveredBy[pviE] === "probe_values") { hasPvE = true; break; }
+        }
+        if (!hasPvE) discoveredBy.push("probe_values");
+        source.discoveredBy = discoveredBy;
+      }
+      return { ok: true, classification: cls, paramDomain: domain };
+    }
+
+    if (cls.tier === "range") {
+      var minV = null;
+      var maxV = null;
+      if (meta && meta.sqlColumn && _validIdent(meta.sqlColumn)) {
+        try {
+          var tblR = _resolveSqlTable(sid);
+          var minR = _sqlGetIntSafe(
+            "SELECT MIN(" + meta.sqlColumn + ") FROM " + tblR +
+              " WHERE " + meta.sqlColumn + " IS NOT NULL");
+          var maxR = _sqlGetIntSafe(
+            "SELECT MAX(" + meta.sqlColumn + ") FROM " + tblR +
+              " WHERE " + meta.sqlColumn + " IS NOT NULL");
+          if (minR.ok) minV = minR.value;
+          if (maxR.ok) maxV = maxR.value;
+        } catch (eR) {
+          source.evidence = String(source.evidence || "") +
+            " | min/max failed: " + String(eR.message || eR);
+        }
+      }
+      domain._range = { min: minV, max: maxV };
+      domain._bucket = { nlMap: {} };
+      return { ok: true, classification: cls, paramDomain: domain };
+    }
+
+    if (cls.tier === "distinct") {
+      var lim = dcfg.snapshotCap;
+      if (opts.snapshotCap != null) lim = Number(opts.snapshotCap) || lim;
+      var hasPv = false;
+      for (var pvi = 0; pvi < discoveredBy.length; pvi++) {
+        if (discoveredBy[pvi] === "probe_values") { hasPv = true; break; }
+      }
+      if (!hasPv) discoveredBy.push("probe_values");
+      source.discoveredBy = discoveredBy;
+      source.toolCallCount = opts.toolCallCount != null ?
+        Number(opts.toolCallCount) : discoveredBy.length;
+      var pv = _toolProbeValues({
+        schemaId: sid,
+        columnName: meta && meta.name ? meta.name : _xpathAttrName(xp),
+        limit: lim
+      });
+      if (!pv || !pv.ok) {
+        source.tier = "unknown";
+        source.evidence = "probe_values failed: " +
+          String(pv && pv.error ? pv.error : "unknown");
+        domain._source = source;
+        return { ok: false, classification: cls, paramDomain: domain, error: source.evidence };
+      }
+      if (pv.highCardinality || pv.truncated) {
+        source.tier = "highCard";
+        source.truncated = !!pv.truncated;
+        source.evidence = "probe_values truncated/highCard distinctCount=" +
+          String(pv.distinctCount);
+        domain._source = source;
+        return { ok: true, classification: cls, paramDomain: domain, snapshotSkipped: true };
+      }
+      var pKey = _xpathAttrName(xp) || "value";
+      var nlMap = {};
+      var enums = [];
+      var vals = pv.values || [];
+      for (var vi = 0; vi < vals.length; vi++) {
+        var vv = String(vals[vi]);
+        if (!vv) continue;
+        nlMap[vv] = vv;
+        enums.push(vv);
+      }
+      domain[pKey] = {
+        required: true,
+        type: "string",
+        nlMap: nlMap,
+        enum: enums
+      };
+      source.truncated = false;
+      domain._source = source;
+      return { ok: true, classification: cls, paramDomain: domain };
+    }
+
+    // link / highCard / unknown — 스냅샷 없음
+    return { ok: true, classification: cls, paramDomain: domain, snapshotSkipped: true };
+  }
+
+  // 제작 이후 적재된 값을 반영. 기존 nlMap 별칭은 유지하고 _range/enum/_source만 넓힌다.
+  function refreshDomain(domainRaw, opts) {
+    opts = opts || {};
+    var domain = {};
+    if (testWoo.fragContract && testWoo.fragContract.normalizeParamDomain)
+      domain = testWoo.fragContract.normalizeParamDomain(domainRaw);
+    else {
+      try {
+        domain = (domainRaw && typeof domainRaw === "object") ?
+          domainRaw : JSON.parse(String(domainRaw || "{}"));
+      } catch (eP) { domain = {}; }
+    }
+    var src = domain._source;
+    if (!src || !src.schema || !src.xpath)
+      return { ok: false, reason: "SOURCE_MISSING" };
+    var rd;
+    try {
+      rd = resolveDomain(src.schema, src.xpath, {
+        grainSchemaId: opts.grainSchemaId,
+        pathFromTarget: src.pathFromTarget || src.xpath,
+        discoveredBy: src.discoveredBy,
+        toolCallCount: src.toolCallCount
+      });
+    } catch (eR) {
+      return { ok: false, reason: String(eR.message || eR) };
+    }
+    if (!rd || !rd.paramDomain)
+      return { ok: false, reason: (rd && rd.error) || "resolveDomain empty" };
+    if (rd.ok === false)
+      return { ok: false, reason: rd.error || "resolveDomain failed", domain: domain };
+    var merged;
+    if (testWoo.fragContract && testWoo.fragContract.mergeParamDomainJson)
+      merged = testWoo.fragContract.mergeParamDomainJson(domain, rd.paramDomain);
+    else
+      merged = { changed: true, json: JSON.stringify(rd.paramDomain), domain: rd.paramDomain };
+    var live = rd.paramDomain || {};
+    var outDom = merged.domain || {};
+    var lk, lspec;
+    for (lk in live) {
+      if (!live.hasOwnProperty(lk) || String(lk).charAt(0) === "_") continue;
+      lspec = live[lk];
+      if (!lspec || !lspec.enum || !lspec.enum.length) continue;
+      if (!outDom[lk] || typeof outDom[lk] !== "object") continue;
+      outDom[lk].enum = lspec.enum.slice ? lspec.enum.slice(0) : lspec.enum;
+      merged.changed = true;
+    }
+    if (merged.changed && outDom) {
+      try { merged.json = JSON.stringify(outDom); } catch (eJ) { /* keep */ }
+      merged.domain = outDom;
+    }
+    return {
+      ok: true,
+      changed: !!merged.changed,
+      domain: merged.domain,
+      json: merged.json,
+      tier: rd.classification ? rd.classification.tier : String(src.tier || "")
+    };
+  }
+
+  function isDomainStale(sourceBlock) {
+    if (!sourceBlock || !sourceBlock.refreshedAt) return true;
+    var dcfg = _domainCfg();
+    var t = Date.parse(String(sourceBlock.refreshedAt));
+    if (isNaN(t)) return true;
+    var ageMs = new Date().getTime() - t;
+    return ageMs > (dcfg.ttlDays * 24 * 60 * 60 * 1000);
+  }
+
+  function _simpleHash(s) {
+    var str = String(s || "");
+    var h = 2166136261;
+    for (var i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = (h * 16777619) | 0;
+    }
+    return "fp" + String(h >>> 0);
+  }
+
+  // 스키마 구조 지문 — 속성/링크 메타만. 컬럼명 리터럴 분기 없음.
+  function schemaFingerprint(schemaId) {
+    var sid = _trim(schemaId || "");
+    if (!sid) return "";
+    var xml = _schemaXml(sid);
+    var parts = [];
+    for each (var a in xml..attribute) {
+      parts.push("A:" + String(a.@name) + "|" + String(a.@type) + "|" +
+        String(a.@enum) + "|" + String(a.@userEnum) + "|" +
+        String(_sqlColumnOf(a)) + "|" + String(a.@length || ""));
+    }
+    for each (var l in xml..element) {
+      if (String(l.@type) !== "link") continue;
+      parts.push("L:" + String(l.@name) + ">" + String(l.@target || ""));
+    }
+    parts.sort();
+    return _simpleHash(parts.join(";"));
+  }
+
+  // TTL 유효하면 fingerprint 대조 생략(매 요청 대조 금지).
+  // 반환 status: ok | ttl_expired | stale | orphaned
+  function checkSourceFreshness(sourceBlock) {
+    if (!sourceBlock || !sourceBlock.schema)
+      return { status: "orphaned", reason: "missing _source.schema" };
+    var sid = String(sourceBlock.schema);
+    try {
+      _schemaXml(sid);
+    } catch (eMiss) {
+      return {
+        status: "orphaned",
+        reason: "schema gone: " + String(eMiss.message || eMiss)
+      };
+    }
+    if (sourceBlock.xpath) {
+      var meta = _findAttrMeta(sid, sourceBlock.xpath);
+      if (!meta.ok)
+        return { status: "stale", reason: "xpath missing on schema" };
+    }
+    if (!isDomainStale(sourceBlock))
+      return { status: "ok", reason: "ttl_valid" };
+
+    var curFp = "";
+    try { curFp = schemaFingerprint(sid); } catch (eFp) {
+      return { status: "orphaned", reason: "fingerprint failed: " + String(eFp.message || eFp) };
+    }
+    var oldFp = String(sourceBlock.schemaFingerprint || "");
+    if (oldFp && curFp && oldFp !== curFp) {
+      return {
+        status: "stale",
+        reason: "schemaFingerprint mismatch",
+        currentFingerprint: curFp
+      };
+    }
+    return {
+      status: "ttl_expired",
+      reason: "ttl expired fingerprint ok",
+      currentFingerprint: curFp
+    };
+  }
+
+  function clearClassifyCache() {
+    _classifyCache = {};
+  }
+
+  function findSchemaBySqlTable(sqltable) {
+    var want = String(sqltable || "").toLowerCase();
+    if (!want) return "";
+    var allowed = _allowedNamespaces();
+    for (var ns in allowed) {
+      if (!allowed.hasOwnProperty(ns)) continue;
+      var list = _cachedSchemaList(ns);
+      if (!list) continue;
+      for (var i = 0; i < list.length; i++) {
+        var id = list[i].id;
+        try {
+          if (String(_resolveSqlTable(id)).toLowerCase() === want) return id;
+        } catch (eF) {}
+      }
+    }
+    return "";
+  }
+
+  // key_column 소유 스키마 추론(메타데이터만). 필드 스키마에 있으면 우선.
+  function resolveGrainSchema(keyColumn, fieldSchemaId) {
+    var want = _trim(keyColumn || "");
+    var field = _trim(fieldSchemaId || "");
+    if (!want) return field;
+    if (field) {
+      var onField = _findAttrMeta(field, want);
+      if (onField.ok) return field;
+    }
+    var allowed = _allowedNamespaces();
+    var primaryHit = "";
+    var anyHit = "";
+    for (var ns in allowed) {
+      if (!allowed.hasOwnProperty(ns)) continue;
+      var list = _cachedSchemaList(ns);
+      if (!list) continue;
+      for (var i = 0; i < list.length; i++) {
+        var id = list[i].id;
+        var meta = _findAttrMeta(id, want);
+        if (!meta.ok) continue;
+        if (!anyHit) anyHit = id;
+        if (meta.isPrimary && !primaryHit) primaryHit = id;
+      }
+    }
+    return primaryHit || anyHit || field;
+  }
+
   // 스키마 목록은 요청 단위 캐시 (동일 namespace queryDef 재조회 방지)
   function _cachedSchemaList(namespace) {
     var key = String(namespace);
@@ -582,16 +1437,23 @@ testWoo.toolkit = (function () {
           break;
         }
         var sid = schemas[si].id;
+        var schName = String(schemas[si].name || "");
+        var schLabel = String(schemas[si].label || "");
+        var schemaHit = schName.toLowerCase().indexOf(keyword) >= 0 ||
+          schLabel.toLowerCase().indexOf(keyword) >= 0;
         try {
           var xml = _schemaXml(sid);
           loaded++;
           scanned++;
+          var xmlLab = String(xml.@label || "");
+          if (xmlLab && xmlLab.toLowerCase().indexOf(keyword) >= 0) schemaHit = true;
           for each (var a in xml..attribute) {
             if (results.length >= SEARCH_MATCH_CAP) break;
             var an = String(a.@name || "");
             var al = String(a.@label || "");
             var asql = _sqlColumnOf(a);
-            if (an.toLowerCase().indexOf(keyword) < 0 &&
+            if (!schemaHit &&
+                an.toLowerCase().indexOf(keyword) < 0 &&
                 al.toLowerCase().indexOf(keyword) < 0 &&
                 asql.toLowerCase().indexOf(keyword) < 0) continue;
             results.push({
@@ -614,9 +1476,17 @@ testWoo.toolkit = (function () {
 
     // partialScan=true 는 "전수 조사 아님" — no_column 확신도를 medium 이하로 제한하는 근거
     // schemaLoadFailed=true 는 근거 자체가 없다는 뜻 — no_column 판정 금지 근거
+    // SCHEMA_LIST_CAP / SEARCH_SCHEMA_LOAD_CAP 은 올리지 않는다(메모리). 반드시 개수로 알림.
     if (skippedNamespaces.length)
       logWarning("[testWoo.toolkit.search_columns] namespace 조회 실패·미허용으로 스킵: " +
         skippedNamespaces.join(","));
+    var listCapped = false;
+    for (var nci = 0; nci < namespaces.length; nci++) {
+      var schList = _cachedSchemaList(namespaces[nci]);
+      if (schList && schList.length >= SCHEMA_LIST_CAP) listCapped = true;
+    }
+    var partial = capHit || skippedNamespaces.length > 0 ||
+      scanned < totalCandidates || listCapped;
     return {
       matches: results,
       scanned: scanned,
@@ -625,7 +1495,12 @@ testWoo.toolkit = (function () {
       loadFailed: loadFailed,
       skippedNamespaces: skippedNamespaces,
       allowedNamespaces: _allowedList(allowed),
-      partialScan: capHit || skippedNamespaces.length > 0 || scanned < totalCandidates
+      partialScan: partial,
+      scanNote: "scanned " + scanned + " of " + totalCandidates +
+        " schema candidates" +
+        (listCapped ? ("; SCHEMA_LIST_CAP=" + SCHEMA_LIST_CAP + " may truncate list") : "") +
+        (capHit ? ("; SEARCH_SCHEMA_LOAD_CAP=" + SEARCH_SCHEMA_LOAD_CAP +
+          " or MATCH_CAP hit") : "")
     };
   }
 
@@ -646,11 +1521,17 @@ testWoo.toolkit = (function () {
     name: "describe_schema",
     description: "Summarize schema attributes and links. Each column returns the logical " +
       "'name' and the physical 'sqlColumn' — ALWAYS use sqlColumn in SQL. " +
-      "Empty sqlColumn means the field is not stored as a SQL column and is not queryable",
+      "Empty sqlColumn means the field is not stored as a SQL column and is not queryable. " +
+      "If truncated:true, use offset=nextOffset to page remaining attributes " +
+      "(coverage shows M of N).",
     parameters: {
       type: "object",
       properties: {
-        id: { type: "string", description: "Full schema id ns:name" }
+        id: { type: "string", description: "Full schema id ns:name" },
+        offset: {
+          type: "integer",
+          description: "Attribute page offset when previous response was truncated"
+        }
       },
       required: ["id"]
     }
@@ -697,6 +1578,7 @@ testWoo.toolkit = (function () {
   register("search_columns", {
     name: "search_columns",
     description: "Search column names/labels/sqlColumn by keyword in allowed namespaces. " +
+      "Also matches schema name/label (e.g. Bill) and then returns that schema's columns. " +
       "Matches report both logical columnName and physical sqlColumn — use sqlColumn in SQL",
     parameters: {
       type: "object",
@@ -708,6 +1590,89 @@ testWoo.toolkit = (function () {
     }
   }, _toolSearchColumns);
 
+  function listAuditColumns(schemaId, xpath) {
+    var sid = _trim(schemaId || "");
+    var xp = _trim(xpath || "");
+    var out = { table: "", valueCol: "", modified: "", created: "" };
+    if (!sid) return out;
+    try {
+      out.table = _resolveSqlTable(sid);
+    } catch (eT) {
+      return out;
+    }
+    if (xp) {
+      var meta = _findAttrMeta(sid, xp);
+      if (meta && meta.ok) out.valueCol = String(meta.sqlColumn || "");
+    }
+    var xml;
+    try {
+      xml = _schemaXml(sid);
+    } catch (eX) {
+      return out;
+    }
+    for each (var a in xml..attribute) {
+      var typ = String(a.@type || "").toLowerCase();
+      if (typ !== "datetime" && typ !== "datetimenotz" && typ !== "date") continue;
+      var nm = String(a.@name || "").toLowerCase();
+      var sn = _sqlColumnOf(a);
+      if (!sn || !_validIdent(sn)) continue;
+      if (!out.modified && (nm.indexOf("modified") >= 0 || nm.indexOf("lastmodified") >= 0))
+        out.modified = sn;
+      else if (!out.created && (nm.indexOf("created") >= 0 || nm.indexOf("creation") >= 0))
+        out.created = sn;
+    }
+    return out;
+  }
+
+  function _sqlLitSafe(v) {
+    return "'" + String(v == null ? "" : v).replace(/'/g, "''") + "'";
+  }
+
+  function auditMaxDates(schemaId, xpath, values) {
+    var empty = { dates: {}, sqlCount: 0 };
+    var cols = listAuditColumns(schemaId, xpath);
+    if (!cols.table || !_validIdent(cols.table)) return empty;
+    if (!cols.valueCol || !_validIdent(cols.valueCol)) return empty;
+    if (!cols.modified && !cols.created) return empty;
+    var hits = values || [];
+    if (!hits.length) return empty;
+    var inList = [];
+    var i, v;
+    for (i = 0; i < hits.length; i++) {
+      v = String(hits[i] == null ? "" : hits[i]);
+      if (!v) continue;
+      inList.push(_sqlLitSafe(v));
+    }
+    if (!inList.length) return empty;
+    var sel = "SELECT " + cols.valueCol + " AS tw_val";
+    var fmt = "row,@tw_val:string";
+    if (cols.modified && _validIdent(cols.modified)) {
+      sel += ", MAX(" + cols.modified + ") AS tw_mod";
+      fmt += ",@tw_mod:string";
+    }
+    if (cols.created && _validIdent(cols.created)) {
+      sel += ", MAX(" + cols.created + ") AS tw_cre";
+      fmt += ",@tw_cre:string";
+    }
+    sel += " FROM " + cols.table + " WHERE " + cols.valueCol +
+      " IN (" + inList.join(",") + ") GROUP BY " + cols.valueCol;
+    var dates = {};
+    try {
+      var xml = sqlSelect(fmt, sel);
+      for each (var r in xml.row) {
+        var key = String(r.@tw_val || "");
+        if (!key) continue;
+        dates[key] = {
+          modified: cols.modified ? String(r.@tw_mod || "") : "",
+          created: cols.created ? String(r.@tw_cre || "") : ""
+        };
+      }
+    } catch (eS) {
+      return empty;
+    }
+    return { dates: dates, sqlCount: 1 };
+  }
+
   return {
     register: register,
     specs: specs,
@@ -718,6 +1683,19 @@ testWoo.toolkit = (function () {
     markPhase: markPhase,
     resetBudget: resetBudget,
     getEvidenceLog: getEvidenceLog,
-    getEvidenceLogSince: getEvidenceLogSince
+    getEvidenceLogSince: getEvidenceLogSince,
+    classifyField: classifyField,
+    listAuditColumns: listAuditColumns,
+    auditMaxDates: auditMaxDates,
+    resolveDomain: resolveDomain,
+    refreshDomain: refreshDomain,
+    pathFromGrain: pathFromGrain,
+    isDomainStale: isDomainStale,
+    schemaFingerprint: schemaFingerprint,
+    checkSourceFreshness: checkSourceFreshness,
+    clearClassifyCache: clearClassifyCache,
+    findSchemaBySqlTable: findSchemaBySqlTable,
+    resolveGrainSchema: resolveGrainSchema
   };
 })();
+testWoo.toolkit.__v = "164";

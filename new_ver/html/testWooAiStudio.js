@@ -1,29 +1,39 @@
 /*
- * testWooAiStudio.js (Test Woo AI Studio 클라이언트)
+ * testWooAiStudio.js (Studio 클라이언트 IIFE)
  * ==================================================
- * HTML ↔ 서버 JSSP. LLM/SQL은 서버만. CNF plan 기반 UI.
- * 등록 = 이력 저장(ai_sql_id). chips는 서버 응답만.
- * 인증은 Cookie + 서버 logonWithToken() — X-Security-Token 헤더 미사용(ACC 미해석).
- * ACC urlViewer = MSHTML(IE) — fetch/Promise/finally/classList/confirm 금지 (#133).
- * #134: 진단 패널은 details 대신 div 토글 (IE details 미지원).
- * #135: TW-BOOT. #139 baseline: #134/#136/#138 레이아웃 철회 · 진단 기본 펼침·href 기록.
+ * HTML↔JSSP XHR 브릿지. LLM/SQL은 서버만 — chips·plan은 응답만 표시.
+ * SQL-First ctx.phase ST0~ST6 · Shell 목록(listMode) · embed SQL 이력.
  *
  * [Main Functions]
  * ===========
- * - generate / validate / register
- * - pollQueue — Foundry 큐 상태 폴링 (QUEUE_POLL_MS 20초 × QUEUE_POLL_MAX 30회 = 10분)
- * - _renderQueueHint — awaiting_approval 안내(유니코드 이스케이프 한글 정확도 유지)
- * - renderGates — PASS/FAIL·게이트 코드를 사용자용 한글 라벨로 표시
- * - loadSqlList / loadSqlItem / deleteSqlItem — WF별 SQL 이력(2단계 클릭 삭제)
- * - setBindPick — SQL 클릭/등록 시 폼 Apply 용 Option pick 저장
- * - _xhrPost / _diag — IE XHR + 인페이지 진단 패널
+ * - generate / validate / register — ST0대상만들기 → ST1 목록(임시=이어서) → ST3~ST5 후 WKF면 R6 커밋
+ * - renderNlHints / applyNlPatch — #nlHints 클릭=표면만 보강 후 Generate 재호출
+ * - loadAiFolders·selectFolder·loadCampaigns·createCampaign·loadWkfs·createWkf·selectWkf — ST3~ST5
+ * - _jumpExistingSql — 분기 B 기존 SQL → Program/Campaign/WKF 점프 후 그 WKF SQL 이력
+ * - _similarRegistered — param_key(값 없는 조건축) 비교. NL/조사 토큰 없음
+ * - renderListPane / goBack / resetCtx — 브레드크럼은 listMode 기준(목록=타입만, 선택=타입:라벨)
+ * - _wfListText — WKF 행 `라벨 / 인터널네임 / SQL개수`
+ * - loadSqlList — injected_at(없으면 creation_date) 최대 행을 반영됨으로 표시. 클릭 후 버튼=덮어쓰기
+ * - _appendNewSqlRow — 임시 조건 [새 SQL 쓰기]. 넣기=신규 행, 같은 SQL 해시는 행 재사용
+ * - putDraft / _cacheListDrafts — R2 미반영 SQL 캐시(twStudioCache)
+ * - renderChips / _chipDisplay — 칩은 params 값. `_group`이면 별칭 → 값. 미확인은 [맞음]
+ * - _loadRecentNl / _pushRecentNl / _renderRecentNl — 로그인별 최근 NL 질문(답변 없음)
  *
  * [Dependencies]
  * =========
- * - /woo/testWooAiGenerate|Validate|Register.jssp
- * - Cookie credentials + X-Requested-With / payload.csrf + pageHost
- * - Served as /woo/testWooAiStudioJs.jssp?v=… (keep in sync with html/)
- * - ES5 only: no fetch/Promise/classList/forEach/URLSearchParams/const/let/=>
+ * - /woo/testWooAiGenerate|Validate|Register|Match|QueueStatus|StudioContext.jssp
+ * - window.__TW_MATCH_ENABLED__ — Studio.jssp Option 주입
+ * - sessionStorage(twStudioCache) 또는 JS 메모리 — localStorage 금지
+ * - ES5 only — fetch/Promise/classList/forEach/const/let/=> 금지
+ *
+ * [Invariants]
+ * ===========
+ * - MATCH_ENABLED 기본 false — Option ON은 사용자 승인만
+ * - intent create/reuse UI 폐기 — 분기는 목록 데이터(R4+)
+ * - ST0 최초 진입 시 NL 즉시 활성(폴더 선지정 게이트 없음)
+ * - Draft는 saveAiSql/DB 금지 — Register 성공 시만 DB
+ * - Mirror of /woo/testWooAiStudioJs.jssp?v=185 · #nlHints 보강칩 · 스키마 반영이면 [WKF로 이동]
+ * - Foundry done 자동 재생성은 after_foundry(재큐잉 금지)
  */
 (function () {
   "use strict";
@@ -35,6 +45,9 @@
   var QUEUE_POLL_MAX = 30;
   var BASE = "/woo/";
   var DEL_CONFIRM_MS = 3000;
+  var OVERWRITE_MS = 8000;
+  var _overwriteArmed = false;
+  var _overwriteTimer = null;
 
   // ACC urlViewer 구엔진에 URLSearchParams 없을 수 있음 — 수동 파싱
   function _qs(name) {
@@ -58,10 +71,305 @@
 
   var WORKFLOW_NAME = _qs("workflowName") || "";
   var EMBED = _qs("embed") === "1" || window.__TW_EMBED__ === true;
+  /* #152: Option testWooAiMatchEnabled — 미주입·false 이면 유사 목록 완전 차단 */
+  var MATCH_ENABLED = window.__TW_MATCH_ENABLED__ === true;
 
-  var state = { plan: null, sql: "", summary: "", passed: false, nl: "", aiSqlId: null, queuePoll: null };
+  var MATCH_DISABLED_MSG =
+    "\uC870\uAC74 \uB9E4\uCE6D \uAE30\uB2A5\uC740 \uC815\uD655\uB3C4 \uAC1C\uC120 \uC911\uC785\uB2C8\uB2E4. \uC0C8 \uC870\uAC74\uC73C\uB85C \uC0DD\uC131\uD574 \uC8FC\uC138\uC694.";
+
+  function _matchDisabledMsg() {
+    return MATCH_DISABLED_MSG;
+  }
+
+  /* #148R R2: draft SQL cache — runtime sessionStorage probe, memory fallback */
+  var CACHE_STORE_KEY = "twStudioCache";
+  var CACHE_SCHEMA_V = 1;
+  var CACHE_MEM_WARN =
+    "\uC0C8\uB85C\uACE0\uCE68 \uC2DC \uC784\uC2DC SQL\uC774 \uC0AC\uB77C\uC9C8 \uC218 \uC788\uC2B5\uB2C8\uB2E4.";
+  var _cacheBackend = "memory";
+  var _cacheMemRoot = null;
+
+  function _probeCacheBackend() {
+    try {
+      if (typeof sessionStorage !== "undefined" && sessionStorage) {
+        var pk = "_twProbe_" + String(new Date().getTime());
+        sessionStorage.setItem(pk, "1");
+        var gv = sessionStorage.getItem(pk);
+        sessionStorage.removeItem(pk);
+        if (gv === "1") return "session";
+      }
+    } catch (eProbe) {}
+    return "memory";
+  }
+
+  function _cacheEmptyRoot() {
+    return { v: CACHE_SCHEMA_V, drafts: [] };
+  }
+
+  function _cacheReadRoot() {
+    if (_cacheBackend === "session") {
+      try {
+        var raw = sessionStorage.getItem(CACHE_STORE_KEY);
+        if (!raw) return _cacheEmptyRoot();
+        var obj = JSON.parse(raw);
+        if (!obj || obj.v !== CACHE_SCHEMA_V || !obj.drafts) return _cacheEmptyRoot();
+        return obj;
+      } catch (eR) {
+        return _cacheEmptyRoot();
+      }
+    }
+    if (!_cacheMemRoot) _cacheMemRoot = _cacheEmptyRoot();
+    return _cacheMemRoot;
+  }
+
+  function _cacheWriteRoot(root) {
+    if (!root || root.v !== CACHE_SCHEMA_V) root = _cacheEmptyRoot();
+    if (_cacheBackend === "session") {
+      try {
+        sessionStorage.setItem(CACHE_STORE_KEY, JSON.stringify(root));
+      } catch (eW) {}
+      return;
+    }
+    _cacheMemRoot = root;
+  }
+
+  function _cacheListDrafts() {
+    var root = _cacheReadRoot();
+    var list = root.drafts || [];
+    var out = [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].status === "draft") out.push(list[i]);
+    }
+    out.sort(function (a, b) {
+      return (b.createdAt || 0) - (a.createdAt || 0);
+    });
+    return out;
+  }
+
+  function _cacheUpsertDraft(rec) {
+    if (!rec || !rec.cacheId) return;
+    var root = _cacheReadRoot();
+    var drafts = root.drafts || [];
+    var found = -1;
+    for (var i = 0; i < drafts.length; i++) {
+      if (drafts[i] && drafts[i].cacheId === rec.cacheId) {
+        found = i;
+        break;
+      }
+    }
+    if (found >= 0) drafts[found] = rec;
+    else drafts.push(rec);
+    root.drafts = drafts;
+    _cacheWriteRoot(root);
+  }
+
+  function _cacheRemoveDraft(cacheId) {
+    if (!cacheId) return;
+    var root = _cacheReadRoot();
+    var drafts = root.drafts || [];
+    var next = [];
+    for (var i = 0; i < drafts.length; i++) {
+      if (!drafts[i] || drafts[i].cacheId !== cacheId) next.push(drafts[i]);
+    }
+    root.drafts = next;
+    _cacheWriteRoot(root);
+  }
+
+  function _cacheClearAll() {
+    _cacheWriteRoot(_cacheEmptyRoot());
+  }
+
+  function _djb2Hex(str) {
+    var h = 5381;
+    var s = String(str || "");
+    for (var i = 0; i < s.length; i++) {
+      h = ((h << 5) + h) + s.charCodeAt(i);
+      h = h & 0xffffffff;
+    }
+    var hex = (h >>> 0).toString(16);
+    while (hex.length < 8) hex = "0" + hex;
+    return hex;
+  }
+
+  function _genCacheId() {
+    return "twc_" + String(new Date().getTime()) + "_" +
+      String(Math.floor(Math.random() * 100000));
+  }
+
+  function _extractUsedFragments(plan) {
+    var out = [];
+    var seen = {};
+    function addItem(item) {
+      if (!item || !item.fragment) return;
+      var name = String(item.fragment);
+      if (seen[name]) return;
+      seen[name] = true;
+      out.push({ name: name, version: item.version || 1, fragmentId: item.fragmentId || 0 });
+    }
+    var inc = (plan && plan.include) || [];
+    for (var i = 0; i < inc.length; i++) {
+      var any = (inc[i] && inc[i].any) || [];
+      for (var j = 0; j < any.length; j++) addItem(any[j]);
+    }
+    var ex = (plan && plan.exclude) || [];
+    for (var k = 0; k < ex.length; k++) addItem(ex[k]);
+    return out;
+  }
+
+  function _ensureCacheWarnEl() {
+    if (_cacheBackend !== "memory") return;
+    try {
+      var bar = $("twInfoBar");
+      if (!bar) return;
+      var w = $("twCacheWarn");
+      if (!w) {
+        w = document.createElement("span");
+        w.id = "twCacheWarn";
+        bar.appendChild(w);
+      }
+      w.className = "cache-warn";
+      w.textContent = " | " + CACHE_MEM_WARN;
+    } catch (eW) {}
+  }
+
+  function putDraft() {
+    if (!state.passed || !_trim(state.sql)) return;
+    if (!state.plan) return;
+    var cid = state.cacheId || _genCacheId();
+    var rec = {
+      cacheId: cid,
+      createdAt: new Date().getTime(),
+      nl_request: state.nl || "",
+      plan: state.plan,
+      sql: state.sql,
+      usedFragments: _extractUsedFragments(state.plan),
+      sqlHash: _djb2Hex(state.sql),
+      status: "draft"
+    };
+    state.cacheId = cid;
+    _cacheUpsertDraft(rec);
+    _diag("putDraft cacheId=" + cid);
+    if (SHELL_MODE && (ctx.listMode === "SQL" || (ctx.listMode === "WKF" && !ctx.workflow)))
+      renderListPane();
+  }
+
+  function _restoreDraft(draft) {
+    if (!draft) return;
+    state.cacheId = draft.cacheId;
+    state.nl = draft.nl_request || "";
+    state.plan = draft.plan || null;
+    state.sql = draft.sql || "";
+    state.summary = "";
+    state.passed = !!(_trim(state.sql) && state.plan);
+    state.aiSqlId = null;
+    state.commitOk = false;
+    _clearOverwriteArm();
+    try {
+      var nlEl = $("nl");
+      if (nlEl) nlEl.value = state.nl;
+    } catch (eNl) {}
+    if (state.plan) {
+      _rmCls($("cardCode"), "hidden");
+      renderSql(state.sql);
+      _addCls($("cardChips"), "hidden");
+      _addCls($("cardGates"), "hidden");
+      _addCls($("cardFunnel"), "hidden");
+      _addCls($("cardSlotResults"), "hidden");
+    }
+    _syncRegButton();
+    clearErr();
+    renderSummaryHint(
+      "\uC774 \uC870\uAC74\uC73C\uB85C \uC774\uC5B4\uC11C \uC9C4\uD589\uD569\uB2C8\uB2E4.",
+      false
+    );
+  }
+
+  function _appendListSec(box, text, isFirst) {
+    var el = document.createElement("div");
+    el.className = isFirst ? "list-sec first" : "list-sec";
+    el.appendChild(document.createTextNode(text));
+    box.appendChild(el);
+  }
+
+  /* beginMapping=true: SQL목록에서 임시 클릭 = 매핑 계속. WKF discover는 false. */
+  function _renderDraftRows(box, beginMapping) {
+    var drafts = _cacheListDrafts();
+    for (var d = 0; d < drafts.length; d++) {
+      (function (draft, goMap) {
+        var el = document.createElement("div");
+        el.className = "shell-item draft-cache";
+        var label = _trim(draft.nl_request || draft.cacheId || "");
+        if (label.length > 48) label = label.substring(0, 45) + "...";
+        el.appendChild(document.createTextNode(
+          label + " [\uBBF8\uBC18\uC601(\uC784\uC2DC)]"
+        ));
+        el.onclick = function () {
+          _restoreDraft(draft);
+          if (goMap) _beginMapping({ showProgramCrumb: true });
+          return false;
+        };
+        box.appendChild(el);
+      })(drafts[d], !!beginMapping);
+    }
+  }
+
+  var state = {
+    plan: null,
+    sql: "",
+    summary: "",
+    passed: false,
+    nl: "",
+    aiSqlId: null,
+    cacheId: null,
+    queuePoll: null,
+    foundryDoneQid: null,
+    commitOk: false,
+    clarifyRound: 0
+  };
   var _delPending = { id: null, timer: null, btn: null };
+  /* SQL-First: phase=ST0~ST6 · listMode=SQL|FOLDER|CAMPAIGN|WKF|WKFSQL */
+  var ctx = {
+    phase: "ST0",
+    listMode: "SQL",
+    folder: null,
+    folders: [],
+    campaigns: [],
+    campaign: null,
+    wkfs: [],
+    workflow: null,
+    canCreateWkf: true,
+    wkfMax: 15,
+    openHint: "",
+    matchShown: false,
+    matchMode: "",
+    registeredSql: [],
+    sqlFilter: "",
+    stack: [],
+    bareLevel: "",
+    wfHasInjected: false,
+    currentInjectedId: null
+  };
+  var SHELL_MODE = !(WORKFLOW_NAME && EMBED);
   var $ = function (id) { return document.getElementById(id); };
+
+  function _activeWorkflowName() {
+    if (WORKFLOW_NAME) return WORKFLOW_NAME;
+    if (ctx.workflow && ctx.workflow.name) return String(ctx.workflow.name);
+    return "";
+  }
+
+  function _activeWorkflowId() {
+    if (ctx.workflow && ctx.workflow.id) return String(ctx.workflow.id);
+    return "";
+  }
+
+  function _clearOverwriteArm() {
+    _overwriteArmed = false;
+    if (_overwriteTimer) {
+      try { clearTimeout(_overwriteTimer); } catch (eT) {}
+      _overwriteTimer = null;
+    }
+  }
 
   // ---- className helpers (classList 없음 / IE \b 이슈 회피: 공백 패딩) ----
   function _hasCls(el, c) {
@@ -96,10 +404,21 @@
         (ss < 10 ? "0" : "") + ss;
       line.appendChild(document.createTextNode(ts + " " + String(msg)));
       el.appendChild(line);
-      if (el.childNodes.length > 200) {
+      if (el.childNodes.length > 400) {
         el.removeChild(el.firstChild);
       }
     } catch (eD) {}
+  }
+
+  function _diagServerTrace(res) {
+    if (!res) return;
+    var tr = res.debugTrace;
+    if ((!tr || !tr.length) && res.queue && res.queue.debugTrace)
+      tr = res.queue.debugTrace;
+    if (!tr || !tr.length) return;
+    if (res.debugOn) _diag("--- server debug ---");
+    var i;
+    for (i = 0; i < tr.length; i++) _diag(tr[i]);
   }
 
   function _installOnError() {
@@ -187,6 +506,68 @@
     _xhrPost(endpoint, payload, onOk, onErr);
   }
 
+  /* #160 — JS 라이브러리 __v 1회 진단 (litmus v= 와 별개) */
+  var _libVersionsFetched = false;
+  function _fetchLibVersionsOnce() {
+    if (_libVersionsFetched) return;
+    _libVersionsFetched = true;
+    post(
+      "testWooAiStudioContext.jssp",
+      { action: "libVersions" },
+      function (res) {
+        try {
+          if (!res || !res.ok) {
+            _diag("libs: fetch failed " + _errText(res));
+            return;
+          }
+          var libs = res.libs || {};
+          var parts = [];
+          var keys = [
+            "repo", "fragments", "foundry", "common", "env", "cfg", "llm",
+            "fragContract", "enPivot", "compiler", "gates", "lifecycle",
+            "embedding", "match", "studioContext", "wfClone"
+          ];
+          var ki;
+          for (ki = 0; ki < keys.length; ki++) {
+            var k = keys[ki];
+            parts.push(k + "=" + (libs[k] != null ? libs[k] : "?"));
+          }
+          _diag("libs: " + parts.join(" "));
+          var mm = res.mismatch || [];
+          if (mm.length || res.allMatch === false) {
+            var expMap = res.expectedByMod || {};
+            var wantBits = [];
+            var wi;
+            for (wi = 0; wi < mm.length; wi++) {
+              var mk = mm[wi];
+              wantBits.push(mk + "=" +
+                (expMap[mk] != null ? String(expMap[mk]) : String(res.expected || "159")));
+            }
+            var warn =
+              "JS \uB77C\uC774\uBE0C\uB7EC\uB9AC \uBC84\uC804 \uBD88\uC77C\uCE58: " +
+              mm.join(",") +
+              " (want " +
+              (wantBits.length ? wantBits.join(",") : String(res.expected || "159")) +
+              ") \u2014 ACC \uCF58\uC194 JavaScript codes \uC7AC\uB4F1\uB85D \uD544\uC694. TW-BOOT v= \uB9CC\uC73C\uB85C\uB294 \uBCF4\uC99D\uB418\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.";
+            var hint = $("hint");
+            if (hint) {
+              hint.className = "banner warn";
+              hint.innerHTML = "<strong>[LIB]</strong> " + esc(warn);
+            }
+            _diag("libs MISMATCH: " + mm.join(","));
+          } else {
+            _diag("libs: allMatch expected=" + String(res.expected || "159"));
+          }
+        } catch (eLib) {
+          _diag("libs: parse err " + String(eLib && eLib.message ? eLib.message : eLib));
+        }
+      },
+      function (err) {
+        _diag("libs: XHR err " + String(err && err.message ? err.message : err));
+      }
+    );
+  }
+
   function showErr(msg) {
     var e = $("err");
     if (!e) return;
@@ -237,7 +618,16 @@
       el.innerHTML =
         "<strong>[\uC6B4\uC601 \uC2B9\uC778 \uD544\uC694]</strong> fragment \uC0DD\uC131\uC740 \uC774\uBBF8 \uC644\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4." + idPart +
         "<br/>\uB9C8\uCF00\uD130\uAC00 \uC2B9\uC778\uD558\uB294 \uACBD\uB85C\uAC00 \uC544\uB2D9\uB2C8\uB2E4. <strong>\uC6B4\uC601 \uB2F4\uB2F9\uC790</strong>\uAC00 LibraryManage \uAD8C\uD55C\uC73C\uB85C \uC2B9\uC778\uD574\uC57C \uD569\uB2C8\uB2E4." +
-        "<br/>\uC2B9\uC778 \uC644\uB8CC \uD6C4 <strong>\uAC19\uC740 \uC9C8\uBB38\uC744 \uB2E4\uC2DC [\uC0DD\uC131]</strong>\uD574 \uC8FC\uC138\uC694. \uC790\uB3D9 \uC7AC\uC2DC\uB3C4\u00B7\uD478\uC2DC \uC54C\uB9BC\uC740 \uC5C6\uC2B5\uB2C8\uB2E4.";
+        "<br/>\uC2B9\uC778 \uC644\uB8CC \uD6C4 <strong>\uAC19\uC740 \uC9C8\uBB38\uC744 \uB2E4\uC2DC [\uC0DD\uC131]</strong>\uD574 \uC8FC\uC138\uC694.";
+      return;
+    }
+    if (status === "done") {
+      el.className = "banner ok";
+      el.innerHTML =
+        "<strong>[fragment \uC900\uBE44 \uC644\uB8CC]</strong> Foundry\uAC00 fragment\uB97C \uB4F1\uB85D\uD588\uC2B5\uB2C8\uB2E4." + idPart +
+        "<br/><strong>\uAC19\uC740 \uC9C8\uBB38\uC73C\uB85C [\uC0DD\uC131]\uC744 \uB2E4\uC2DC \uB204\uB974\uC138\uC694.</strong> " +
+        "(\uC7A0\uC2DC \uD6C4 \uC790\uB3D9\uC73C\uB85C \uD55C \uBC88 \uB354 \uC2DC\uB3C4\uD569\uB2C8\uB2E4.)" +
+        (lastError ? "<br/>" + esc(lastError) : "");
       return;
     }
     if (status === "infeasible" || status === "partially_infeasible") {
@@ -258,19 +648,49 @@
   function pollQueue(queueId, reviewUrl) {
     var attempts = 0;
     var maxAttempts = QUEUE_POLL_MAX;
+    var dumpedDbg = false;
     if (state.queuePoll) clearInterval(state.queuePoll);
     state.queuePoll = setInterval(function () {
       attempts++;
       post("testWooAiQueueStatus.jssp", { queueId: queueId }, function (st) {
         if (!st.ok || !st.queue) return;
+        if (!dumpedDbg && st.debugTrace && st.debugTrace.length) {
+          dumpedDbg = true;
+          _diagServerTrace(st);
+        }
         var qs = st.queue.status;
         _renderQueueHint(qs, queueId, reviewUrl, st.queue.lastError);
         if (st.queue.slotResults && st.queue.slotResults.length)
           renderSlotResults(st.queue.slotResults, st.queue.partialPreview);
+        if (st.promptHints && st.promptHints.length) renderNlHints(st.promptHints);
+        else {
+          var _qi, _qs;
+          for (_qi = 0; st.queue.slotResults && _qi < st.queue.slotResults.length; _qi++) {
+            _qs = st.queue.slotResults[_qi] || {};
+            if (_qs.promptHints && _qs.promptHints.length) {
+              renderNlHints(_qs.promptHints);
+              break;
+            }
+          }
+        }
         if (qs === "awaiting_approval" || qs === "infeasible" || qs === "partially_infeasible" ||
             qs === "done" || qs === "failed" || qs === "needs_human_design" || qs === "throttled") {
           clearInterval(state.queuePoll);
           state.queuePoll = null;
+          if (qs === "done") {
+            var qidDone = String(queueId);
+            if (state.foundryDoneQid !== qidDone) {
+              state.foundryDoneQid = qidDone;
+              setTimeout(function () {
+                try {
+                  /* 재큐잉 금지 — Stage A 미매칭 시 안내만 */
+                  generate({ afterFoundry: true });
+                } catch (eAuto) {
+                  _diag("auto generate after foundry: " + eAuto);
+                }
+              }, 600);
+            }
+          }
         }
       }, function () {});
       if (attempts >= maxAttempts && state.queuePoll) {
@@ -279,7 +699,7 @@
         $("hint").className = "banner warn";
         $("hint").innerHTML =
           "<strong>[\uC2DC\uAC04 \uCD08\uACFC]</strong> \uC0C1\uD0DC \uC870\uD68C\uB97C \uC911\uB2E8\uD588\uC2B5\uB2C8\uB2E4 (queueId=" + queueId + "). " +
-          "\uC6B4\uC601 \uB2F4\uB2F9\uC790\uC5D0\uAC8C \uD655\uC778 \uD6C4, \uC2B9\uC778\uC774 \uB418\uC5C8\uC73C\uBA74 \uAC19\uC740 \uC9C8\uBB38\uC744 \uB2E4\uC2DC [\uC0DD\uC131]\uD574 \uC8FC\uC138\uC694.";
+          "Foundry \uC644\uB8CC \uD6C4 <strong>\uAC19\uC740 \uC9C8\uBB38\uC73C\uB85C [\uC0DD\uC131]</strong>\uC744 \uB2E4\uC2DC \uB204\uB974\uC138\uC694.";
       }
     }, QUEUE_POLL_MS);
     _renderQueueHint("queued", queueId, reviewUrl, "");
@@ -305,23 +725,6 @@
           esc(JSON.stringify(s.evidence, null, 2)) + "</pre>";
         el.appendChild(det);
       }
-      if (s.alternatives && s.alternatives.length) {
-        var chips = document.createElement("div");
-        chips.className = "alt-chips";
-        for (var ai = 0; ai < s.alternatives.length; ai++) {
-          (function (a) {
-            var c = document.createElement("span");
-            c.className = "alt-chip";
-            c.textContent = a.label || a.detail || a.type;
-            c.onclick = function () {
-              if (a.detail) $("nl").value = a.detail;
-              else if (a.label) $("nl").value = a.label;
-            };
-            chips.appendChild(c);
-          })(s.alternatives[ai]);
-        }
-        el.appendChild(chips);
-      }
       box.appendChild(el);
     }
     if (partialPreview && partialPreview.sql) {
@@ -334,28 +737,211 @@
     _rmCls($("cardSlotResults"), "hidden");
   }
 
-  function generate() {
+  function _planHasFragments(plan) {
+    if (!plan) return false;
+    var inc = plan.include || [];
+    var exc = plan.exclude || [];
+    return (inc.length + exc.length) > 0;
+  }
+
+  var _recentNl = [];
+
+  function _clipNl(s, maxLen) {
+    s = _trim(s);
+    if (s.length > maxLen) return s.substring(0, maxLen);
+    return s;
+  }
+
+  function _renderRecentNl() {
+    var box = $("twRecentList");
+    if (!box) return;
+    box.innerHTML = "";
+    if (!_recentNl.length) {
+      var em = document.createElement("div");
+      em.className = "tw-rq-empty";
+      em.appendChild(document.createTextNode(
+        "\uC544\uC9C1 \uBCF4\uB0B8 \uC9C8\uBB38\uC774 \uC5C6\uC2B5\uB2C8\uB2E4."
+      ));
+      box.appendChild(em);
+      return;
+    }
+    var i, a;
+    for (i = 0; i < _recentNl.length; i++) {
+      a = document.createElement("a");
+      a.href = "#";
+      a.className = "tw-rq";
+      a.appendChild(document.createTextNode(_recentNl[i]));
+      a.onclick = (function (idx) {
+        return function () {
+          var t = $("nl");
+          if (t) t.value = _recentNl[idx];
+          return false;
+        };
+      })(i);
+      box.appendChild(a);
+    }
+  }
+
+  function _loadRecentNl() {
+    post("testWooAiValidate.jssp", { action: "listRecentNl" }, function (res) {
+      if (res && res.ok && res.items && res.items.length)
+        _recentNl = res.items;
+      _renderRecentNl();
+    });
+  }
+
+  function _pushRecentNl(text) {
+    var q = _clipNl(text, 240);
+    if (!q) return;
+    if (_recentNl.length && _recentNl[0] === q) {
+      _renderRecentNl();
+      return;
+    }
+    var next = [q];
+    var i;
+    for (i = 0; i < _recentNl.length && next.length < 8; i++) {
+      if (_recentNl[i] !== q) next.push(_recentNl[i]);
+    }
+    _recentNl = next;
+    _renderRecentNl();
+    post("testWooAiValidate.jssp", { action: "pushRecentNl", text: q }, function () {});
+  }
+
+  function applyNlPatch(orig, surface, patch) {
+    var o = String(orig == null ? "" : orig);
+    var s = String(surface == null ? "" : surface);
+    var p = String(patch == null ? "" : patch);
+    if (!p) return o;
+    if (o.indexOf(p) >= 0) return o;
+    if (s && o.indexOf(s) >= 0) return o.replace(s, p);
+    if (!o) return p;
+    return o + " " + p;
+  }
+
+  function clearNlHints() {
+    var box = $("nlHints");
+    if (box) box.innerHTML = "";
+  }
+
+  function renderNlHints(hints) {
+    var box = $("nlHints");
+    if (!box) return;
+    box.innerHTML = "";
+    var list = hints || [];
+    if (!list.length) return;
+    var hi, item, oi, opts, hint, chip;
+    for (hi = 0; hi < list.length; hi++) {
+      item = list[hi] || {};
+      opts = item.options || [];
+      for (oi = 0; oi < opts.length; oi++) {
+        hint = item;
+        chip = document.createElement("span");
+        chip.className = "alt-chip";
+        chip.textContent = opts[oi].label || opts[oi].patch || "";
+        chip.onclick = (function (h, opt) {
+          return function () {
+            var ta = $("nl");
+            if (!ta) return;
+            ta.value = applyNlPatch(ta.value, h.surface || "", opt.patch || opt.label || "");
+            state.clarifyRound = (Number(state.clarifyRound) || 0) + 1;
+            generate({ fromHint: true, clarifyPick: {
+              slotId: h.slotId || "",
+              surface: h.surface || "",
+              patch: opt.patch || opt.label || "",
+              value: opt.value,
+              union: !!opt.union,
+              param: opt.param || ""
+            } });
+          };
+        })(hint, opts[oi]);
+        box.appendChild(chip);
+      }
+    }
+  }
+
+  function generate(opt) {
+    var afterFoundry = !!(opt && opt.afterFoundry);
+    var fromHint = !!(opt && opt.fromHint);
+    if (!fromHint) {
+      state.clarifyRound = 0;
+      clearNlHints();
+    }
     var nl = _trim($("nl").value);
     if (!nl) return;
+    _pushRecentNl(nl);
     state.nl = nl; clearErr(); setBusy(true);
-    _diag("generate start");
-    post("testWooAiGenerate.jssp", { nl_request: nl, workflow_name: WORKFLOW_NAME }, function (res) {
+    _diag("generate start phase=" + ctx.phase + " afterFoundry=" + (afterFoundry ? "1" : "0"));
+    var genPayload = {
+      nl_request: nl,
+      workflow_name: _activeWorkflowName(),
+      clarify_round: Number(state.clarifyRound) || 0
+    };
+    if (afterFoundry) genPayload.after_foundry = true;
+    if (fromHint && opt && opt.clarifyPick) genPayload.clarify_pick = opt.clarifyPick;
+    post("testWooAiGenerate.jssp", genPayload, function (res) {
       try {
+        _diagServerTrace(res);
         if (res.status === "queued" && res.queueId) {
+          if (afterFoundry) {
+            showErr(
+              "Foundry \uC644\uB8CC \uD6C4\uC5D0\uB3C4 \uB2E4\uC2DC \uD050\uC5D0 \uB4E4\uC5B4\uAC14\uC2B5\uB2C8\uB2E4. " +
+                "Stage A/\uB77C\uC774\uBE0C\uB7EC\uB9AC\uB97C \uD655\uC778\uD55C \uB4A4 [\uC0DD\uC131]\uC744 \uB204\uB974\uC138\uC694."
+            );
+            return;
+          }
           hideResultCards();
           pollQueue(res.queueId, res.reviewUrl);
           return;
         }
         if (!res.ok) {
+          _diag(
+            "generate !ok error=" +
+              String(res.error || "") +
+              " errId=" +
+              String(res.errId || "") +
+              " detail=" +
+              String(res.detail || "").substring(0, 180)
+          );
           if (res.unmatched && res.unmatched.length) {
             $("hint").className = "banner warn";
-            // unmatched = Stage A \uD504\uB798\uADF8\uBA3C\uD2B8 \uBBF8\uBC1C\uACAC (\uCC3D\uC791 SQL/\uC870\uAC74 \uAE08\uC9C0)
-            $("hint").textContent =
-              "\uB9E4\uCE6D \uC2E4\uD328(\uCC3D\uC791 \uC5C6\uC74C): \uB77C\uC774\uBE0C\uB7EC\uB9AC\uC5D0 \uD574\uB2F9 fragment\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. " +
-              "\uC2AC\uB86F: " + res.unmatched.join(" | ");
+            if (res.unresolved && res.unresolved.length) {
+              var _ub = [];
+              var _ui, _uu, _ur, _us;
+              for (_ui = 0; _ui < res.unresolved.length; _ui++) {
+                _uu = res.unresolved[_ui] || {};
+                _us = String(_uu.surface || "");
+                _ur = String(_uu.reason || "");
+                var _uen = String(_uu.en_literal || "");
+                if (_ur === "value_not_in_domain")
+                  _ub.push("값 '" + _us + "'" + (_uen ? (" (\uBC88\uC5ED '" + _uen + "')") : ""));
+                else if (_ur === "ambiguous" || _ur === "ambiguous_group")
+                  _ub.push("값 '" + _us + "'" +
+                    (_uen ? (" (\uBC88\uC5ED '" + _uen + "')") : "") +
+                    " (\uC5EC\uB7EC \uD56D\uBAA9\uACFC \uB9DE\uC74C)");
+                else
+                  _ub.push(_us || "\uBBF8\uD655\uC815 \uC870\uAC74");
+              }
+              $("hint").textContent =
+                "\uC774 \uBD80\uBD84\uC740 \uD655\uC778\uC774 \uD544\uC694\uD569\uB2C8\uB2E4. " +
+                _ub.join(" \u00B7 ");
+              if (res.promptHints && res.promptHints.length) renderNlHints(res.promptHints);
+              else clearNlHints();
+            } else if (res.retryInput) {
+              $("hint").textContent = res.unmatched.join(" ");
+              clearNlHints();
+            } else if (afterFoundry || res.afterFoundry) {
+              $("hint").textContent =
+                "\uB77C\uC774\uBE0C\uB7EC\uB9AC\uC5D0 \uD574\uB2F9 \uCD95 fragment\uAC00 \uC5C6\uAC70\uB098 Stage A\uAC00 \uC544\uC9C1 \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. " +
+                "\uC2AC\uB86F: " + res.unmatched.join(" | ") +
+                " \u2014 Foundry \uD050\uAC00 Done\uC778\uB370\uB3C4 \uC774 \uCD95\uC774 \uC5C6\uC73C\uBA74 \uC0C8\uB85C [\uC0DD\uC131]\uD558\uAC70\uB098 frag name/synonyms/\uB300\uC18C\uBB38\uC790\uB97C \uD655\uC778\uD558\uC138\uC694.";
+            } else {
+              $("hint").textContent =
+                "\uB9E4\uCE6D \uC2E4\uD328(\uCC3D\uC791 \uC5C6\uC74C): \uB77C\uC774\uBE0C\uB7EC\uB9AC\uC5D0 \uD574\uB2F9 fragment\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. " +
+                "\uC2AC\uB86F: " + res.unmatched.join(" | ");
+            }
             hideResultCards();
           } else {
-            showErr(_errText(res));
+            showErr("Generate: " + _errText(res));
             if (res.results) renderGates(res.results);
           }
           return;
@@ -364,13 +950,30 @@
         state.sql = res.sql || "";
         state.summary = res.summary || "";
         state.passed = !!res.passed;
+        state.clarifyRound = 0;
+        clearNlHints();
+        /* ST0 제출 성공 → ST1 · SQL 확정(passed)이면 ST2 (목록 UI는 R4) */
+        if (SHELL_MODE) {
+          ctx.phase = state.passed && _trim(state.sql) ? "ST2" : "ST1";
+        }
         renderChips(res.chips);
-        renderSummaryHint(res.summary);
         renderSql(state.sql);
         renderGates(res.results || []);
-        $("btnReg").disabled = !state.passed;
-        if (!state.passed) showErr(res.error || "validation failed");
+        _syncRegButton();
+        if (!state.passed) {
+          showErr(res.error || "validation failed");
+          renderSummaryHint(res.summary, false);
+        } else {
+          renderSummaryHint(res.summary, true);
+        }
+        if (state.passed && _trim(state.sql)) putDraft();
         hideFunnel();
+        if (SHELL_MODE && !ctx.workflow) {
+          ctx.wkfs = [];
+          ctx.matchShown = false;
+          ctx.matchMode = "";
+          renderBreadcrumb();
+        }
       } finally {
         setBusy(false);
       }
@@ -378,6 +981,93 @@
       showErr(String(e && e.message ? e.message : e));
       setBusy(false);
     });
+  }
+
+  /* #147 reuse: plan_only Generate → Match discover (SQL/Register/Foundry \uC5C6\uC74C) */
+  function discoverFind() {
+    if (!MATCH_ENABLED) {
+      showErr(_matchDisabledMsg());
+      ctx.wkfs = [];
+      ctx.matchShown = false;
+      ctx.matchMode = "";
+      if (!ctx.workflow) renderListPane();
+      return;
+    }
+    if (SHELL_MODE && (!ctx.campaign || !ctx.campaign.id)) {
+      showErr("\uCEA0\uD398\uC778\uC744 \uBA3C\uC800 \uC120\uD0DD\uD558\uC138\uC694.");
+      return;
+    }
+    var nl = _trim($("nl").value);
+    if (!nl) return;
+    state.nl = nl;
+    clearErr();
+    setBusy(true);
+    _diag("discoverFind start");
+    post(
+      "testWooAiGenerate.jssp",
+      {
+        nl_request: nl,
+        workflow_name: _activeWorkflowName(),
+        plan_only: true
+      },
+      function (res) {
+        try {
+          if (res && res.status === "queued") {
+            showErr(
+              "\uD0D0\uC0C9 \uACBD\uB85C\uC5D0\uC11C\uB294 Foundry \uD050\uB97C \uC0AC\uC6A9\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC870\uAC74\uC744 \uB2E4\uC2DC \uC785\uB825\uD558\uC138\uC694."
+            );
+            hideResultCards();
+            return;
+          }
+          if (!res || !res.plan || !_planHasFragments(res.plan)) {
+            if (res && res.unmatched && res.unmatched.length) {
+              $("hint").className = "banner warn";
+              $("hint").textContent = res.retryInput
+                ? res.unmatched.join(" ")
+                : ("\uB9E4\uCE6D \uC2E4\uD328(\uD0D0\uC0C9 \uBD88\uAC00): \uB77C\uC774\uBE0C\uB7EC\uB9AC\uC5D0 \uD574\uB2F9 fragment\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. " +
+                  "\uC2AC\uB86F: " +
+                  res.unmatched.join(" | "));
+            } else {
+              showErr(_errText(res) || "plan_only failed");
+            }
+            hideResultCards();
+            ctx.wkfs = [];
+            ctx.matchShown = false;
+            ctx.matchMode = "";
+            if (!ctx.workflow) renderListPane();
+            return;
+          }
+          state.plan = res.plan;
+          state.sql = "";
+          state.summary = res.summary || "";
+          state.passed = false;
+          if (res.chips) renderChips(res.chips);
+          else hideResultCards();
+          _addCls($("cardCode"), "hidden");
+          _addCls($("cardGates"), "hidden");
+          $("btnReg").disabled = true;
+          if (res.unmatched && res.unmatched.length) {
+            $("hint").className = "banner warn";
+            $("hint").textContent =
+              "\uC77C\uBD80 \uC870\uAC74\uB9CC\uC73C\uB85C \uD0D0\uC0C9\uD569\uB2C8\uB2E4. \uBBF8\uB9E4\uCE6D: " +
+              res.unmatched.join(" | ");
+          } else {
+            clearErr();
+            $("hint").className = "banner ok";
+            $("hint").textContent =
+              "\uC870\uAC74 \uACC4\uD68D \uC644\uB8CC \u2014 \uAC12 \uB300\uC870 WKF\uB97C \uCC3E\uB294 \uC911\u2026";
+          }
+          hideFunnel();
+          runMatch(null, "discover");
+        } finally {
+          setBusy(false);
+        }
+      },
+      function (e) {
+        showErr(String(e && e.message ? e.message : e));
+        setBusy(false);
+      }
+    );
   }
 
   function validate() {
@@ -393,8 +1083,9 @@
       if (v.chips) renderChips(v.chips);
       renderSql(state.sql);
       renderGates(v.results);
-      if (v.summary) renderSummaryHint(v.summary);
-      $("btnReg").disabled = !v.passed;
+      _syncRegButton();
+      renderSummaryHint(v.summary || state.summary, !!v.passed);
+      if (state.passed && _trim(state.sql)) putDraft();
     }, function (e) {
       showErr(String(e && e.message ? e.message : e));
     });
@@ -402,17 +1093,59 @@
 
   function register() {
     if (!state.passed) return;
+    if (SHELL_MODE && !_activeWorkflowName()) {
+      if (_isMappingWithoutWkf()) return;
+      _enterSqlList();
+      return;
+    }
     setBusy(true); clearErr();
     var title = String(state.nl || "").substring(0, TITLE_MAX);
-    _diag("register start");
+    _diag("register start overwrite=" + (_overwriteArmed ? "1" : "0"));
     post("testWooAiRegister.jssp", {
       plan: state.plan,
-      workflow_name: WORKFLOW_NAME,
+      workflow_name: _activeWorkflowName(),
+      workflow_id: _activeWorkflowId(),
+      confirm_overwrite: _overwriteArmed,
       title: title,
       target_count: 0,
       nl_request: state.nl
     }, function (r) {
       try {
+        if (r && r.code === "LOCKED") {
+          $("hint").className = "banner warn";
+          $("hint").textContent = _errText(r) ||
+            "\uC774 WKF\uB294 \uB2E4\uB978 \uC0AC\uC6A9\uC790\uAC00 \uC0AC\uC6A9 \uC911\uC785\uB2C8\uB2E4. \uBC18\uC601\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.";
+          _syncRegButton();
+          return;
+        }
+        if (r && r.needsOverwrite) {
+          _overwriteArmed = true;
+          if (_overwriteTimer) {
+            try { clearTimeout(_overwriteTimer); } catch (eT) {}
+          }
+          _overwriteTimer = setTimeout(function () {
+            _clearOverwriteArm();
+            _syncRegButton();
+            var hArm = $("hint");
+            if (hArm) {
+              hArm.className = "banner warn";
+              hArm.textContent =
+                "\uB36E\uC5B4\uC4F0\uAE30 \uB300\uAE30\uAC00 \uB05D\uB0AC\uC2B5\uB2C8\uB2E4. \uB2E4\uC2DC [" +
+                (ctx.wfHasInjected ? "WKF\uC5D0 \uB36E\uC5B4\uC4F0\uAE30" : "WKF\uC5D0 \uB123\uAE30") +
+                "]\uB97C \uB204\uB974\uC138\uC694.";
+            }
+          }, OVERWRITE_MS);
+          $("hint").className = "banner warn";
+          $("hint").textContent =
+            r.message ||
+            "\uC774\uBBF8 \uBC18\uC601\uB41C \uB0B4\uC6A9\uC774 \uC788\uC2B5\uB2C8\uB2E4. \uB36E\uC5B4\uC4F0\uB824\uBA74 \uB2E4\uC2DC \uD074\uB9AD\uD558\uC138\uC694.";
+          var btnOw = $("btnReg");
+          if (btnOw) {
+            btnOw.disabled = false;
+            btnOw.textContent = "\uB36E\uC5B4\uC4F0\uB824\uBA74 \uB2E4\uC2DC \uD074\uB9AD";
+          }
+          return;
+        }
         if (!r.ok || r.passed === false) {
           showErr(_errText(r));
           if (r.results) renderGates(r.results);
@@ -421,12 +1154,46 @@
         }
         state.aiSqlId = r.ai_sql_id;
         if (r.sql) state.sql = r.sql;
+        if (r.injected) {
+          state.commitOk = true;
+          _clearOverwriteArm();
+          if (state.cacheId) {
+            _cacheRemoveDraft(state.cacheId);
+            state.cacheId = null;
+          }
+          if (SHELL_MODE) ctx.phase = "ST6";
+          setInfoBar(_folderInfoText());
+          $("hint").className = "banner ok";
+          $("hint").textContent = r.openHint ||
+            "\uBC18\uC601\uD588\uC2B5\uB2C8\uB2E4. \uC5F4\uB9B0 WKF \uCC3D\uC774 \uC788\uC73C\uBA74 \uB2EB\uACE0 Explorer\uC5D0\uC11C \uB2E4\uC2DC \uC5EC\uC138\uC694.";
+          ctx.wfHasInjected = true;
+          setBindPick(r.ai_sql_id);
+          _refreshOpenButtons();
+          _syncRegButton();
+          _syncOtherWkfBtn();
+          loadSqlList({ selectCurrent: true });
+          return;
+        }
+        if (state.cacheId) {
+          _cacheRemoveDraft(state.cacheId);
+          state.cacheId = null;
+        }
+        if (SHELL_MODE) ctx.phase = "ST6";
+        setInfoBar(_folderInfoText());
+        if (r.created === false) {
+          $("hint").className = "banner warn";
+          $("hint").textContent =
+            r.message ||
+            ("\uAC19\uC740 \uC870\uAC74\uC774 \uC774\uBBF8 \uC800\uC7A5\uB418\uC5B4 \uC788\uC2B5\uB2C8\uB2E4.");
+          $("btnReg").disabled = true;
+          setBindPick(r.ai_sql_id);
+          loadSqlList();
+          return;
+        }
         $("hint").className = "banner ok";
         $("hint").textContent = EMBED
-          ? ("Registered. ai_sql_id=" + r.ai_sql_id +
-            " \u2014 \uC544\uB798 Apply to canvas \uB97C \uB204\uB974\uC138\uC694.")
-          : ("Registered. ai_sql_id=" + r.ai_sql_id +
-            " \u2014 Apply on WF AI Studio form (ibankSqlDM ai-sql-id).");
+          ? "\uC774 \uC870\uAC74\uC744 \uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4. \uCE94\uBC84\uC2A4\uC5D0 \uB123\uB294 \uB2E8\uACC4\uB294 \uB2E4\uC74C\uC785\uB2C8\uB2E4."
+          : "\uC774 \uC870\uAC74\uC744 \uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4. WKF \uD3FC\uC5D0\uC11C \uC5F0\uACB0\uD558\uC138\uC694.";
         $("btnReg").disabled = true;
         setBindPick(r.ai_sql_id);
         loadSqlList();
@@ -439,14 +1206,1804 @@
     });
   }
 
+  // 5차/#146: plan → Match (mode: dedup|discover)
+  function runMatch(done, mode) {
+    if (!MATCH_ENABLED) {
+      ctx.wkfs = [];
+      ctx.matchShown = false;
+      ctx.matchMode = "";
+      if (!ctx.workflow) {
+        _showSqlSide(false);
+        renderListPane();
+      }
+      showErr(_matchDisabledMsg());
+      if (done) done(false);
+      return;
+    }
+    if (!SHELL_MODE || !ctx.campaign || !ctx.campaign.id || !state.plan) {
+      if (done) done(false);
+      return;
+    }
+    var m = mode === "discover" ? "discover" : "dedup";
+    ctx.matchMode = m;
+    _diag("runMatch start mode=" + m);
+    post(
+      "testWooAiMatch.jssp",
+      {
+        plan: state.plan,
+        campaign_id: ctx.campaign.id,
+        operation_id: ctx.campaign.id,
+        mode: m
+      },
+      function (res) {
+        if (!res || !res.ok) {
+          ctx.wkfs = [];
+          ctx.matchShown = false;
+          if (!ctx.workflow) {
+            _showSqlSide(false);
+            renderListPane();
+          }
+          showErr(_errText(res) || "match failed");
+          if (done) done(false);
+          return;
+        }
+        clearErr();
+        ctx.wkfs = res.items || [];
+        ctx.matchShown = true;
+        if (!ctx.workflow) {
+          _showSqlSide(false);
+          renderListPane();
+          var h = $("hint");
+          var n = ctx.wkfs.length;
+          if (h && m === "discover") {
+            h.className = "banner ok";
+            h.textContent =
+              "\uAC12 \uB300\uC870 \uD6C4\uBCF4 WKF " +
+              n +
+              "\uAC74. \uC120\uD0DD \uC2DC Program/\uCEA0\uD398\uC778\uC774 \uC790\uB3D9 \uBC18\uC601\uB429\uB2C8\uB2E4. (\uBD88\uC77C\uCE58 \uAC12\uC740 \uC81C\uC678)";
+          } else if (h && state.passed) {
+            h.className = "banner ok";
+            h.textContent =
+              (state.summary || "SQL\uC774 \uC900\uBE44\uB418\uC5C8\uC2B5\uB2C8\uB2E4.") +
+              " \u2014 \uC804\uC5ED \uC720\uC0AC WKF " +
+              n +
+              "\uAC74. \uC120\uD0DD \uC2DC Program/\uCEA0\uD398\uC778\uC774 \uC790\uB3D9 \uBC18\uC601\uB429\uB2C8\uB2E4. \uC0C8 WKF\uB294 \uD604\uC7AC \uCEA0\uD398\uC778\uC5D0 \uC0DD\uC131\uB429\uB2C8\uB2E4.";
+          }
+        }
+        if (done) done(true);
+      },
+      function (err) {
+        ctx.wkfs = [];
+        ctx.matchShown = false;
+        if (!ctx.workflow) {
+          _showSqlSide(false);
+          renderListPane();
+        }
+        showErr(String(err && err.message ? err.message : err));
+        if (done) done(false);
+      }
+    );
+  }
+
+  function _hasCompose() {
+    return !!(state.passed && _trim(state.sql) && state.plan);
+  }
+
+  function _wfSchemaBound() {
+    return !!(state.commitOk || ctx.wfHasInjected);
+  }
+
+  function _resetInjectFlags() {
+    ctx.wfHasInjected = false;
+    ctx.currentInjectedId = null;
+  }
+
+  function _latestDraft() {
+    var drafts = _cacheListDrafts();
+    return drafts.length ? drafts[0] : null;
+  }
+
+  function _showNewSqlRow() {
+    if (_hasCompose() && !state.aiSqlId) return true;
+    return !!_latestDraft();
+  }
+
+  function _selectNewSqlWrite() {
+    _clearDelPending();
+    _clearOverwriteArm();
+    if (_hasCompose() && !state.aiSqlId) {
+      _syncRegButton();
+      loadSqlList();
+      var hKeep = $("hint");
+      if (hKeep) {
+        hKeep.className = "banner ok";
+        hKeep.textContent =
+          "\uC9C0\uAE08 \uC870\uAC74\uC785\uB2C8\uB2E4. [WKF\uC5D0 \uB123\uAE30]\uB97C \uB204\uB974\uBA74 \uC774 WKF \uBAA9\uB85D\uC5D0 \uCD94\uAC00\uD569\uB2C8\uB2E4.";
+      }
+      return;
+    }
+    var d = _latestDraft();
+    if (d) {
+      _restoreDraft(d);
+      loadSqlList();
+      return;
+    }
+  }
+
+  function _appendNewSqlRow(box) {
+    if (!box) return;
+    var el = document.createElement("div");
+    el.className = "sql-item new-sql";
+    if (!state.aiSqlId && _hasCompose()) el.className += " active";
+    var row = document.createElement("div");
+    row.className = "sid";
+    row.appendChild(document.createTextNode("\uC0C8 SQL \uC4F0\uAE30"));
+    var title = document.createElement("div");
+    var label = "";
+    if (_hasCompose() && !state.aiSqlId) label = state.nl || "";
+    else {
+      var d = _latestDraft();
+      label = d ? String(d.nl_request || "") : "";
+    }
+    if (label.length > 48) label = label.substring(0, 45) + "...";
+    title.textContent = label || "(\uC784\uC2DC \uC870\uAC74)";
+    var meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent =
+      "\uBBF8\uBC18\uC601 \u00B7 [WKF\uC5D0 \uB123\uAE30]\uB85C \uC774 WKF\uC5D0 \uCD94\uAC00";
+    el.appendChild(row);
+    el.appendChild(title);
+    el.appendChild(meta);
+    el.onclick = function () {
+      _selectNewSqlWrite();
+      return false;
+    };
+    box.appendChild(el);
+  }
+
+  /* ST3~ST5(WKF 미선택): [등록] 비활성. SQL목록은 브레드크럼/뒤로. 생성 직후 [등록]→목록은 유지. */
+  function _isMappingWithoutWkf() {
+    if (!SHELL_MODE) return false;
+    if (_activeWorkflowName()) return false;
+    var ph = String(ctx.phase || "ST0");
+    return ph === "ST3" || ph === "ST4" || ph === "ST5";
+  }
+
+  function _syncRegButton() {
+    var el = $("btnReg");
+    if (!el) return;
+    if (_overwriteArmed) {
+      el.textContent = "\uB36E\uC5B4\uC4F0\uB824\uBA74 \uB2E4\uC2DC \uD074\uB9AD";
+    } else if (ctx.wfHasInjected && _activeWorkflowName() && state.aiSqlId) {
+      el.textContent = "WKF\uC5D0 \uB36E\uC5B4\uC4F0\uAE30";
+    } else if (_activeWorkflowName()) {
+      el.textContent = "WKF\uC5D0 \uB123\uAE30";
+    } else {
+      el.textContent = "\uC774 \uC870\uAC74 \uC4F0\uAE30";
+    }
+    if (!state.passed) {
+      el.disabled = true;
+      return;
+    }
+    if (_isMappingWithoutWkf()) {
+      el.disabled = true;
+      return;
+    }
+    el.disabled = false;
+  }
+
+  // 뒤로가기/초기화: 이전 Generate·매칭이 캠페인 재진입에 남지 않게 정리
+  function _clearComposeState() {
+    state.plan = null;
+    state.sql = "";
+    state.summary = "";
+    state.passed = false;
+    state.nl = "";
+    state.aiSqlId = null;
+    state.cacheId = null;
+    state.foundryDoneQid = null;
+    state.commitOk = false;
+    _clearOverwriteArm();
+    ctx.wkfs = [];
+    ctx.matchShown = false;
+    ctx.matchMode = "";
+    try {
+      var nlEl = $("nl");
+      if (nlEl) nlEl.value = "";
+    } catch (eNl) {}
+    try {
+      hideResultCards();
+    } catch (eH) {}
+    try {
+      var sqlBox = $("sql");
+      if (sqlBox) sqlBox.textContent = "";
+    } catch (eS) {}
+  }
+
+  function _clearShellSelection() {
+    ctx.folder = null;
+    ctx.campaign = null;
+    ctx.workflow = null;
+    ctx.bareLevel = "";
+    ctx.openHint = "";
+    ctx.wkfs = [];
+    ctx.campaigns = [];
+    _resetInjectFlags();
+    if (!EMBED) WORKFLOW_NAME = "";
+  }
+
+  /* R4: [등록] = SQL 목록 (WKF 선행 금지). DB Register는 WKF 있을 때만. */
+  function _enterSqlList() {
+    if (!SHELL_MODE) return;
+    _releaseCurrentLock(function () {
+      _restoreLatestDraftIfNeeded();
+      if (state.passed && _trim(state.sql)) putDraft();
+      _clearShellSelection();
+      ctx.phase = state.passed && _trim(state.sql) ? "ST2" : "ST1";
+      ctx.listMode = "SQL";
+      _showSqlSide(false);
+      setInputEnabled(true);
+      renderBreadcrumb();
+      renderListPane();
+      _loadRegisteredSql();
+      _syncRegButton();
+      var hint = $("hint");
+      if (hint) {
+        hint.className = "banner ok";
+        hint.textContent = state.passed
+          ? "\uC704\uC758 \uC784\uC2DC \uD56D\uBAA9\uC744 \uB204\uB974\uBA74 \uADF8 \uC870\uAC74\uC73C\uB85C \uC774\uC5B4\uC11C \uC9C4\uD589\uD569\uB2C8\uB2E4."
+          : "\uC870\uAC74\uC744 [\uB300\uC0C1 \uB9CC\uB4E4\uAE30] \uD55C \uB4A4 [\uC774 \uC870\uAC74 \uC4F0\uAE30]\uB97C \uB204\uB974\uBA74 \uBAA9\uB85D\uC774 \uB098\uD0D5\uB2C8\uB2E4.";
+      }
+    });
+  }
+
+  function _beginMapping(opts) {
+    if (!SHELL_MODE) return;
+    if (!state.passed || !_trim(state.sql)) {
+      showErr("\uBA3C\uC800 \uC870\uAC74\uC744 [\uB300\uC0C1 \uB9CC\uB4E4\uAE30]\uD558\uC138\uC694.");
+      return;
+    }
+    opts = opts || {};
+    putDraft();
+    _pushStack();
+    _releaseCurrentLock(function () {
+      _clearShellSelection();
+      ctx.phase = "ST3";
+      ctx.listMode = "FOLDER";
+      ctx.bareLevel = opts.showProgramCrumb ? "program" : "";
+      _showSqlSide(false);
+      setInputEnabled(true);
+      renderBreadcrumb();
+      loadAiFolders();
+      _syncRegButton();
+      var hintM = $("hint");
+      if (hintM) {
+        hintM.className = "banner ok";
+        hintM.textContent =
+          "\uC774 \uC870\uAC74\uC744 \uC4F8 \uD504\uB85C\uADF8\uB7A8\uBD80\uD130 \uACE0\uB974\uC138\uC694. \uCEA0\uD398\uC778 \u2192 WKF \uC21C\uC785\uB2C8\uB2E4.";
+      }
+    });
+  }
+
+  function _loadRegisteredSql() {
+    if (!SHELL_MODE) return;
+    post(
+      "testWooAiStudioContext.jssp",
+      { action: "listRegisteredSql", limit: 50 },
+      function (res) {
+        ctx.registeredSql = (res && res.ok && res.items) ? res.items : [];
+        if (ctx.listMode === "SQL") renderListPane();
+      },
+      function () {
+        ctx.registeredSql = ctx.registeredSql || [];
+      }
+    );
+  }
+
+  function _jumpExistingSql(row) {
+    if (!row || !row.id) return;
+    if (!row.workflow_id && !row.campaign_id) {
+      showErr(
+        "\uC774 \uC870\uAC74\uC758 WKF\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uC0C8 \uC870\uAC74\uC73C\uB85C [\uB300\uC0C1 \uB9CC\uB4E4\uAE30]\uD558\uC138\uC694."
+      );
+      return;
+    }
+    setBusy(true);
+    post(
+      "testWooAiValidate.jssp",
+      { action: "getSql", ai_sql_id: row.id },
+      function (res) {
+        setBusy(false);
+        if (!res || !res.ok || !res.item) {
+          showErr(_errText(res) || "load failed");
+          return;
+        }
+        var it = res.item;
+        state.aiSqlId = it.id;
+        state.sql = it.sql_query || "";
+        state.summary = it.summary_ko || "";
+        state.nl = it.nl_request || "";
+        state.passed = !!_trim(state.sql);
+        state.plan = null;
+        try {
+          if (it.plan_json) state.plan = JSON.parse(it.plan_json);
+        } catch (eParse) {
+          state.plan = null;
+        }
+        try {
+          if (it.nl_request) $("nl").value = it.nl_request;
+        } catch (eNl) {}
+        renderSql(state.sql);
+        _syncRegButton();
+        if (row.program_id) {
+          ctx.folder = {
+            id: String(row.program_id),
+            name: String(row.program_name || ""),
+            label: String(row.program_label || row.program_name || "")
+          };
+        }
+        if (row.campaign_id) {
+          ctx.campaign = {
+            id: String(row.campaign_id),
+            name: String(row.campaign_name || ""),
+            label: String(row.campaign_label || row.campaign_name || "")
+          };
+        }
+        ctx.phase = "ST5";
+        ctx.listMode = "WKF";
+        ctx.matchMode = "";
+        ctx.matchShown = false;
+        _pushStack();
+        loadWkfs(function () {
+          if (row.workflow_id) {
+            selectWkf({
+              id: row.workflow_id,
+              name: row.workflow_name || "",
+              label: row.workflow_label || row.workflow_name || ""
+            }, { showSqlList: true });
+          }
+        });
+      },
+      function (e) {
+        setBusy(false);
+        showErr(String(e && e.message ? e.message : e));
+      }
+    );
+  }
+
   function setBindPick(aiSqlId) {
-    if (!WORKFLOW_NAME || aiSqlId == null || aiSqlId === "" || aiSqlId === 0) return;
+    var wf = _activeWorkflowName();
+    if (!wf || aiSqlId == null || aiSqlId === "" || aiSqlId === 0) return;
     post("testWooAiValidate.jssp", {
       action: "setBindPick",
-      workflow_name: WORKFLOW_NAME,
+      workflow_name: wf,
       ai_sql_id: aiSqlId
     }, function () {}, function () {
       /* Apply 는 폼 ShellPick — pick 실패해도 Studio 사용은 유지 */
+    });
+  }
+
+  function setInfoBar(text) {
+    /* #147: text 인자는 호환용 — 실제는 breadcrumb DOM */
+    renderBreadcrumb();
+  }
+
+  function _crumbLabel(obj, fallback) {
+    if (!obj) return fallback;
+    var lab = _trim(obj.label || "");
+    var nam = _trim(obj.name || "");
+    if (lab) {
+      var cut = lab.indexOf(" / ");
+      if (cut > 0) lab = lab.substring(0, cut);
+      return lab;
+    }
+    return nam || fallback;
+  }
+
+  function _wfSqlCount(row) {
+    if (!row) return 0;
+    if (row.sqlCount != null) return Number(row.sqlCount) || 0;
+    if (row.sql_count != null) return Number(row.sql_count) || 0;
+    return 0;
+  }
+
+  function _wfListText(row) {
+    var lab = _crumbLabel(row, row && row.name ? row.name : "WKF");
+    var nam = row && row.name ? String(row.name) : "";
+    return lab + " / " + nam + " / " + _wfSqlCount(row);
+  }
+
+  function renderBreadcrumb() {
+    var el = $("twInfoText");
+    if (!el) return;
+    while (el.firstChild) el.removeChild(el.firstChild);
+
+    function addSep() {
+      var s = document.createElement("span");
+      s.className = "crumb-sep";
+      s.appendChild(document.createTextNode(">"));
+      el.appendChild(s);
+    }
+    function addCrumb(label, isCur, onClick) {
+      var a = document.createElement("span");
+      a.className = isCur ? "crumb cur" : "crumb";
+      a.appendChild(document.createTextNode(label));
+      if (!isCur && onClick) {
+        a.onclick = function () {
+          onClick();
+          return false;
+        };
+      }
+      el.appendChild(a);
+    }
+
+    var mode = String(ctx.listMode || "SQL");
+    var onSqlHome = mode === "SQL";
+    addCrumb(
+      "SQL\uC120\uD0DD",
+      onSqlHome,
+      function () { _enterSqlList(); }
+    );
+    if (onSqlHome) return;
+
+    if (mode === "FOLDER") {
+      if (ctx.bareLevel === "program") {
+        addSep();
+        addCrumb("Program", true, null);
+      }
+      return;
+    }
+
+    if (ctx.folder) {
+      addSep();
+      addCrumb(
+        "Program: " + _crumbLabel(ctx.folder, "Program"),
+        false,
+        function () {
+          navToProgram();
+        }
+      );
+    }
+
+    if (mode === "CAMPAIGN") {
+      addSep();
+      addCrumb(
+        ctx.campaign
+          ? ("Campaign: " + _crumbLabel(ctx.campaign, "Campaign"))
+          : "Campaign",
+        true,
+        null
+      );
+      return;
+    }
+
+    if (ctx.campaign) {
+      addSep();
+      addCrumb(
+        "Campaign: " + _crumbLabel(ctx.campaign, "Campaign"),
+        false,
+        function () {
+          navToCampaignList();
+        }
+      );
+    }
+
+    if (mode === "WKF" && !ctx.workflow) {
+      addSep();
+      addCrumb("Workflow", true, null);
+      return;
+    }
+
+    if (ctx.workflow) {
+      addSep();
+      addCrumb(
+        "Workflow: " + _crumbLabel(ctx.workflow, "WKF"),
+        false,
+        function () {
+          navToWkfList();
+        }
+      );
+    }
+
+    if (mode === "WKFSQL") {
+      addSep();
+      addCrumb("SQL\uBAA9\uB85D(Workflow)", true, null);
+    }
+  }
+
+  function navToProgram() {
+    if (!SHELL_MODE) return;
+    _releaseCurrentLock(function () {
+      var keepSql = !!(state.passed && _trim(state.sql));
+      if (!keepSql) _restoreLatestDraftIfNeeded();
+      ctx.workflow = null;
+      ctx.openHint = "";
+      ctx.campaign = null;
+      ctx.campaigns = [];
+      ctx.folder = null;
+      ctx.wkfs = [];
+      ctx.bareLevel = "program";
+      ctx.stack = [_sqlStackFrame()];
+      if (!EMBED) WORKFLOW_NAME = "";
+      _showSqlSide(false);
+      ctx.listMode = "FOLDER";
+      ctx.phase = "ST3";
+      setInputEnabled(true);
+      _refreshOpenButtons();
+      renderBreadcrumb();
+      loadAiFolders();
+      _syncRegButton();
+    });
+  }
+
+  function navToCampaignList() {
+    if (!SHELL_MODE || !ctx.folder) {
+      navToProgram();
+      return;
+    }
+    _releaseCurrentLock(function () {
+      var keepSql = !!(state.passed && _trim(state.sql));
+      if (!keepSql) _restoreLatestDraftIfNeeded();
+      ctx.workflow = null;
+      ctx.openHint = "";
+      ctx.campaign = null;
+      ctx.bareLevel = "campaign";
+      if (!EMBED) WORKFLOW_NAME = "";
+      _showSqlSide(false);
+      ctx.listMode = "CAMPAIGN";
+      ctx.phase = "ST4";
+      ctx.stack = [
+        _sqlStackFrame(),
+        {
+          phase: "ST3",
+          listMode: "FOLDER",
+          folder: null,
+          campaign: null,
+          workflow: null,
+          bareLevel: "program"
+        }
+      ];
+      setInputEnabled(true);
+      _refreshOpenButtons();
+      renderBreadcrumb();
+      loadCampaigns();
+      _syncRegButton();
+    });
+  }
+
+  function navToWkfList() {
+    if (!SHELL_MODE || !ctx.campaign) {
+      navToCampaignList();
+      return;
+    }
+    _releaseCurrentLock(function () {
+      var keepSql = !!(state.passed && _trim(state.sql));
+      if (!keepSql) _restoreLatestDraftIfNeeded();
+      ctx.workflow = null;
+      ctx.openHint = "";
+      ctx.bareLevel = "";
+      if (!EMBED) WORKFLOW_NAME = "";
+      _showSqlSide(false);
+      ctx.listMode = "WKF";
+      ctx.phase = "ST5";
+      setInputEnabled(true);
+      _refreshOpenButtons();
+      renderBreadcrumb();
+      loadWkfs();
+      _syncRegButton();
+    });
+  }
+
+  function _refreshOpenButtons() {
+    var on = !!(ctx.workflow && ctx.workflow.id && _wfSchemaBound());
+    var b1 = $("btnTwOpenWkf");
+    var b2 = $("btnTwGotoWkf");
+    if (b1) b1.disabled = !on;
+    if (b2) b2.disabled = !on;
+    _syncOtherWkfBtn();
+  }
+
+  function _syncOtherWkfBtn() {
+    var b = $("btnTwOtherWkf");
+    if (!b) return;
+    if (_wfSchemaBound() && String(ctx.phase || "") === "ST6") {
+      _rmCls(b, "hidden");
+      b.disabled = false;
+    } else {
+      _addCls(b, "hidden");
+      b.disabled = true;
+    }
+  }
+
+  function applyToOtherWkf() {
+    if (!state.passed || !_trim(state.sql)) return;
+    ctx.workflow = null;
+    state.commitOk = false;
+    _resetInjectFlags();
+    _clearOverwriteArm();
+    _refreshOpenButtons();
+    _beginMapping();
+  }
+
+  function _tryOpenWkf(pk) {
+    var url =
+      "xtk://open/?schema=xtk:workflow&form=xtk:workflow&pk=" +
+      encodeURIComponent(String(pk));
+    try {
+      var a = document.createElement("a");
+      a.href = url;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      if (a.click) a.click();
+    } catch (eA) {}
+  }
+
+  function showOpenHint() {
+    if (!_wfSchemaBound()) {
+      showErr("\uBA3C\uC800 WKF\uC5D0 \uBC18\uC601\uD55C \uB4A4 \uC5F4 \uC218 \uC788\uC2B5\uB2C8\uB2E4.");
+      return;
+    }
+    if (!ctx.workflow || !ctx.workflow.id) {
+      showErr("\uBA3C\uC800 WKF\uB97C \uC120\uD0DD\uD558\uC138\uC694.");
+      return;
+    }
+    _tryOpenWkf(ctx.workflow.id);
+    var hint =
+      ctx.openHint ||
+      ("\uBC18\uC601 \uC804\uC5D0 \uC5F4\uC5B4 \uB454 WKF \uCC3D\uC740 \uB2EB\uACE0, Explorer\uC5D0\uC11C \uB2E4\uC2DC \uC5EC\uC138\uC694 (name=" +
+        ctx.workflow.name +
+        ", id=" +
+        ctx.workflow.id +
+        ")");
+    var h = $("hint");
+    if (h) {
+      h.className = "banner warn";
+      h.textContent = hint;
+    }
+    clearErr();
+  }
+
+  function setInputEnabled(on) {
+    var nl = $("nl");
+    var btn = $("btnGen");
+    var hint = $("twNlHint");
+    var allow = !!on;
+    if (nl) nl.disabled = !allow;
+    if (btn) btn.disabled = !allow;
+    if (hint) {
+      if (allow) _addCls(hint, "hidden");
+      else {
+        _rmCls(hint, "hidden");
+        hint.textContent =
+          "\uC870\uAC74\uC744 \uC785\uB825\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. (\uCC98\uB9AC \uC911)";
+      }
+    }
+  }
+
+  function _folderInfoText() {
+    if (!ctx.folder) return "Program: (\uBBF8\uC120\uD0DD)";
+    var t = "Program: " + ctx.folder.label + " / " + ctx.folder.name;
+    if (ctx.campaign && ctx.campaign.name) {
+      t +=
+        " | \uCEA0\uD398\uC778: " +
+        (ctx.campaign.label || ctx.campaign.name) +
+        " / " +
+        ctx.campaign.name;
+    }
+    if (ctx.workflow && ctx.workflow.name) {
+      t +=
+        " | WKF: " +
+        (ctx.workflow.label || ctx.workflow.name) +
+        " / " +
+        ctx.workflow.name +
+        " (id=" +
+        ctx.workflow.id +
+        ")";
+    }
+    if (state.aiSqlId) {
+      t += " | SQL: ai_sql_id=" + state.aiSqlId;
+    }
+    return t;
+  }
+
+  function _sqlStackFrame() {
+    return {
+      phase: (state.passed && _trim(state.sql)) ? "ST2" : "ST1",
+      listMode: "SQL",
+      folder: null,
+      campaign: null,
+      workflow: null,
+      bareLevel: ""
+    };
+  }
+
+  function _restoreLatestDraftIfNeeded() {
+    if (state.passed && _trim(state.sql)) return;
+    var ds = _cacheListDrafts();
+    if (ds.length) _restoreDraft(ds[0]);
+  }
+
+  function _pushStack() {
+    ctx.stack.push({
+      phase: ctx.phase,
+      listMode: ctx.listMode,
+      folder: ctx.folder
+        ? { id: ctx.folder.id, name: ctx.folder.name, label: ctx.folder.label }
+        : null,
+      campaign: ctx.campaign
+        ? {
+            id: ctx.campaign.id,
+            name: ctx.campaign.name,
+            label: ctx.campaign.label
+          }
+        : null,
+      workflow: ctx.workflow
+        ? {
+            id: ctx.workflow.id,
+            name: ctx.workflow.name,
+            label: ctx.workflow.label
+          }
+        : null,
+      bareLevel: ctx.bareLevel || ""
+    });
+  }
+
+  function _releaseCurrentLock(done) {
+    if (!ctx.workflow || !ctx.workflow.id) {
+      if (done) done();
+      return;
+    }
+    var wid = ctx.workflow.id;
+    post(
+      "testWooAiStudioContext.jssp",
+      { action: "releaseLock", workflow_id: wid },
+      function () {
+        if (done) done();
+      },
+      function () {
+        if (done) done();
+      }
+    );
+  }
+
+  function _isSqlBrowse() {
+    if (ctx.listMode !== "SQL") return false;
+    if (_cacheListDrafts().length) return false;
+    if (state.passed && _trim(state.sql)) return false;
+    return true;
+  }
+
+  function _sqlRowHay(row) {
+    return _trim((row && row.nl_request) || "") + " " +
+      _trim((row && row.title) || "") + " " +
+      _trim((row && row.workflow_label) || "") + " " +
+      _trim((row && row.workflow_name) || "") + " " +
+      _trim((row && row.program_label) || "") + " " +
+      _trim((row && row.campaign_label) || "");
+  }
+
+  function _filterRegistered(rows, q) {
+    var list = rows || [];
+    q = _trim(q || "").toLowerCase();
+    if (!q) return list;
+    var out = [];
+    var i, hay;
+    for (i = 0; i < list.length; i++) {
+      hay = _sqlRowHay(list[i]).toLowerCase();
+      if (hay.indexOf(q) >= 0) out.push(list[i]);
+    }
+    return out;
+  }
+
+  function _uniqPush(bag, tok) {
+    var i;
+    if (!tok) return;
+    for (i = 0; i < bag.length; i++) {
+      if (bag[i] === tok) return;
+    }
+    bag.push(tok);
+  }
+
+  function _canonParamName(k) {
+    var s = String(k || "");
+    if (!s || s.charAt(0) === "_") return "";
+    if (s.indexOf("_") >= 0) {
+      return s.replace(/_([a-zA-Z])/g, function (_, c) {
+        return String(c).toUpperCase();
+      });
+    }
+    return s;
+  }
+
+  function _paramKeyFromPlan(plan) {
+    var seen = {};
+    var keys = [];
+    function addParams(params) {
+      var k, ck;
+      if (!params) return;
+      for (k in params) {
+        if (!params.hasOwnProperty(k)) continue;
+        ck = _canonParamName(k);
+        if (!ck || seen[ck]) continue;
+        seen[ck] = 1;
+        keys.push(ck);
+      }
+    }
+    var inc = (plan && plan.include) || [];
+    var i, j, any, ex;
+    for (i = 0; i < inc.length; i++) {
+      any = (inc[i] && inc[i].any) || [];
+      for (j = 0; j < any.length; j++) addParams(any[j] && any[j].params);
+    }
+    ex = (plan && plan.exclude) || [];
+    for (i = 0; i < ex.length; i++) addParams(ex[i] && ex[i].params);
+    keys.sort();
+    return keys.join("|");
+  }
+
+  function _splitParamKey(s) {
+    var out = [];
+    var parts = String(s || "").split("|");
+    var i, p;
+    for (i = 0; i < parts.length; i++) {
+      p = _trim(parts[i]);
+      if (p) _uniqPush(out, p);
+    }
+    return out;
+  }
+
+  function _intersectKeys(a, b) {
+    var hits = [];
+    var i, j;
+    for (i = 0; i < a.length; i++) {
+      for (j = 0; j < b.length; j++) {
+        if (a[i] === b[j]) {
+          hits.push(a[i]);
+          break;
+        }
+      }
+    }
+    return hits;
+  }
+
+  function _parseFragNames(raw) {
+    var names = [];
+    var arr = raw;
+    var i, it, nm;
+    if (!raw) return names;
+    if (typeof raw === "string") {
+      try {
+        arr = JSON.parse(raw);
+      } catch (eP) {
+        return names;
+      }
+    }
+    if (!arr || !arr.length) return names;
+    for (i = 0; i < arr.length; i++) {
+      it = arr[i];
+      nm = "";
+      if (typeof it === "string") nm = it;
+      else if (it) nm = String(it.name || it.fragment || "");
+      nm = _trim(nm).toLowerCase();
+      if (nm) _uniqPush(names, nm);
+    }
+    return names;
+  }
+
+  function _queryFragNames() {
+    return _parseFragNames(_extractUsedFragments(state.plan));
+  }
+
+  function _similarRegistered(rows) {
+    var list = rows || [];
+    var qKey = _paramKeyFromPlan(state.plan);
+    var qParts = _splitParamKey(qKey);
+    var qFrag = _queryFragNames();
+    var out = [];
+    var i, rKey, rParts, rFrag, hits, equal;
+    if (!qParts.length && !qFrag.length) return out;
+    for (i = 0; i < list.length; i++) {
+      rKey = list[i] && list[i].param_key ? String(list[i].param_key) : "";
+      rParts = _splitParamKey(rKey);
+      hits = [];
+      equal = false;
+      if (qParts.length && rParts.length) {
+        hits = _intersectKeys(qParts, rParts);
+        equal = qParts.length === rParts.length && hits.length === qParts.length;
+      } else if (qFrag.length) {
+        rFrag = _parseFragNames(list[i].used_fragments);
+        hits = _intersectKeys(qFrag, rFrag);
+      }
+      if (hits.length) {
+        out.push({
+          row: list[i],
+          hits: hits,
+          fragHits: equal ? hits : [],
+          score: (equal ? 100 : 0) + hits.length
+        });
+      }
+    }
+    out.sort(function (a, b) {
+      return b.score - a.score;
+    });
+    return out;
+  }
+
+  function _fillBrowseRows(rowsBox, regs) {
+    if (!rowsBox) return;
+    rowsBox.innerHTML = "";
+    var shown = _filterRegistered(regs || [], ctx.sqlFilter);
+    if (!shown.length) {
+      var emptyF = document.createElement("div");
+      emptyF.className = "side-empty";
+      emptyF.appendChild(document.createTextNode(
+        "\uB9DE\uB294 \uC870\uAC74\uC774 \uC5C6\uC2B5\uB2C8\uB2E4."
+      ));
+      rowsBox.appendChild(emptyF);
+      return;
+    }
+    _renderRegisteredRows(rowsBox, shown);
+  }
+
+  function _onSqlFilter() {
+    var inp = $("twSqlFilter");
+    if (inp) ctx.sqlFilter = inp.value;
+    var rowsBox = $("twSqlBrowseRows");
+    if (!rowsBox) {
+      renderListPane();
+      return;
+    }
+    _fillBrowseRows(rowsBox, ctx.registeredSql || []);
+  }
+
+  function _appendSqlSearch(box) {
+    var wrap = document.createElement("div");
+    wrap.className = "sql-search";
+    var lab = document.createElement("div");
+    lab.className = "sql-search-lab";
+    lab.appendChild(document.createTextNode(
+      "\uC870\uAC74 \uB610\uB294 WKF \uC774\uB984\uC73C\uB85C \uCC3E\uAE30"
+    ));
+    var inp = document.createElement("input");
+    inp.type = "text";
+    inp.id = "twSqlFilter";
+    inp.value = ctx.sqlFilter || "";
+    inp.onkeyup = _onSqlFilter;
+    try { inp.oninput = _onSqlFilter; } catch (eIn) {}
+    wrap.appendChild(lab);
+    wrap.appendChild(inp);
+    box.appendChild(wrap);
+  }
+
+  function _renderRegisteredRows(box, rows) {
+    var list = rows || [];
+    var rg;
+    for (rg = 0; rg < list.length; rg++) {
+      (function (row) {
+        var el = document.createElement("div");
+        el.className = "shell-item";
+        var nlLab = _trim(row.nl_request || row.title || "");
+        if (nlLab.length > 40) nlLab = nlLab.substring(0, 37) + "...";
+        var wfLab = row.workflow_label || row.workflow_name || "";
+        el.appendChild(document.createTextNode(
+          nlLab + (wfLab ? (" \u00B7 " + wfLab) : "")
+        ));
+        el.onclick = function () {
+          _jumpExistingSql(row);
+          return false;
+        };
+        box.appendChild(el);
+      })(list[rg]);
+    }
+  }
+
+  function _renderSimilarRows(box, scored) {
+    var list = scored || [];
+    var i;
+    for (i = 0; i < list.length; i++) {
+      (function (item) {
+        var row = item.row;
+        var el = document.createElement("div");
+        el.className = "shell-item";
+        var nlLab = _trim(row.nl_request || row.title || "");
+        if (nlLab.length > 40) nlLab = nlLab.substring(0, 37) + "...";
+        var wfLab = row.workflow_label || row.workflow_name || "";
+        var title = document.createElement("div");
+        title.appendChild(document.createTextNode(
+          nlLab + (wfLab ? (" \u00B7 " + wfLab) : "")
+        ));
+        el.appendChild(title);
+        if (item.fragHits && item.fragHits.length) {
+          var metaF = document.createElement("div");
+          metaF.className = "meta";
+          metaF.appendChild(document.createTextNode(
+            "\uAC19\uC740 \uC870\uAC74 \uAD6C\uC131"
+          ));
+          el.appendChild(metaF);
+        }
+        if (item.hits && item.hits.length) {
+          var meta = document.createElement("div");
+          meta.className = "meta";
+          meta.appendChild(document.createTextNode(
+            "param_key: " + item.hits.join("|")
+          ));
+          el.appendChild(meta);
+        }
+        el.onclick = function () {
+          _jumpExistingSql(row);
+          return false;
+        };
+        box.appendChild(el);
+      })(list[i]);
+    }
+  }
+
+  function renderListPane() {
+    var box = $("twDummyList");
+    var title = $("twListTitle");
+    var side = $("sideSql");
+    if (!box) return;
+    if (side) side.style.display = "none";
+    box.style.display = "block";
+    box.innerHTML = "";
+
+    if (ctx.listMode === "SQL") {
+      if (title) title.textContent = "\uB0B4 \uC870\uAC74";
+      var draftsSql = _cacheListDrafts();
+      var regs = ctx.registeredSql || [];
+      if (_isSqlBrowse()) {
+        if (!regs.length) {
+          var emptyB = document.createElement("div");
+          emptyB.className = "side-empty";
+          emptyB.appendChild(document.createTextNode(
+            "\uC800\uC7A5\uB41C \uC870\uAC74\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uC544\uB798\uC5D0 \uC870\uAC74\uC744 \uC785\uB825\uD55C \uB4A4 [\uB300\uC0C1 \uB9CC\uB4E4\uAE30]\uB97C \uB204\uB974\uC138\uC694."
+          ));
+          box.appendChild(emptyB);
+          return;
+        }
+        _appendSqlSearch(box);
+        _appendListSec(box, "\uC608\uC804\uC5D0 \uC4F4 \uC870\uAC74", true);
+        var rowsBox = document.createElement("div");
+        rowsBox.id = "twSqlBrowseRows";
+        box.appendChild(rowsBox);
+        _fillBrowseRows(rowsBox, regs);
+        return;
+      }
+      if (!draftsSql.length && !regs.length && !(state.passed && _trim(state.sql))) {
+        var emptyS = document.createElement("div");
+        emptyS.className = "side-empty";
+        emptyS.appendChild(document.createTextNode(
+          "\uC870\uAC74\uC744 [\uB300\uC0C1 \uB9CC\uB4E4\uAE30] \uD55C \uB4A4 [\uC774 \uC870\uAC74 \uC4F0\uAE30]\uB97C \uB204\uB974\uBA74 \uC5EC\uAE30 \uB098\uD0D5\uB2C8\uB2E4."
+        ));
+        box.appendChild(emptyS);
+        return;
+      }
+      if (draftsSql.length) {
+        _appendListSec(box, "\uC774\uC5B4\uC11C \uD560 \uC791\uC5C5", true);
+        _renderDraftRows(box, true);
+        var draftHint = document.createElement("div");
+        draftHint.className = "side-empty";
+        draftHint.appendChild(document.createTextNode(
+          "\uD56D\uBAA9\uC744 \uB204\uB974\uBA74 \uADF8 \uC870\uAC74\uC73C\uB85C \uC774\uC5B4\uC11C \uC9C4\uD589\uD569\uB2C8\uB2E4."
+        ));
+        box.appendChild(draftHint);
+      }
+      var similar = _similarRegistered(regs);
+      _appendListSec(box, "\uBE44\uC2B7\uD55C \uC608\uC804 \uC870\uAC74", !draftsSql.length);
+      if (!similar.length) {
+        var emptySim = document.createElement("div");
+        emptySim.className = "side-empty";
+        emptySim.appendChild(document.createTextNode(
+          "\uC9C0\uAE08 \uC785\uB825\uACFC \uAC81\uCE58\uB294 \uC608\uC804 \uC870\uAC74\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uAC12\uC774 \uAC19\uB2E4\uACE0 \uB2E8\uC815\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."
+        ));
+        box.appendChild(emptySim);
+      } else {
+        var simHint = document.createElement("div");
+        simHint.className = "side-empty";
+        simHint.appendChild(document.createTextNode(
+          "\uAC81\uCE5C \uB9D0\uB9CC \uBAA8\uC558\uC2B5\uB2C8\uB2E4. \uD56D\uBAA9\uC744 \uB204\uB974\uBA74 \uADF8 WKF\uB85C \uAC11\uB2C8\uB2E4."
+        ));
+        box.appendChild(simHint);
+        _renderSimilarRows(box, similar);
+      }
+      return;
+    }
+
+    if (ctx.listMode === "FOLDER") {
+      if (title) title.textContent = "\uD504\uB85C\uADF8\uB7A8 \uC120\uD0DD";
+      if (!ctx.folders.length) {
+        var empty = document.createElement("div");
+        empty.className = "side-empty";
+        empty.appendChild(document.createTextNode(
+          "AI Program\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. isAiFolder=\uCC38 \uD3F4\uB354\uB97C \uBA3C\uC800 \uC900\uBE44\uD558\uC138\uC694."
+        ));
+        box.appendChild(empty);
+        return;
+      }
+      for (var i = 0; i < ctx.folders.length; i++) {
+        (function (row) {
+          var el = document.createElement("div");
+          el.className = "shell-item";
+          el.appendChild(document.createTextNode(
+            (row.label || row.name) + " (" + row.name + ")"
+          ));
+          el.onclick = function () {
+            selectFolder(row);
+            return false;
+          };
+          box.appendChild(el);
+        })(ctx.folders[i]);
+      }
+      return;
+    }
+
+    if (ctx.listMode === "CAMPAIGN") {
+      if (title) title.textContent = "\uCEA0\uD398\uC778 \uBAA9\uB85D";
+      var createCamp = document.createElement("div");
+      createCamp.className = "shell-item";
+      createCamp.appendChild(
+        document.createTextNode("\uC0C8 \uCEA0\uD398\uC778 \uC0DD\uC131")
+      );
+      createCamp.onclick = function () {
+        createCampaign();
+        return false;
+      };
+      box.appendChild(createCamp);
+
+      if (!ctx.campaigns.length) {
+        var emptyC = document.createElement("div");
+        emptyC.className = "side-empty";
+        emptyC.appendChild(
+          document.createTextNode(
+            "\uCEA0\uD398\uC778\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uC704\uC5D0\uC11C \uC0C8 \uCEA0\uD398\uC778\uC744 \uC0DD\uC131\uD558\uC138\uC694."
+          )
+        );
+        box.appendChild(emptyC);
+        return;
+      }
+      for (var c = 0; c < ctx.campaigns.length; c++) {
+        (function (row) {
+          var el = document.createElement("div");
+          el.className = "shell-item";
+          var cnt = row.wkfCount != null ? row.wkfCount : 0;
+          var mx = row.wkfMax != null ? row.wkfMax : ctx.wkfMax;
+          el.appendChild(
+            document.createTextNode(
+              (row.label || row.name) +
+                " (" +
+                row.name +
+                ") \u2014 WKF " +
+                cnt +
+                "/" +
+                mx
+            )
+          );
+          el.onclick = function () {
+            selectCampaign(row);
+            return false;
+          };
+          box.appendChild(el);
+        })(ctx.campaigns[c]);
+      }
+      return;
+    }
+
+    if (ctx.listMode === "WKF") {
+      var isDiscover = MATCH_ENABLED && ctx.matchMode === "discover";
+      if (title) {
+        if (ctx.matchShown && isDiscover) {
+          title.textContent = "\uAC12 \uB300\uC870 WKF";
+        } else {
+          title.textContent =
+            "WKF(\uB77C\uBCA8\uBA85 / \uC778\uD130\uB110\uB124\uC784 / \uBC18\uC601SQL \uAC1C\uC218)";
+        }
+      }
+      var createRow = document.createElement("div");
+      if (ctx.canCreateWkf) {
+        createRow.className = "shell-item";
+        createRow.appendChild(
+          document.createTextNode("\uC0C8 WKF \uC0DD\uC131")
+        );
+        createRow.onclick = function () {
+          createWkf();
+          return false;
+        };
+      } else {
+        createRow.className = "shell-item locked";
+        createRow.appendChild(
+          document.createTextNode(
+            "\uC0C8 WKF \uC0DD\uC131 \uBD88\uAC00 (Max " + ctx.wkfMax + ")"
+          )
+        );
+        createRow.onclick = function () {
+          showErr(
+            "\uC774 \uCEA0\uD398\uC778\uC758 WKF\uAC00 \uC0C1\uD55C(" +
+              ctx.wkfMax +
+              ")\uC5D0 \uB3C4\uB2EC\uD588\uC2B5\uB2C8\uB2E4."
+          );
+          return false;
+        };
+      }
+      box.appendChild(createRow);
+
+      if (isDiscover) _renderDraftRows(box);
+
+      if (!ctx.wkfs.length) {
+        var emptyW = document.createElement("div");
+        emptyW.className = "side-empty";
+        emptyW.appendChild(document.createTextNode(
+          isDiscover
+            ? "\uAC12\uC774 \uC77C\uCE58\uD558\uB294 \uD6C4\uBCF4 WKF\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. \uC0C8 WKF\uB97C \uC0DD\uC131\uD558\uAC70\uB098 \uC870\uAC74\uC744 \uBC14\uAFB8\uC138\uC694."
+            : (ctx.canCreateWkf
+              ? "\uC774 \uCEA0\uD398\uC778\uC5D0 WKF\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. \uC0C8 WKF\uB97C \uC0DD\uC131\uD558\uC138\uC694."
+              : "WKF Max " + ctx.wkfMax + " \u2014 \uC0C8 WKF \uBD88\uAC00")
+        ));
+        box.appendChild(emptyW);
+        return;
+      }
+      for (var j = 0; j < ctx.wkfs.length; j++) {
+        (function (row) {
+          var el = document.createElement("div");
+          el.className = row.locked ? "sql-item locked" : "sql-item";
+
+          var wfLabel = row.label || row.name || "";
+          var wfName = row.name || "";
+          var campLabel = row.campaign_label || row.campaign_name || "?";
+          var campName = row.campaign_name || "?";
+          var progLabel =
+            row.program_label || row.program_name || "?";
+          var nlTxt = row.nl_request || "(NL \uC5C6\uC74C)";
+          var wfLine = _wfListText(row);
+
+          if (isDiscover) {
+            var d1 = document.createElement("div");
+            d1.className = "nl-line";
+            d1.textContent = nlTxt;
+            d1.title = nlTxt + " | " + wfLine;
+            el.appendChild(d1);
+
+            var dId = document.createElement("div");
+            dId.className = "sid";
+            dId.textContent = wfLine;
+            dId.title = wfLine;
+            el.appendChild(dId);
+
+            if (row.isIdentical) {
+              var sameBadge = document.createElement("div");
+              sameBadge.className = "sid";
+              sameBadge.textContent = "\uB3D9\uC77C";
+              el.appendChild(sameBadge);
+            }
+
+            /* #154: 단정형 "포함" 금지 — 조건별 대조표 */
+            var cmp = row.compare;
+            if (cmp && cmp.length) {
+              for (var ci = 0; ci < cmp.length; ci++) {
+                var line = cmp[ci];
+                var dCmp = document.createElement("div");
+                dCmp.className = "meta";
+                var st = String(line.status || "");
+                var lab = line.label || line.name || "";
+                var qv = line.queryValue || "";
+                var cv = line.candidateValue || "";
+                var tip = "";
+                if (st === "SAME") {
+                  tip = lab + "  " + qv + "  =  " + cv + "  (\uC77C\uCE58)";
+                } else if (st === "MISSING") {
+                  tip =
+                    lab +
+                    "  " +
+                    qv +
+                    "  =  (\uC5C6\uC74C)  (\uC774 \uC870\uAC74\uC740 \uD6C4\uBCF4\uC5D0 \uC5C6\uC74C)";
+                } else if (st === "CONFLICT") {
+                  tip =
+                    lab +
+                    "  " +
+                    qv +
+                    "  vs  " +
+                    cv +
+                    "  (\uBD88\uC77C\uCE58)";
+                } else {
+                  tip = lab + "  " + qv;
+                }
+                dCmp.textContent = tip;
+                dCmp.title = tip;
+                el.appendChild(dCmp);
+              }
+            } else {
+              var d2 = document.createElement("div");
+              d2.className = "sid";
+              d2.textContent = row.matchLabel || "\uAC12 \uB300\uC870 \uC815\uBCF4 \uC5C6\uC74C";
+              el.appendChild(d2);
+            }
+
+            var extra = row.extraCount != null ? row.extraCount : 0;
+            if (extra > 0) {
+              var d3 = document.createElement("div");
+              d3.className = "meta";
+              d3.textContent =
+                "\uC774 \uC6CC\uD06C\uD50C\uB85C\uC6B0\uC5D4 \uC870\uAC74 " +
+                extra +
+                "\uAC1C\uAC00 \uB354 \uC788\uC74C";
+              el.appendChild(d3);
+            }
+
+            var d4 = document.createElement("div");
+            d4.className = "meta";
+            d4.textContent =
+              campLabel + " / " + campName + " | " + progLabel;
+            d4.title = d4.textContent;
+            el.appendChild(d4);
+
+            if (row.locked) {
+              var badge = document.createElement("span");
+              badge.className = "badge-lock";
+              badge.textContent =
+                (row.locked_by || "?") + " \uD3B8\uC9D1 \uC911";
+              el.appendChild(badge);
+            }
+          } else {
+            el.className = row.locked ? "shell-item locked" : "shell-item";
+            if (ctx.workflow && String(ctx.workflow.id) === String(row.id)) {
+              el.className += " active";
+            }
+            var line1 = document.createElement("div");
+            line1.className = "sid";
+            var l1 = wfLine;
+            if (row.locked) l1 += " \u2014 \uC7A0\uAE08: " + (row.locked_by || "?");
+            line1.textContent = l1;
+            line1.title = wfLine;
+            el.appendChild(line1);
+          }
+          el.onclick = function () {
+            if (row.locked) {
+              showErr(
+                "\uB2E4\uB978 \uC0AC\uC6A9\uC790\uAC00 \uC810\uC720 \uC911\uC785\uB2C8\uB2E4: " +
+                  (row.locked_by || "?")
+              );
+              return false;
+            }
+            selectWkf(row);
+            return false;
+          };
+          box.appendChild(el);
+        })(ctx.wkfs[j]);
+      }
+      return;
+    }
+
+    if (title) title.textContent = "\uBAA9\uB85D";
+  }
+
+  function selectFolder(row) {
+    if (!row) return;
+    _pushStack();
+    ctx.folder = {
+      id: String(row.id || ""),
+      name: String(row.name || ""),
+      label: String(row.label || row.name || "")
+    };
+    ctx.campaign = null;
+    ctx.campaigns = [];
+    ctx.workflow = null;
+    ctx.openHint = "";
+    ctx.wkfs = [];
+    ctx.bareLevel = "";
+    ctx.phase = "ST4";
+    ctx.listMode = "CAMPAIGN";
+    setInfoBar(_folderInfoText());
+    setInputEnabled(true);
+    _refreshOpenButtons();
+    renderListPane();
+    loadCampaigns();
+    _syncRegButton();
+  }
+
+  function loadCampaigns() {
+    if (!SHELL_MODE || !ctx.folder || !ctx.folder.id) return;
+    post(
+      "testWooAiStudioContext.jssp",
+      {
+        action: "listCampaigns",
+        program_id: ctx.folder.id,
+        folder_id: ctx.folder.id,
+        limit: 200
+      },
+      function (res) {
+        if (!res || !res.ok) {
+          ctx.campaigns = [];
+          renderListPane();
+          showErr(_errText(res) || "listCampaigns failed");
+          return;
+        }
+        clearErr();
+        ctx.campaigns = res.items || [];
+        if (res.wkfMax != null) ctx.wkfMax = res.wkfMax;
+        renderListPane();
+      },
+      function (err) {
+        ctx.campaigns = [];
+        renderListPane();
+        showErr(String(err && err.message ? err.message : err));
+      }
+    );
+  }
+
+  function loadWkfs(done) {
+    if (!SHELL_MODE || !ctx.campaign || !ctx.campaign.id) {
+      if (done) done();
+      return;
+    }
+    ctx.phase = "ST5";
+    ctx.listMode = "WKF";
+    ctx.matchMode = "";
+    ctx.matchShown = false;
+    post(
+      "testWooAiStudioContext.jssp",
+      {
+        action: "listWkfs",
+        campaign_id: ctx.campaign.id,
+        operation_id: ctx.campaign.id,
+        limit: 200
+      },
+      function (res) {
+        if (!res || !res.ok) {
+          ctx.wkfs = [];
+          renderListPane();
+          showErr(_errText(res) || "listWkfs failed");
+          if (done) done();
+          return;
+        }
+        clearErr();
+        ctx.wkfs = res.items || [];
+        if (res.wkfMax != null) ctx.wkfMax = res.wkfMax;
+        if (res.canCreateWkf != null) ctx.canCreateWkf = !!res.canCreateWkf;
+        renderListPane();
+        renderBreadcrumb();
+        _syncRegButton();
+        if (done) done();
+      },
+      function (err) {
+        ctx.wkfs = [];
+        renderListPane();
+        showErr(String(err && err.message ? err.message : err));
+        if (done) done();
+      }
+    );
+  }
+
+  function _afterWkfBound(res, opts) {
+    opts = opts || {};
+    ctx.phase = "ST5";
+    setInfoBar(_folderInfoText());
+    _refreshOpenButtons();
+    if (res && res.lock_warning) {
+      $("hint").className = "banner warn";
+      $("hint").textContent =
+        "WKF \uC120\uD0DD\uB428 (\uC7A0\uAE08 \uACBD\uACE0: " + res.lock_warning + ")";
+    } else if (opts.showSqlList) {
+      $("hint").className = "banner ok";
+      $("hint").textContent =
+        "\uC774 WKF\uC5D0 \uC4F4 \uC870\uAC74\uC785\uB2C8\uB2E4. \uB2E4\uB978 WKF\uB294 \uC704 \uBE0C\uB808\uB4DC\uD06C\uB7FC\uC5D0\uC11C \uBC14\uAFB8\uC138\uC694.";
+    } else if (state.passed && _trim(state.sql)) {
+      $("hint").className = "banner ok";
+      $("hint").textContent =
+        "WKF \uC120\uD0DD\uB428. [WKF\uC5D0 \uB123\uAE30]\uB97C \uB204\uB974\uBA74 \uC774 \uC870\uAC74\uC744 \uC800\uC7A5\uD569\uB2C8\uB2E4.";
+    }
+    _syncRegButton();
+    loadSqlList({ selectCurrent: true });
+  }
+
+  function createCampaign() {
+    if (!ctx.folder || !ctx.folder.id) {
+      showErr("AI Program\uC744 \uBA3C\uC800 \uC120\uD0DD\uD558\uC138\uC694.");
+      return;
+    }
+    setBusy(true);
+    post(
+      "testWooAiStudioContext.jssp",
+      {
+        action: "createCampaign",
+        program_id: ctx.folder.id,
+        folder_id: ctx.folder.id,
+        label: "AI Campaign"
+      },
+      function (res) {
+        setBusy(false);
+        if (!res || !res.ok || !res.campaign) {
+          showErr(_errText(res) || "createCampaign failed");
+          return;
+        }
+        clearErr();
+        _enterCampaign(res.campaign, false);
+      },
+      function (err) {
+        setBusy(false);
+        showErr(String(err && err.message ? err.message : err));
+      }
+    );
+  }
+
+  function _enterCampaign(row, push) {
+    if (!row || !row.id) return;
+    if (push) _pushStack();
+    ctx.campaign = {
+      id: String(row.id || ""),
+      name: String(row.name || ""),
+      label: String(row.label || row.name || "")
+    };
+    ctx.workflow = null;
+    ctx.openHint = "";
+    ctx.wkfs = [];
+    ctx.canCreateWkf = row.canCreateWkf !== false;
+    if (row.wkfMax != null) ctx.wkfMax = row.wkfMax;
+    ctx.bareLevel = "";
+    ctx.phase = "ST5";
+    ctx.listMode = "WKF";
+    ctx.matchMode = "";
+    ctx.matchShown = false;
+    setInfoBar(_folderInfoText());
+    setInputEnabled(true);
+    _refreshOpenButtons();
+    loadWkfs();
+    _syncRegButton();
+  }
+
+  function selectCampaign(row) {
+    _enterCampaign(row, true);
+  }
+
+  function createWkf() {
+    if (!ctx.campaign || !ctx.campaign.id) {
+      showErr("\uCEA0\uD398\uC778\uC744 \uBA3C\uC800 \uC120\uD0DD\uD558\uC138\uC694.");
+      return;
+    }
+    if (!ctx.canCreateWkf) {
+      showErr(
+        "\uC774 \uCEA0\uD398\uC778\uC758 WKF\uAC00 \uC0C1\uD55C(" +
+          ctx.wkfMax +
+          ")\uC5D0 \uB3C4\uB2EC\uD588\uC2B5\uB2C8\uB2E4."
+      );
+      return;
+    }
+    setBusy(true);
+    post(
+      "testWooAiStudioContext.jssp",
+      {
+        action: "createWkf",
+        campaign_id: ctx.campaign.id,
+        operation_id: ctx.campaign.id,
+        label: "AI WKF"
+      },
+      function (res) {
+        setBusy(false);
+        if (!res || !res.ok || !res.workflow) {
+          showErr(_errText(res) || "createWkf failed");
+          _refreshMatchOrList();
+          return;
+        }
+        clearErr();
+        ctx.workflow = null;
+        _pushStack();
+        ctx.workflow = {
+          id: String(res.workflow.id || ""),
+          name: String(res.workflow.name || ""),
+          label: String(res.workflow.label || "")
+        };
+        if (!EMBED) WORKFLOW_NAME = String(res.workflow.name || "");
+        ctx.openHint = String(res.open_hint || "");
+        state.aiSqlId = null;
+        loadWkfs(function () {
+          _afterWkfBound(res);
+          showOpenHint();
+        });
+      },
+      function (err) {
+        setBusy(false);
+        showErr(String(err && err.message ? err.message : err));
+        _refreshMatchOrList();
+      }
+    );
+  }
+
+  /* discover 모드만 Match 재조회 · #152 Match OFF 시 항상 비움 */
+  function _refreshMatchOrList() {
+    if (MATCH_ENABLED && ctx.matchMode === "discover" && state.plan) {
+      runMatch(null, "discover");
+      return;
+    }
+    ctx.matchShown = false;
+    ctx.matchMode = "";
+    if (ctx.campaign && ctx.campaign.id) {
+      loadWkfs();
+      return;
+    }
+    ctx.wkfs = [];
+    if (!ctx.workflow) {
+      _showSqlSide(false);
+      renderListPane();
+    }
+  }
+
+  // 전역 매칭 행 선택 시 Program·Campaign 정보바/생성 대상 반영
+  function _applyMatchContext(row) {
+    if (!row) return;
+    if (row.program_id) {
+      ctx.folder = {
+        id: String(row.program_id),
+        name: String(row.program_name || ""),
+        label: String(row.program_label || row.program_name || "")
+      };
+    }
+    if (row.campaign_id) {
+      ctx.campaign = {
+        id: String(row.campaign_id),
+        name: String(row.campaign_name || ""),
+        label: String(row.campaign_label || row.campaign_name || "")
+      };
+    }
+  }
+
+  function selectWkf(row, opts) {
+    if (!row || !row.id) return;
+    opts = opts || {};
+    if (!ctx.workflow || String(ctx.workflow.id) !== String(row.id)) {
+      var keepWf = ctx.workflow;
+      ctx.workflow = null;
+      _pushStack();
+      ctx.workflow = keepWf;
+    }
+    setBusy(true);
+    post(
+      "testWooAiStudioContext.jssp",
+      {
+        action: "selectWkf",
+        workflow_id: String(row.id),
+        workflow_name: String(row.name || "")
+      },
+      function (res) {
+        setBusy(false);
+        if (!res || !res.ok) {
+          showErr(_errText(res) || "selectWkf failed");
+          _refreshMatchOrList();
+          return;
+        }
+        clearErr();
+        _applyMatchContext(row);
+        ctx.workflow = {
+          id: String(row.id),
+          name: String(row.name || ""),
+          label: String(row.label || row.name || "")
+        };
+        // Tools Studio(embed=0)는 URL workflowName 이 없음 → 선택 WKF 로 바인딩
+        if (!EMBED) WORKFLOW_NAME = String(row.name || "");
+        ctx.openHint = String(res.open_hint || "");
+        if (!_hasCompose()) state.aiSqlId = null;
+        _afterWkfBound(res, opts);
+      },
+      function (err) {
+        setBusy(false);
+        showErr(String(err && err.message ? err.message : err));
+        _refreshMatchOrList();
+      }
+    );
+  }
+
+  function goBack() {
+    if (!SHELL_MODE) return;
+    _releaseCurrentLock(function () {
+      ctx.workflow = null;
+      ctx.openHint = "";
+      if (!EMBED) WORKFLOW_NAME = "";
+      _showSqlSide(false);
+      _refreshOpenButtons();
+      if (!ctx.stack.length) {
+        _enterSqlList();
+        return;
+      }
+      var prev = ctx.stack.pop();
+      ctx.phase = prev.phase;
+      ctx.listMode = prev.listMode;
+      ctx.folder = prev.folder;
+      ctx.campaign = prev.campaign || null;
+      ctx.workflow = null;
+      ctx.bareLevel = prev.bareLevel || "";
+      if (ctx.listMode === "SQL") {
+        _enterSqlList();
+        return;
+      }
+      if (ctx.listMode === "WKFSQL" && ctx.campaign) {
+        ctx.listMode = "WKF";
+        if (ctx.phase !== "ST5") ctx.phase = "ST5";
+        setInfoBar(_folderInfoText());
+        setInputEnabled(true);
+        loadWkfs();
+      } else if (ctx.listMode === "WKF" && ctx.campaign) {
+        if (ctx.phase !== "ST5") ctx.phase = "ST5";
+        setInfoBar(_folderInfoText());
+        setInputEnabled(true);
+        loadWkfs();
+      } else if (ctx.listMode === "CAMPAIGN" && ctx.folder) {
+        ctx.campaign = null;
+        if (!ctx.bareLevel) ctx.bareLevel = "campaign";
+        if (ctx.phase !== "ST4") ctx.phase = "ST4";
+        setInfoBar(_folderInfoText());
+        setInputEnabled(true);
+        loadCampaigns();
+      } else if (ctx.listMode === "FOLDER") {
+        ctx.folder = null;
+        ctx.campaign = null;
+        if (ctx.phase !== "ST3") ctx.phase = "ST3";
+        setInfoBar(_folderInfoText());
+        setInputEnabled(true);
+        loadAiFolders();
+      } else {
+        _enterSqlList();
+        return;
+      }
+      _syncRegButton();
+    });
+  }
+
+  function resetCtx() {
+    if (!SHELL_MODE) return;
+    _releaseCurrentLock(function () {
+      ctx.phase = "ST0";
+      ctx.listMode = "SQL";
+      ctx.folder = null;
+      ctx.campaigns = [];
+      ctx.campaign = null;
+      ctx.wkfs = [];
+      ctx.workflow = null;
+      ctx.openHint = "";
+      ctx.matchShown = false;
+      ctx.matchMode = "";
+      ctx.registeredSql = [];
+      ctx.sqlFilter = "";
+      ctx.stack = [];
+      ctx.bareLevel = "";
+      _cacheClearAll();
+      state.cacheId = null;
+      _clearComposeState();
+      setInputEnabled(true);
+      _refreshOpenButtons();
+      renderBreadcrumb();
+      renderListPane();
+      _loadRegisteredSql();
+      _syncRegButton();
+      var hintR = $("hint");
+      if (hintR) {
+        hintR.className = "banner warn";
+        hintR.textContent =
+          "\uC870\uAC74\uC744 \uC785\uB825\uD55C \uB4A4 [\uB300\uC0C1 \uB9CC\uB4E4\uAE30]\uB97C \uB204\uB974\uC138\uC694. \uC624\uB978\uCABD\uC5D0\uC11C \uC608\uC804 \uC870\uAC74\uC744 \uACE0\uB974\uAC70\uB098 \uCC3E\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4.";
+      }
+    });
+  }
+
+  function loadAiFolders() {
+    if (!SHELL_MODE) return;
+    /* ST0 부트는 phase 유지 · 브레드크럼 프로그램 선택만 ST3 */
+    if (ctx.phase !== "ST0" && ctx.phase !== "ST1" && ctx.phase !== "ST2") {
+      ctx.phase = "ST3";
+    }
+    ctx.listMode = "FOLDER";
+    post("testWooAiStudioContext.jssp", {
+      action: "listAiFolders",
+      limit: 200
+    }, function (res) {
+      if (!res || !res.ok) {
+        ctx.folders = [];
+        renderListPane();
+        showErr(_errText(res) || "listAiFolders failed");
+        return;
+      }
+      clearErr();
+      ctx.folders = res.items || [];
+      renderListPane();
+    }, function (err) {
+      ctx.folders = [];
+      renderListPane();
+      showErr(String(err && err.message ? err.message : err));
     });
   }
 
@@ -456,8 +3013,15 @@
       else _rmCls(document.body, "has-sql-side");
     } catch (eCls) {}
     var side = $("sideSql");
-    if (!side) return;
-    side.style.display = on ? "block" : "none";
+    var dummy = $("twDummyList");
+    if (side) side.style.display = on ? "block" : "none";
+    if (dummy) dummy.style.display = on ? "none" : "block";
+    var title = $("twListTitle");
+    if (title) {
+      title.textContent = on
+        ? "\uC774 WF SQL \uC774\uB825"
+        : "\uBAA9\uB85D";
+    }
   }
 
   function _clearDelPending() {
@@ -475,18 +3039,49 @@
     _delPending.btn = null;
   }
 
-  function loadSqlList() {
+  function _injAt(it) {
+    return String(it && it.injected_at ? it.injected_at : "");
+  }
+
+  function _pickCurrentInjectedId(items) {
+    var bestId = 0;
+    var bestAt = "";
+    var i, at, id;
+    for (i = 0; i < items.length; i++) {
+      if (items[i].is_current) return Number(items[i].id);
+    }
+    for (i = 0; i < items.length; i++) {
+      at = _injAt(items[i]);
+      if (!at) continue;
+      id = Number(items[i].id);
+      if (!bestAt || at > bestAt || (at === bestAt && id > bestId)) {
+        bestAt = at;
+        bestId = id;
+      }
+    }
+    return bestId;
+  }
+
+  function loadSqlList(opts) {
+    opts = opts || {};
     var side = $("sideSql");
     if (!side) return;
-    if (!WORKFLOW_NAME) {
+    var wf = _activeWorkflowName();
+    if (!wf) {
+      _resetInjectFlags();
       _showSqlSide(false);
+      _refreshOpenButtons();
       return;
     }
-    _diag("loadSqlList start");
+    _diag("loadSqlList start wf=" + wf);
+    if (SHELL_MODE) {
+      ctx.listMode = "WKFSQL";
+      renderBreadcrumb();
+    }
     _showSqlSide(true);
     post("testWooAiValidate.jssp", {
       action: "listSql",
-      workflow_name: WORKFLOW_NAME,
+      workflow_name: wf,
       limit: 50
     }, function (res) {
       _clearDelPending();
@@ -503,29 +3098,75 @@
         return;
       }
       if (!items.length) {
-        if (empty) {
-          empty.style.display = "";
-          empty.textContent =
-            "\uB4F1\uB85D\uB41C SQL \uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uC0DD\uC131 \uD6C4 \uB4F1\uB85D\uD558\uBA74 \uC5EC\uAE30 \uBAA8\uC785\uB2C8\uB2E4.";
+        var showNew0 = _showNewSqlRow();
+        if (!showNew0) {
+          if (empty) {
+            empty.style.display = "";
+            empty.textContent =
+              "SQL \uC774\uB825\uC774 \uBE44\uC5B4 \uC788\uC2B5\uB2C8\uB2E4. " +
+              "\uC67C\uCABD\uC5D0\uC11C [\uC0DD\uC131] \uD6C4 \uBC18\uB4DC\uC2DC [\uB4F1\uB85D]\uC744 \uB204\uB974\uC138\uC694. " +
+              "\uC0DD\uC131\uB9CC\uC73C\uB85C\uB294 \uC5EC\uAE30\uC5D0 \uC548 \uB0A9\uB2C8\uB2E4.";
+          }
+          _resetInjectFlags();
+          _refreshOpenButtons();
+          _syncRegButton();
+          _diag("loadSqlList items=0");
+          return;
         }
-        _diag("loadSqlList items=0");
-        return;
       }
       if (empty) empty.style.display = "none";
-      _diag("loadSqlList items=" + items.length);
+      if (_showNewSqlRow()) _appendNewSqlRow(box);
+      if (!items.length) {
+        _resetInjectFlags();
+        _refreshOpenButtons();
+        _syncRegButton();
+        _diag("loadSqlList items=0 newSql=1");
+        return;
+      }
+      var curId = _pickCurrentInjectedId(items);
+      ctx.currentInjectedId = curId || null;
+      ctx.wfHasInjected = !!curId;
+      items.sort(function (a, b) {
+        var ac = (a.is_current || Number(a.id) === Number(curId)) ? 1 : 0;
+        var bc = (b.is_current || Number(b.id) === Number(curId)) ? 1 : 0;
+        if (ac !== bc) return bc - ac;
+        var at = _injAt(a);
+        var bt = _injAt(b);
+        if (at !== bt) return at > bt ? -1 : 1;
+        var ad = String(a.creation_date || "");
+        var bd = String(b.creation_date || "");
+        if (ad !== bd) return ad > bd ? -1 : 1;
+        return Number(b.id) - Number(a.id);
+      });
+      _diag("loadSqlList items=" + items.length + " current=" + String(curId || 0));
       for (var i = 0; i < items.length; i++) {
         (function (it) {
+          var isCur = !!(it.is_current || (curId && Number(it.id) === Number(curId)));
           var el = document.createElement("div");
           el.className = "sql-item";
+          if (isCur) el.className += " current";
           if (state.aiSqlId && Number(state.aiSqlId) === Number(it.id)) el.className += " active";
           var row = document.createElement("div");
           row.className = "sid";
-          row.textContent = "ai_sql_id=" + String(it.id);
+          row.appendChild(document.createTextNode("ai_sql_id=" + String(it.id)));
+          if (isCur) {
+            var badge = document.createElement("span");
+            badge.className = "badge-now";
+            badge.textContent = "\uBC18\uC601\uB428";
+            row.appendChild(badge);
+          }
           var title = document.createElement("div");
           title.textContent = it.title || "(no title)";
           var meta = document.createElement("div");
           meta.className = "meta";
-          meta.textContent = String(it.status || "") + " | " + String(it.creation_date || "");
+          if (isCur) {
+            meta.textContent = "\uBC18\uC601\uB428 | " + String(it.injected_at || it.creation_date || "") +
+              (it.injected_by ? (" | " + it.injected_by) : "");
+          } else if (_injAt(it)) {
+            meta.textContent = "\uC774\uC804 \uBC18\uC601 | " + String(it.injected_at || "");
+          } else {
+            meta.textContent = String(it.status || "") + " | " + String(it.creation_date || "");
+          }
           var del = document.createElement("button");
           del.type = "button";
           del.className = "sql-del";
@@ -546,6 +3187,21 @@
           };
           box.appendChild(el);
         })(items[i]);
+      }
+      if (curId && !_hasCompose()) ctx.phase = "ST6";
+      _refreshOpenButtons();
+      _syncRegButton();
+      if (opts.selectCurrent && ctx.wfHasInjected) {
+        var hSel = $("hint");
+        if (hSel) {
+          hSel.className = "banner ok";
+          hSel.textContent = _hasCompose() && !state.aiSqlId
+            ? "\uBAA9\uB85D \uC704 [\uC0C8 SQL \uC4F0\uAE30]\uAC00 \uC9C0\uAE08 \uC870\uAC74\uC785\uB2C8\uB2E4. [WKF\uC5D0 \uB123\uAE30]\uB85C \uCD94\uAC00\uD569\uB2C8\uB2E4."
+            : "\uC774 WKF\uC5D0 \uBC18\uC601\uB41C \uC870\uAC74\uC785\uB2C8\uB2E4. \uB2E4\uB978 SQL\uC744 \uC4F0\uB824\uBA74 \uBAA9\uB85D\uC5D0\uC11C \uACE0\uB978 \uB4A4 [WKF\uC5D0 \uB36E\uC5B4\uC4F0\uAE30]\uB97C \uB204\uB974\uC138\uC694.";
+        }
+      }
+      if (opts.selectCurrent && curId && !_hasCompose()) {
+        if (Number(state.aiSqlId) !== Number(curId)) loadSqlItem(curId);
       }
     }, function (e) {
       var empty = $("sqlListEmpty");
@@ -591,7 +3247,7 @@
             "Deleted ai_sql_id=" + id +
             (title ? (" (" + title + ")") : "");
         }
-        loadSqlList();
+        loadSqlList({ selectCurrent: true });
       }, function (e) {
         showErr(String(e && e.message ? e.message : e));
       });
@@ -611,6 +3267,7 @@
 
   function loadSqlItem(id) {
     clearErr();
+    if (_hasCompose() && !state.aiSqlId) putDraft();
     _diag("loadSqlItem id=" + id);
     post("testWooAiValidate.jssp", { action: "getSql", ai_sql_id: id }, function (res) {
       if (!res || !res.ok || !res.item) {
@@ -624,6 +3281,7 @@
       state.nl = it.nl_request || "";
       state.passed = false;
       state.plan = null;
+      setInfoBar(_folderInfoText());
       setBindPick(it.id);
       if (it.nl_request) $("nl").value = it.nl_request;
       try {
@@ -637,7 +3295,8 @@
             state.passed = !!v.passed;
             if (v.chips) renderChips(v.chips);
             renderGates(v.results || []);
-            $("btnReg").disabled = !v.passed;
+            _syncRegButton();
+            _refreshOpenButtons();
           }
           renderSql(state.sql);
           renderSummaryHint(
@@ -665,17 +3324,127 @@
     });
   }
 
+  function _paramScalar(v) {
+    if (v == null || v === "") return "";
+    if (Object.prototype.toString.call(v) === "[object Array]") {
+      var bits = [];
+      var i, s;
+      for (i = 0; i < v.length; i++) {
+        s = _paramScalar(v[i]);
+        if (s) bits.push(s);
+      }
+      return bits.join(", ");
+    }
+    if (typeof v === "object") {
+      if (v.db != null && v.db !== "") return String(v.db);
+      if (v.en != null && v.en !== "") return _paramScalar(v.en);
+      return "";
+    }
+    return String(v);
+  }
+
+  function _chipValueText(c) {
+    var p = (c && c.params) || {};
+    var bits = [];
+    var ageMin = p.ageMin;
+    var ageMax = p.ageMax;
+    if (ageMin != null && ageMin !== "" && ageMax != null && ageMax !== "") {
+      bits.push(String(ageMin) + "~" + String(ageMax));
+    }
+    var k, val;
+    for (k in p) {
+      if (!p.hasOwnProperty(k)) continue;
+      if (!k || k.charAt(0) === "_") continue;
+      if (k === "ageMin" || k === "ageMax") continue;
+      val = _paramScalar(p[k]);
+      if (val) bits.push(val);
+    }
+    if (!bits.length) {
+      if (ageMin != null && ageMin !== "") bits.push(String(ageMin));
+      else if (ageMax != null && ageMax !== "") bits.push(String(ageMax));
+    }
+    return bits.join(", ");
+  }
+
+  var _lastChips = [];
+
+  function _chipDisplay(c) {
+    var val = _chipValueText(c);
+    if (c && c.groupAlias) {
+      if (val && String(c.groupAlias) !== val)
+        return String(c.groupAlias) + " \u2192 " + val;
+      return String(c.groupAlias);
+    }
+    if (val) return val;
+    return _trim((c && c.label) || "");
+  }
+
+  function _chipInterp(chips) {
+    var inc = [];
+    var exc = [];
+    var i, lab;
+    for (i = 0; i < chips.length; i++) {
+      lab = _chipDisplay(chips[i]);
+      if (!lab) continue;
+      if (chips[i].role === "exclude") exc.push(lab);
+      else inc.push(lab);
+    }
+    var parts = [];
+    if (inc.length) parts.push(inc.join(", "));
+    if (exc.length) parts.push("\uC81C\uC678 " + exc.join(", "));
+    return parts.join(" \u00B7 ");
+  }
+
+  function _verifyGroupChip(c) {
+    if (!c || !c.fragment || !c.groupAlias || !c.groupParam) return;
+    post("testWooAiGenerate.jssp", {
+      action: "verifyGroup",
+      fragment: c.fragment,
+      param: c.groupParam,
+      alias: c.groupAlias
+    }, function (res) {
+      if (!res || res.ok === false) {
+        showErr(String((res && res.error) || "verifyGroup failed"));
+        return;
+      }
+      c.groupVerified = true;
+      renderChips(_lastChips);
+    }, function (e) {
+      showErr(String(e && e.message ? e.message : e));
+    });
+  }
+
   function renderChips(chips) {
     var box = $("chips"); box.innerHTML = "";
     var list = chips || [];
+    _lastChips = list;
+    var line = $("chipLine");
+    if (line) {
+      var interp = _chipInterp(list);
+      line.textContent = interp;
+      line.style.display = interp ? "block" : "none";
+    }
     for (var i = 0; i < list.length; i++) {
       (function (c) {
-        var el = document.createElement("span"); el.className = "chip";
+        var el = document.createElement("span");
+        el.className = (c.groupAlias && c.groupVerified === false) ? "chip unverified" : "chip";
         el.innerHTML = "<span></span><button type='button' title='remove'>×</button>";
-        var tag = c.role === "exclude" ? "EXCEPT" : (c.op || "AND");
-        el.firstChild.textContent = "[" + tag + "] " + c.label;
+        var tag = c.role === "exclude" ? "\uC81C\uC678" : "\uD3EC\uD568";
+        el.firstChild.textContent = tag + " " + _chipDisplay(c);
         var btn = el.getElementsByTagName("button")[0];
         if (btn) btn.onclick = function () { removeChip(c); };
+        if (c.groupAlias && c.groupVerified === false) {
+          var okb = document.createElement("button");
+          okb.type = "button";
+          okb.className = "chip-ok";
+          okb.title = "\uC774 \uBB36\uC74C\uC774 \uB9DE\uC2B5\uB2C8\uB2E4";
+          okb.innerHTML = "\uB9DE\uC74C";
+          okb.onclick = function (ev) {
+            if (ev && ev.stopPropagation) ev.stopPropagation();
+            _verifyGroupChip(c);
+          };
+          el.appendChild(okb);
+        }
         box.appendChild(el);
       })(list[i]);
     }
@@ -747,11 +3516,26 @@
   function renderGates(results) {
     var box = $("gates"); box.innerHTML = "";
     var list = results || [];
-    for (var i = 0; i < list.length; i++) {
+    var allOk = list.length > 0;
+    var i;
+    for (i = 0; i < list.length; i++) {
+      if (!(list[i] && list[i].ok)) allOk = false;
+    }
+    if (allOk) {
+      var okEl = document.createElement("div");
+      okEl.className = "gate";
+      okEl.innerHTML =
+        "<span class='g-ok'>\uC900\uBE44\uB428</span> " +
+        "\uC774 \uC870\uAC74\uC73C\uB85C \uB300\uC0C1 SQL\uC774 \uC900\uBE44\uB410\uC2B5\uB2C8\uB2E4.";
+      box.appendChild(okEl);
+      _rmCls($("cardGates"), "hidden");
+      return;
+    }
+    for (i = 0; i < list.length; i++) {
       var r = list[i];
       var el = document.createElement("div"); el.className = "gate";
       var ok = !!(r && r.ok);
-      var status = ok ? "\uD1B5\uACFC" : "\uC2E4\uD328";
+      var status = ok ? "\uD655\uC778" : "\uC2E4\uD328";
       var title = _gateTitle(r && r.gate);
       var detail = String((r && r.reason) || "");
       if (ok && !detail) detail = "\uC774 \uAC80\uC0AC\uB97C \uB9CC\uC871\uD588\uC2B5\uB2C8\uB2E4.";
@@ -766,9 +3550,18 @@
     $("sql").textContent = sql || "";
     _rmCls($("cardCode"), "hidden");
   }
-  function renderSummaryHint(summary) {
-    $("hint").className = "banner ok";
-    $("hint").textContent = summary || "Review conditions.";
+  function renderSummaryHint(summary, showRegisterHint) {
+    var el = $("hint");
+    if (!el) return;
+    el.className = "banner ok";
+    if (showRegisterHint) {
+      el.innerHTML =
+        "<strong>\uC774 \uC870\uAC74\uC73C\uB85C \uB300\uC0C1 SQL\uC774 \uC900\uBE44\uB410\uC2B5\uB2C8\uB2E4.</strong><br/>" +
+        "[\uC774 \uC870\uAC74 \uC4F0\uAE30]\uB97C \uB204\uB974\uBA74 \uC774\uC5B4\uC11C \uD560 \uC791\uC5C5\uC5D0 \uB123\uC2B5\uB2C8\uB2E4.";
+    } else {
+      el.textContent = summary ||
+        "\uC774 \uC870\uAC74\uC73C\uB85C \uB300\uC0C1 SQL\uC774 \uC900\uBE44\uB410\uC2B5\uB2C8\uB2E4.";
+    }
   }
   function hideFunnel() { _addCls($("cardFunnel"), "hidden"); }
   function hideResultCards() {
@@ -780,7 +3573,14 @@
   function esc(s) {
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
-  function setBusy(b) { $("btnGen").disabled = b; $("nl").disabled = b; }
+  function setBusy(b) {
+    if (b) {
+      $("btnGen").disabled = true;
+      $("nl").disabled = true;
+    } else {
+      setInputEnabled(true);
+    }
+  }
 
   // IE 는 <details> 미지원 — #twDiagSum 클릭 토글. embed 한시적 기본 펼침 (#139)
   function _wireDiagToggle() {
@@ -797,17 +3597,20 @@
 
   function init() {
     _installOnError();
+    _cacheBackend = _probeCacheBackend();
+    _diag("cacheBackend=" + _cacheBackend);
+    _ensureCacheWarnEl();
     try {
       _wireDiagToggle();
       try {
         var dm0 = (typeof document.documentMode !== "undefined") ? String(document.documentMode) : "n/a(non-IE)";
-          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | v=139";
+          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | match=" + (MATCH_ENABLED ? "1" : "0") + " | phase=" + ctx.phase + " | v=181";
         var bootReached = !!(window.__TW_BOOT_MSG__);
         if (bootReached) _diag(String(window.__TW_BOOT_MSG__));
         _diag(okMsg);
         _diag("TW-BOOT reached=" + (bootReached ? "yes" : "no"));
         _diag("location.href=" + String(location.href || ""));
-        /* 정상 시 부트 바 숨김 */
+        /* 정상 시 부트 바 숨김 — libVersions 불일치 시 배너로 대체 경고 */
         var boot = $("twBoot");
         var tbl = $("twBootTable");
         if (boot) {
@@ -818,20 +3621,34 @@
           tbl.className = "";
           tbl.style.display = "none";
         }
+        _fetchLibVersionsOnce();
       } catch (eBoot) {}
       _diag("UA=" + String(navigator.userAgent || ""));
       _diag("documentMode=" + (typeof document.documentMode !== "undefined" ? String(document.documentMode) : "n/a(non-IE)"));
       _diag("compatMode=" + String(document.compatMode || ""));
-      _diag("init enter");
+      _diag("init enter shellMode=" + (SHELL_MODE ? "1" : "0"));
       var login = window.__TW_LOGIN__ || "";
       var wfEl = $("wfInfo");
       if (wfEl) {
         wfEl.textContent = "user: " + (login || "?") +
           " / workflow: " + (WORKFLOW_NAME || "n/a") + " / register->ai_sql_id";
       }
+      renderBreadcrumb();
+      var btnBack = $("btnTwBack");
+      var btnReset = $("btnTwReset");
+      var btnOpen = $("btnTwOpenWkf");
+      var btnGoto = $("btnTwGotoWkf");
+      var btnOther = $("btnTwOtherWkf");
+      if (btnBack) btnBack.onclick = function () { goBack(); return false; };
+      if (btnReset) btnReset.onclick = function () { resetCtx(); return false; };
+      if (btnOpen) btnOpen.onclick = function () { showOpenHint(); return false; };
+      if (btnGoto) btnGoto.onclick = function () { showOpenHint(); return false; };
+      if (btnOther) btnOther.onclick = function () { applyToOtherWkf(); return false; };
+      _refreshOpenButtons();
       var btnGen = $("btnGen");
       var btnReg = $("btnReg");
       var nl = $("nl");
+      _loadRecentNl();
       if (btnGen) btnGen.onclick = function () { generate(); };
       if (btnReg) btnReg.onclick = function () { register(); };
       if (nl) {
@@ -845,26 +3662,40 @@
           }
         };
       }
-      if (!WORKFLOW_NAME) {
-        var hint = $("hint");
-        if (hint) {
-          hint.className = "banner warn";
-          hint.textContent =
-            "workflowName \uC5C6\uC74C \u2014 WF \uCE94\uBC84\uC2A4 AI Studio \uBC84\uD2BC\uC73C\uB85C \uC5F4\uBA74 \uC774 WF SQL \uBAA9\uB85D\uC774 \uD45C\uC2DC\uB429\uB2C8\uB2E4. \uC218\uB3D9 URL\uB3C4 \uAC00\uB2A5\uD569\uB2C8\uB2E4.";
+      if (SHELL_MODE) {
+        ctx.phase = "ST0";
+        ctx.listMode = "SQL";
+        setInputEnabled(true);
+        var hint0 = $("hint");
+        if (hint0) {
+          hint0.className = "banner warn";
+          hint0.textContent =
+            "\uC870\uAC74\uC744 \uC785\uB825\uD55C \uB4A4 [\uB300\uC0C1 \uB9CC\uB4E4\uAE30]\uB97C \uB204\uB974\uC138\uC694. \uC624\uB978\uCABD\uC5D0\uC11C \uC608\uC804 \uC870\uAC74\uC744 \uACE0\uB974\uAC70\uB098 \uCC3E\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4.";
         }
-      }
-      // 첫 페인트 후 목록 로드 — 동기 예외로 전체가 비는 것 방지
-      setTimeout(function () {
-        try { loadSqlList(); }
-        catch (eL) {
-          var h2 = $("hint");
-          if (h2) {
-            h2.className = "banner err";
-            h2.textContent = "loadSqlList: " + String(eL && eL.message ? eL.message : eL);
+        setTimeout(function () {
+          try {
+            renderListPane();
+            _loadRegisteredSql();
+          } catch (eF) {
+            _diag("renderListPane throw: " + String(eF && eF.message ? eF.message : eF));
           }
-          _diag("loadSqlList throw: " + String(eL && eL.message ? eL.message : eL));
-        }
-      }, 0);
+        }, 0);
+      } else {
+        setInputEnabled(true);
+        var hintH = $("twNlHint");
+        if (hintH) _addCls(hintH, "hidden");
+        setTimeout(function () {
+          try { loadSqlList(); }
+          catch (eL) {
+            var h2 = $("hint");
+            if (h2) {
+              h2.className = "banner err";
+              h2.textContent = "loadSqlList: " + String(eL && eL.message ? eL.message : eL);
+            }
+            _diag("loadSqlList throw: " + String(eL && eL.message ? eL.message : eL));
+          }
+        }, 0);
+      }
     } catch (eInit) {
       try {
         var h = $("hint");

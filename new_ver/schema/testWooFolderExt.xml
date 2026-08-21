@@ -1,0 +1,34 @@
+<!--
+woo:folder (xtk:folder 확장 · AI Studio 폴더 플래그)
+====================================================
+UI-3-2: @isAiFolder boolean. prefix AI_Folder* 매칭 금지.
+Adobe 확장 규칙: name=folder + namespace=woo + extendedSchema=xtk:folder.
+
+[Main Functions]
+===========
+- Explorer 폴더에 AI Studio 대상 표시용 플래그
+- listAiFolders queryDef 필터 (@isAiFolder=1)
+
+[Attributes]
+=========
+- isAiFolder (boolean, false)  AI Studio 캠페인 폴더 여부
+
+[Dependencies]
+=========
+- 등록 후 Tools > Advanced > Update database structure 필수
+- UI: testWooExtendFolder + xtk:folder lib/formAdvancedParam 패치
+- Program 편집 시 nms:program 확장 필수 → testWooProgramExt.xml
+- Ref: https://experienceleague.adobe.com/en/docs/campaign-classic/using/configuring-campaign-classic/editing-schemas/extending-a-schema
+-->
+<srcSchema _cs="Folder AI extend (woo)" extendedSchema="xtk:folder"
+           entitySchema="xtk:srcSchema" img="xtk:schema.png"
+           label="Folder (Test Woo AI)" mappingType="sql" name="folder"
+           namespace="woo" xtkschema="xtk:srcSchema">
+
+  <element name="folder">
+    <attribute default="false" desc="AI Studio campaign folder flag (UI-3-2)"
+               label="AI Studio folder" name="isAiFolder" sqlname="iIsAiFolder"
+               type="boolean" user="true"/>
+  </element>
+
+</srcSchema>

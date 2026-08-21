@@ -1,8 +1,36 @@
 <%
 response.setContentType("application/json;charset=utf-8");
 /*
- * testWooAiGenerate.jssp (Pass0→StageA→Pass1 → SQL / Foundry 큐 분기)
- * queued 안내 message 유니코드: 질문=\uC9C8\uBB38, 재시도=\uC7AC\uC2DC\uB3C4 (#127)
+ * testWooAiGenerate.jssp (NL→plan→SQL 생성 API)
+ * ==================================================
+ * Pass0→StageA→Pass1로 CNF plan 생성 후 compile·gates 실행.
+ * unmatched 시 Foundry 큐 또는 plan_only. retryInput·unresolved이면 큐 없이 안내.
+ * unresolved면 promptHints(≤5). clarify_pick은 이번 요청만 IN.
+ * debug.enabled면 jsonOut에 debugTrace 부착(Studio #twDiag).
+ *
+ * [Main Functions]
+ * ===========
+ * - generatePlan — nl_request→plan·matchedSlots·unmatched. unresolved면 promptHints
+ * - compile+runAll — gates 통과 시 sql·chips·summary 반환
+ * - enqueueRequest — unmatched+Foundry ON 시 unmatchedSlots(#170) 큐잉
+ * - plan_only — compile·큐 없이 plan/chips만 반환
+ * - verifyGroup — `_group` 별칭 human+verified (SQL/members 변경 없음)
+ *
+ * [Dependencies]
+ * =========
+ * - woo:testWooCommon.js, Config, FragContract, Fragments, Probe, Toolkit, EnPivot, Llm, Compiler, Gates, Repository
+ * - right testWooAiSqlGenerate · Option testWooAiFoundryEnabled
+ *
+ * [Invariants]
+ * ===========
+ * - LLM은 plan_json만 — 최종 SQL은 compiler가 결정
+ * - retryInput → Foundry 큐 금지 · 재입력 안내
+ * - unresolved(3종) → Foundry 큐 금지 · 원문 surface 표시 · SQL 없음
+ * - unmatched+Foundry OFF → passed:false, 큐 없음
+ * - after_foundry/no_enqueue → 재큐잉 금지(대기 UI 루프 방지)
+ * - catch 메시지에 [Generate] 접두(타 API plan missing와 구분)
+ * - loadLibrary 직후 twRequireLib — repo/fragments/toolkit/enPivot/llm/compiler/gates
+ * - #170: missing_slots_json 은 축 원자 슬롯 객체(가능 시)
  */
 try {
   TW_RESPONSE = response;
@@ -10,32 +38,145 @@ try {
   TW_DOCUMENT = document;
   loadLibrary("woo:testWooCommon.js");
   loadLibrary("woo:testWooConfig.js");
+  loadLibrary("woo:testWooFragContract.js");
   loadLibrary("woo:testWooFragments.js");
+  loadLibrary("woo:testWooProbe.js");
+  loadLibrary("woo:testWooToolkit.js");
+  loadLibrary("woo:testWooEnPivot.js");
   loadLibrary("woo:testWooLlm.js");
   loadLibrary("woo:testWooCompiler.js");
   loadLibrary("woo:testWooGates.js");
   loadLibrary("woo:testWooRepository.js");
+  twRequireLib("woo:testWooRepository.js", (typeof testWoo !== "undefined") && testWoo.repo);
+  twRequireLib("woo:testWooFragContract.js", (typeof testWoo !== "undefined") && testWoo.fragContract);
+  twRequireLib("woo:testWooFragments.js", (typeof testWoo !== "undefined") && testWoo.fragments);
+  twRequireLib("woo:testWooToolkit.js", (typeof testWoo !== "undefined") && testWoo.toolkit);
+  twRequireLib("woo:testWooEnPivot.js", (typeof testWoo !== "undefined") && testWoo.enPivot);
+  twRequireLib("woo:testWooLlm.js", (typeof testWoo !== "undefined") && testWoo.llm);
+  twRequireLib("woo:testWooCompiler.js", (typeof testWoo !== "undefined") && testWoo.compiler);
+  twRequireLib("woo:testWooGates.js", (typeof testWoo !== "undefined") && testWoo.gates);
   requireRight("testWooAiSqlGenerate");
 
   var p = readPayload();
+  var action = String(p.action || "").toLowerCase();
+  if (action === "verifygroup") {
+    var vg = testWoo.fragments.verifyGroupAlias(
+      p.fragment || p.fragmentName || "",
+      p.param || p.groupParam || "",
+      p.alias || p.groupAlias || ""
+    );
+    if (!vg || !vg.ok) {
+      jsonOut({
+        ok: false,
+        passed: false,
+        error: (vg && vg.reason) ? String(vg.reason) : "verifyGroup failed"
+      });
+    } else {
+      jsonOut({
+        ok: true,
+        passed: true,
+        verified: true,
+        fragment: String(p.fragment || p.fragmentName || ""),
+        param: String(p.param || p.groupParam || ""),
+        alias: String(p.alias || p.groupAlias || "")
+      });
+    }
+  } else {
   if (!p.nl_request) throw new Error("nl_request missing");
   var cfg = testWoo.cfg.getConfig();
+  var planOnly = !!(
+    p.plan_only === true ||
+    p.plan_only === 1 ||
+    p.plan_only === "1" ||
+    p.plan_only === "true" ||
+    p.planOnly === true
+  );
+  /* Foundry done 후 Studio 자동 재시도 — 또 enqueue하면 대기 UI 루프 */
+  var noEnqueue = !!(
+    p.no_enqueue === true ||
+    p.no_enqueue === 1 ||
+    p.no_enqueue === "1" ||
+    p.no_enqueue === "true" ||
+    p.after_foundry === true ||
+    p.after_foundry === 1 ||
+    p.after_foundry === "1" ||
+    p.after_foundry === "true"
+  );
 
-  var plan = testWoo.llm.generatePlan(p.nl_request);
+  try {
+    if (testWoo.dbg && testWoo.dbg.reset) testWoo.dbg.reset();
+    if (typeof twDbg === "function") twDbg("generate", String(p.nl_request || ""));
+  } catch (eDbg) { /* skip */ }
+  var clarifyRound = Number(p.clarify_round || p.clarifyRound || 0);
+  if (isNaN(clarifyRound) || clarifyRound < 0) clarifyRound = 0;
+  var genOpts = null;
+  if (p.clarify_pick && typeof p.clarify_pick === "object")
+    genOpts = { clarifyPick: p.clarify_pick };
+  var plan = genOpts ?
+    testWoo.llm.generatePlan(p.nl_request, genOpts) :
+    testWoo.llm.generatePlan(p.nl_request);
+  if (!plan) throw new Error("[Generate] generatePlan returned empty");
   var unmatched = plan.unmatched || [];
+  var unresolved = plan.unresolved || [];
 
-  if (unmatched.length) {
-    if (cfg.foundry.enabled) {
+  var clientPlan = {
+    grainKey: plan.grainKey || "",
+    include: plan.include || [],
+    exclude: plan.exclude || [],
+    unmatched: unmatched,
+    unresolved: unresolved
+  };
+
+  if (unmatched.length || unresolved.length) {
+    /* 추출 실패·값 abstain: Foundry 큐 금지 · 재입력/원문 안내 */
+    if (plan.retryInput) {
+      jsonOut({
+        ok: false,
+        passed: false,
+        retryInput: true,
+        unmatched: unmatched,
+        matchedSlots: [],
+        plan: clientPlan,
+        error: unmatched.join(" ")
+      });
+    } else if (unresolved.length) {
+      var promptHints = [];
+      try {
+        if (testWoo.fragContract && testWoo.fragContract.buildPromptHintsFromUnresolved)
+          promptHints = testWoo.fragContract.buildPromptHintsFromUnresolved(unresolved, {
+            nl: p.nl_request,
+            clarifyRound: clarifyRound
+          }) || [];
+      } catch (eH) { promptHints = []; }
+      jsonOut({
+        ok: false,
+        passed: false,
+        unresolved: unresolved,
+        unmatched: unmatched,
+        matchedSlots: plan.matchedSlots || [],
+        plan: clientPlan,
+        promptHints: promptHints,
+        error: unmatched.join(" ")
+      });
+    } else if (planOnly) {
+      jsonOut({
+        ok: false,
+        passed: false,
+        planOnly: true,
+        unmatched: unmatched,
+        matchedSlots: plan.matchedSlots || [],
+        plan: clientPlan,
+        error: "unmatched slots — plan only"
+      });
+    } else if (cfg.foundry.enabled && !noEnqueue) {
+      // #170: 축 원자 슬롯 객체(searchKeywords 포함)를 큐에 넣는다. 문자열만내면 Foundry가 재분할한다.
+      var missingForQueue = (plan.unmatchedSlots && plan.unmatchedSlots.length) ?
+        plan.unmatchedSlots : unmatched;
       var queueId = testWoo.repo.enqueueRequest({
         nl_text: p.nl_request,
         slots_json: JSON.stringify(plan._meta ? plan._meta.slots : []),
-        missing_slots_json: JSON.stringify(unmatched),
-        plan_json: JSON.stringify({
-          grainKey: plan.grainKey,
-          include: plan.include || [],
-          exclude: plan.exclude || [],
-          unmatched: unmatched
-        }),
+        missing_slots_json: JSON.stringify(missingForQueue),
+        plan_json: JSON.stringify(clientPlan),
         created_by: currentLogin(),
         workflow_name: p.workflow_name || ""
       });
@@ -55,14 +196,27 @@ try {
         passed: false,
         unmatched: unmatched,
         matchedSlots: plan.matchedSlots || [],
-        plan: {
-          grainKey: plan.grainKey || "",
-          include: plan.include || [],
-          exclude: plan.exclude || [],
-          unmatched: unmatched
-        }
+        plan: clientPlan,
+        afterFoundry: !!noEnqueue,
+        error: noEnqueue
+          ? ("Foundry \uC644\uB8CC \uD6C4\uC5D0\uB3C4 Stage A\uAC00 \uC870\uAC74\uC744 \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: " +
+            unmatched.join(" | ") +
+            " \u2014 fragment label/sample_questions/\uC2DC\uB178\uB2D8\uC744 \uD655\uC778\uD558\uAC70\uB098 [\uC0DD\uC131]\uC744 \uB2E4\uC2DC \uB204\uB974\uC138\uC694.")
+          : ("unmatched slots: " + unmatched.join(" | "))
       });
     }
+  } else if (planOnly) {
+    jsonOut({
+      ok: true,
+      passed: true,
+      planOnly: true,
+      plan: clientPlan,
+      sql: "",
+      chips: testWoo.compiler.chipsFromPlan(clientPlan),
+      summary: "\uD0D0\uC0C9\uC6A9 \uC870\uAC74 \uACC4\uD68D(\uC0DD\uC131 SQL \uC5C6\uC74C)",
+      results: [],
+      error: null
+    });
   } else {
     var compiled = testWoo.compiler.compile(plan);
     var results = testWoo.gates.runAll(plan, compiled.sql);
@@ -70,12 +224,6 @@ try {
     for (var ri = 0; ri < results.length; ri++) {
       if (!results[ri].ok) { passed = false; break; }
     }
-    var clientPlan = {
-      grainKey: plan.grainKey,
-      include: plan.include || [],
-      exclude: plan.exclude || [],
-      unmatched: plan.unmatched || []
-    };
     jsonOut({
       ok: true,
       passed: passed,
@@ -87,7 +235,16 @@ try {
       error: passed ? null : "validation failed"
     });
   }
+  }
 } catch (e) {
-  handleApiError(e);
+  var _genMsg = (e && e.message != null) ? String(e.message) : String(e);
+  /* LIB 배포 누락은 code/메시지 유지 — [Generate] 래핑으로 500 요약 방지 */
+  if (e && e.code === "LIB") {
+    handleApiError(e);
+  } else if (_genMsg.indexOf("[Generate]") !== 0 && _genMsg.indexOf("[testWoo.") !== 0) {
+    handleApiError(new Error("[Generate] " + _genMsg));
+  } else {
+    handleApiError(e);
+  }
 }
 %>

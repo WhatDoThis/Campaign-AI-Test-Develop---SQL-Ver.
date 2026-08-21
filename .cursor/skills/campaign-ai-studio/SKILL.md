@@ -31,9 +31,10 @@ LG U+ Adobe Campaign **AI 대상자 추출 시스템**. 마케터 자연어 → 
 ## Pipeline (current)
 
 ```
-NL → Pass0 (LLM slots) → Stage A (fragment search, paginated)
-   → Pass1 (LLM CNF plan) → compiler (INTERSECT/UNION/EXCEPT)
-   → gates → Register (ai_sql_id)
+NL → EnPivot (전체 NL 1콜 · 동일문장 캐시만 스킵) → Stage A
+   → M1 원문 → M2 en[] → M3 concept (miss면 probe heal → `_negative`)
+   → Pass1 → compiler → gates → Register
+   추출 실패 → retryInput. 값 abstain → unresolved (Foundry 큐 금지)
 ```
 
 ## File map
@@ -42,7 +43,9 @@ NL → Pass0 (LLM slots) → Stage A (fragment search, paginated)
 |------|------|
 | `new_ver/js/testWooCommon.js` | jsonOut, auth, requireRight |
 | `new_ver/js/testWooConfig.js` | LLM options, queryDef guardrails |
+| `new_ver/js/testWooFragContract.js` | Slot↔Index↔Match↔Bind shared contract (#172) |
 | `new_ver/js/testWooFragments.js` | Stage A catalog search |
+| `new_ver/js/testWooEnPivot.js` | EN Pivot extract + 도메인 EN 사전화 (`enrichDomainEn`) |
 | `new_ver/js/testWooLlm.js` | Pass0/Pass1, OpenRouter/Anthropic |
 | `new_ver/js/testWooCompiler.js` | CNF → SQL |
 | `new_ver/js/testWooGates.js` | Validation gates |
@@ -60,7 +63,8 @@ When changing server JS or JSSP:
 - [ ] `HttpClientRequest.execute()` sync only — never reference `.wait`
 - [ ] `MemoryBuffer`: request `fromString(s,"utf-8")`; response `toString()` (int CODEPAGE)
 - [ ] queryDef: `lineCount` ≤ 5000; Stage A excludes `sql_text` bulk load
-- [ ] Module docstring (Korean) at file top per project rule #6
+- [ ] Module header per `.cursor/rules/module-header-docstring.mdc`  
+      (역할 한 줄 + 짧은 역할 블록 · `[Main Functions]` 공개 API만 · `[Dependencies]` 연결 방식 · 서술형 최소화)
 - [ ] **Data access**: no sqlExec; no SQL INSERT for seed/metadata — see [acc-data-access.md](acc-data-access.md)
 
 ## Subagent hints

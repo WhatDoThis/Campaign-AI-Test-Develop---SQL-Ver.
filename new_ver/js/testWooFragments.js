@@ -1,26 +1,35 @@
 /*
- * testWooFragments.js (fragment Stage A · queryDef 가드레일 · server-side)
- * ========================================================================
- * 슬롯별 후보 검색. 전체 카탈로그/sql_text 일괄 로드 금지.
- * 도메인 동의어/슬랭 하드코딩 금지 → Pass0 searchKeywords + fragment 메타.
- * DB LIKE는 label/tags/synonyms/sample_questions만 (description 제외, 스코어는 유지).
- * queryDef는 lineCount 페이지(기본·상한 5000) + orderBy + startLine.
+ * testWooFragments.js (Fragment Stage A 검색)
+ * ==================================================
+ * litmus 동기 __v=166 (#175-5 `_group` 확인).
+ * 슬롯별 후보 fragment 메타 검색. sql_text 일괄 로드 금지.
+ * LIKE는 재호출망. 확정은 카탈로그 값⊂슬롯 + 축 identity.
  *
  * [Main Functions]
  * ===========
- * - getByName : name 단건 (sql_text 포함, lineCount=1)
- * - searchBySlot / searchSlots : Stage A (메타만, 페이지 스캔)
- *   3번째 인자 statuses 기본 ["active"] — Foundry 재사용 판정만 verified 포함
- *   ACC Rhino 호환: Array.map/forEach 미사용 (for 루프)
- * - listCategories : Catalog용 (sql_text 없이 페이지)
- * - toCard / clearCache
+ * - getByName — name 단건 조회(sql_text 포함)
+ * - toCard — fragment → UI 카드 객체
+ * - searchBySlot — LIKE 재호출 + 축 폴백 항상 합침 + resolvedName
+ * - searchByAxis — tags/name 축으로 후보 검색
+ * - searchSlots — Pass0/렉시콘 slots[] 일괄 Stage A
+ * - listLexiconCards — active 메타(sql_text 없음) 렉시콘용
+ * - healDomain — 별칭·params를 param_domain에 merge하고 색인 갱신
+ * - saveParamDomain — param_domain JSON만 저장(_negative·healAt)
+ * - verifyGroupAlias — `_group` 별칭을 human+verified (members 유지)
+ * - listCategories — Catalog용 category 목록
+ * - clearCache — getByName 캐시 비우기
  *
  * [Dependencies]
  * =========
- * - testWoo.cfg
- * - Schema: woo:testWooAiFragment
- * - Adobe KCS: queryDef 미지정 시 ~10000행 제한 / 대량은 페이지네이션
- * - loadLibrary("woo:testWooFragments.js")
+ * - woo:testWooAiFragment — xtk.queryDef select · xtk.session.Write(heal)
+ * - testWoo.fragContract — keywordsFromSlot·axis·validateBind·attachAlias·buildIndexFields
+ * - testWoo.cfg.getConfig — guard.STAGE_A_TOP_N·QUERY_PAGE_SIZE
+ *
+ * [Invariants]
+ * ===========
+ * - Stage A LIKE/score 필드 = fragContract.matchProfile (커버와 동일 집합)
+ * - category hint는 점수만(WHERE 필터 금지)
+ * - 같은 name/tags 축 frag는 신규 INSERT 없이 healDomain만
  */
 var testWoo = testWoo || {};
 testWoo.fragments = (function () {
@@ -76,27 +85,219 @@ testWoo.fragments = (function () {
   }
 
   // 3. Stage A — 슬롯 1개 (DB 필터 + 페이지 스코어, sql_text 미로드)
-  // statuses: 기본 ["active"]. Foundry 내부 재사용 판정만 verified 를 함께 본다
-  // (신규 publish fragment는 승인 전 status=verified 이므로 active 필터로는 잡히지 않음).
+  // statuses: 기본 ["active"]. 킬스위치 OFF 시 Foundry가 verified 를 함께 넘김.
   function searchBySlot(slot, topN, statuses) {
-    if (!slot || (!slot.text && !(slot.searchKeywords && slot.searchKeywords.length))) return [];
+    if (!slot) return [];
+    if (!slot.text && !(slot.searchKeywords && slot.searchKeywords.length) && !slot.resolvedName)
+      return [];
     var cfg = testWoo.cfg.getConfig().search;
     var n = topN || cfg.stageATopN;
     var pageSize = cfg.queryPageSize;
     var maxPages = cfg.maxSearchPages;
     var stat = _normStatuses(statuses);
-    // 검색어: Pass0이 준 searchKeywords 우선. 없으면 범용 분할만 (도메인 규칙 없음)
     var tokens = _keywordsFromSlot(slot);
-    if (!tokens.length) return [];
     var hint = String(slot.hintedCategory || "").toLowerCase();
-    var scored = _searchPages(tokens, hint, pageSize, maxPages, stat);
-    if (!scored.length && hint) scored = _searchPages(tokens, "", pageSize, maxPages, stat);
-    scored.sort(function (a, b) { return b.score - a.score; });
+    var scored = [];
+    if (tokens.length) {
+      scored = _searchPages(tokens, "", pageSize, maxPages, stat);
+      scored.sort(function (a, b) { return b.score - a.score; });
+      if (hint) {
+        for (var hi = 0; hi < scored.length; hi++) {
+          if (_norm(scored[hi].card.category) === hint) scored[hi].score += 10;
+        }
+        scored.sort(function (a, b) { return b.score - a.score; });
+      }
+    }
     // ACC Rhino: Array.map 없음
     var cards = [];
+    var seenC = {};
+    function pushCard(c) {
+      if (!c || !c.name || seenC[c.name]) return;
+      seenC[c.name] = 1;
+      cards.push(c);
+    }
     var top = scored.slice(0, n);
-    for (var ci = 0; ci < top.length; ci++) cards.push(top[ci].card);
+    var ci;
+    for (ci = 0; ci < top.length; ci++) pushCard(top[ci].card);
+    var axisCards = _axisFallback(slot, n, stat) || [];
+    var aj;
+    for (aj = 0; aj < axisCards.length; aj++) pushCard(axisCards[aj]);
+    if (slot.resolvedName) {
+      try {
+        var hitRow = getByName(String(slot.resolvedName));
+        if (hitRow) pushCard(toCard(hitRow));
+      } catch (eRn) { /* keep recall */ }
+    }
     return cards;
+  }
+
+  function searchByAxis(axis, topN, statuses) {
+    var a = String(axis || "").toLowerCase();
+    if (!a || a.length < 2) return [];
+    var cfg = testWoo.cfg.getConfig().search;
+    var n = topN || cfg.stageATopN;
+    var pageSize = cfg.queryPageSize;
+    var maxPages = cfg.maxSearchPages;
+    var stat = _normStatuses(statuses);
+    var tokens = [a, "__" + a];
+    var scored = _searchPages(tokens, "", pageSize, maxPages, stat);
+    var cards = [];
+    var seen = {};
+    var i;
+    for (i = 0; i < scored.length; i++) {
+      var card = scored[i].card;
+      if (!card || !card.name || seen[card.name]) continue;
+      var axisCard = "";
+      if (testWoo.fragContract && testWoo.fragContract.axisFromCard)
+        axisCard = String(testWoo.fragContract.axisFromCard(card) || "").toLowerCase();
+      if (axisCard !== a) continue;
+      seen[card.name] = 1;
+      cards.push(card);
+      if (cards.length >= n) break;
+    }
+    return cards;
+  }
+
+  function _axisFallback(slot, topN, statuses) {
+    if (!testWoo.fragContract || !testWoo.fragContract.axisFromSlot) return [];
+    var hints = testWoo.fragContract.axisFromSlot(slot) || [];
+    var out = [];
+    var seen = {};
+    var hi, j;
+    for (hi = 0; hi < hints.length; hi++) {
+      var more = searchByAxis(hints[hi], topN, statuses) || [];
+      for (j = 0; j < more.length; j++) {
+        if (!more[j] || !more[j].name || seen[more[j].name]) continue;
+        seen[more[j].name] = 1;
+        out.push(more[j]);
+      }
+    }
+    return out;
+  }
+
+  function healDomain(fragRow, alias, params, opts) {
+    if (!fragRow || !fragRow.id) return { ok: false, reason: "frag missing" };
+    if (!testWoo.fragContract) return { ok: false, reason: "fragContract missing" };
+    opts = opts || {};
+    var fc = testWoo.fragContract;
+    var domain = opts.domain || fc.normalizeParamDomain(fragRow.param_domain);
+    var snapChanged = false;
+    if (!opts.domain && testWoo.toolkit && testWoo.toolkit.refreshDomain) {
+      try {
+        var rr = testWoo.toolkit.refreshDomain(domain);
+        if (rr && rr.ok && rr.domain) {
+          domain = rr.domain;
+          snapChanged = !!rr.changed;
+        }
+      } catch (eR) { /* keep snapshot */ }
+    }
+    if (testWoo.enPivot && testWoo.enPivot.enrichDomainEn) {
+      try {
+        var enr = testWoo.enPivot.enrichDomainEn(domain);
+        if (enr && enr.domain) {
+          domain = enr.domain;
+          if (enr.changed) snapChanged = true;
+        }
+      } catch (eEn) { /* keep domain */ }
+    }
+    var chk = { ok: true };
+    if (params && typeof params === "object")
+      chk = fc.validateBind(domain, params);
+    if (!chk || !chk.ok)
+      return { ok: false, reason: (chk && chk.reason) || "validateBind", refreshed: snapChanged };
+    var aliasHit = !!(alias && fc.domainMatchSlot(domain, alias));
+    var next = domain;
+    if (!aliasHit && params && typeof params === "object")
+      next = fc.attachAlias(domain, alias, params);
+    if (!snapChanged && aliasHit)
+      return { ok: true, changed: false, reason: "alias exists", domain: next };
+    var idx = fc.buildIndexFields({
+      slotText: alias,
+      param_domain: next,
+      name: fragRow.name,
+      tags: fragRow.tags,
+      label: fragRow.label
+    });
+    var synExist = String(fragRow.synonyms || "").split(/[,;]+/);
+    var synNew = String(idx.synonyms || "").split(/[,;]+/);
+    var synSeen = {};
+    var synOut = [];
+    function pushSyn(raw) {
+      var s = String(raw || "").replace(/^\s+|\s+$/g, "");
+      if (!s) return;
+      var key = s.toLowerCase();
+      if (synSeen[key]) return;
+      synSeen[key] = 1;
+      synOut.push(s);
+    }
+    var si;
+    for (si = 0; si < synExist.length; si++) pushSyn(synExist[si]);
+    for (si = 0; si < synNew.length; si++) pushSyn(synNew[si]);
+    var samples = [];
+    try {
+      var parsed = fragRow.sample_questions;
+      if (typeof parsed === "string" && parsed) parsed = JSON.parse(parsed);
+      if (parsed && typeof parsed.length === "number") samples = parsed;
+    } catch (eS) { samples = []; }
+    var aliasS = String(alias || "");
+    var hasAlias = false;
+    for (si = 0; si < samples.length; si++) {
+      if (String(samples[si]) === aliasS) hasAlias = true;
+    }
+    if (aliasS && !hasAlias) samples.push(aliasS);
+    var domainJson = JSON.stringify(next);
+    try {
+      var doc = <testWooAiFragment xtkschema={SCHEMA} _operation="update"/>;
+      doc.@id = Number(fragRow.id);
+      doc.@param_domain = domainJson;
+      doc.@synonyms = synOut.join(",");
+      doc.@sample_questions = JSON.stringify(samples);
+      xtk.session.Write(doc);
+      clearCache();
+    } catch (eW) {
+      return { ok: false, reason: String(eW.message || eW) };
+    }
+    return { ok: true, changed: true, domain: next };
+  }
+
+  function saveParamDomain(fragRow, domain) {
+    if (!fragRow || !fragRow.id) return { ok: false, reason: "frag missing" };
+    if (!domain) return { ok: false, reason: "domain missing" };
+    var domainJson;
+    try { domainJson = JSON.stringify(domain); }
+    catch (eJ) { return { ok: false, reason: String(eJ.message || eJ) }; }
+    try {
+      var doc = <testWooAiFragment xtkschema={SCHEMA} _operation="update"/>;
+      doc.@id = Number(fragRow.id);
+      doc.@param_domain = domainJson;
+      xtk.session.Write(doc);
+      clearCache();
+    } catch (eW) {
+      return { ok: false, reason: String(eW.message || eW) };
+    }
+    return { ok: true, domain: domain };
+  }
+
+  function verifyGroupAlias(fragName, param, alias) {
+    var name = String(fragName || "");
+    var pk = String(param || "");
+    var a = String(alias || "");
+    if (!name || !pk || !a) return { ok: false, reason: "args missing" };
+    var fc = testWoo.fragContract;
+    if (!fc || !fc.upsertGroup) return { ok: false, reason: "noapi" };
+    var f = null;
+    try { f = getByName(name); } catch (eG) { f = null; }
+    if (!f || !f.id) return { ok: false, reason: "frag missing" };
+    var domain = fc.normalizeParamDomain(f.param_domain);
+    var g = domain && domain._group && domain._group[pk] && domain._group[pk][a];
+    if (!g || !g.members || !g.members.length)
+      return { ok: false, reason: "group missing" };
+    domain = fc.upsertGroup(domain, pk, a, g.members, {
+      src: "human",
+      verified: true,
+      en: g.en
+    });
+    return saveParamDomain(f, domain);
   }
 
   // 4. Stage A — 다슬롯
@@ -108,8 +309,36 @@ testWoo.fragments = (function () {
       out.push({
         id: s.id, text: s.text, hintedCategory: s.hintedCategory || "",
         searchKeywords: s.searchKeywords || [],
+        resolvedName: s.resolvedName || "",
+        concept: s.concept || null,
+        en_literal: s.en_literal || "",
+        kind: s.kind || "",
+        polarity: s.polarity || "",
         candidates: searchBySlot(s, topN, statuses)
       });
+    }
+    return out;
+  }
+
+  // sql_text 없이 active 카드만. 렉시콘 분할용(페이지 상한=Stage A와 동일).
+  function listLexiconCards(statuses) {
+    var cfg = testWoo.cfg.getConfig().search;
+    var pageSize = cfg.queryPageSize;
+    var maxPages = cfg.maxSearchPages;
+    var stat = _normStatuses(statuses);
+    var out = [];
+    var start = 0;
+    var page;
+    for (page = 0; page < maxPages; page++) {
+      var q = _buildSearchQuery([], "", start, pageSize, stat);
+      var res = q.ExecuteQuery();
+      var count = 0;
+      for each (var r in res.testWooAiFragment) {
+        count++;
+        out.push(toCard(_rowMeta(r)));
+      }
+      if (count < pageSize) break;
+      start += pageSize;
     }
     return out;
   }
@@ -195,20 +424,45 @@ testWoo.fragments = (function () {
     return scored;
   }
 
+  // PG LIKE 는 대소문자 구분 — 카탈로그 토큰의 대소문자 변형을 함께 넣음
+  function _tokenCaseVariants(tok) {
+    var s = String(tok || "");
+    if (!s) return [];
+    var out = [];
+    var seen = {};
+    function add(v) {
+      var x = String(v || "");
+      if (!x || seen[x]) return;
+      seen[x] = 1;
+      out.push(x);
+    }
+    add(s);
+    add(s.toLowerCase());
+    add(s.toUpperCase());
+    if (s.length > 1)
+      add(s.charAt(0).toUpperCase() + s.substring(1).toLowerCase());
+    return out;
+  }
+
+  function _pushLikeOrs(orParts, token) {
+    var fields = (testWoo.fragContract && testWoo.fragContract.likeFieldExprs) ?
+      testWoo.fragContract.likeFieldExprs() :
+      ["label", "tags", "synonyms", "sample_questions", "name", "description", "param_domain"];
+    var variants = _tokenCaseVariants(token);
+    for (var vi = 0; vi < variants.length; vi++) {
+      var t = _escLike(variants[vi]);
+      if (!t) continue;
+      for (var fi = 0; fi < fields.length; fi++)
+        orParts.push("@" + fields[fi] + " LIKE '%" + t + "%'");
+    }
+  }
+
   function _buildSearchQuery(tokens, hintCat, startLine, pageSize, stat) {
     var parts = [_statusCondition(_normStatuses(stat))];
-    if (hintCat) {
-      parts.push("<condition expr=\"@category = '" + _escLit(hintCat) + "'\"/>");
-    }
+    // hintCat WHERE 필터 제거(#170-P2). 호환을 위해 인자는 유지.
     var orParts = [];
     for (var i = 0; i < tokens.length; i++) {
-      var t = _escLike(tokens[i]);
-      if (!t) continue;
-      // description은 DB LIKE에서 제외(memo 풀스캔 비용). 스코어 메모리 채점만 유지.
-      orParts.push("@label LIKE '%" + t + "%'");
-      orParts.push("@tags LIKE '%" + t + "%'");
-      orParts.push("@synonyms LIKE '%" + t + "%'");
-      orParts.push("@sample_questions LIKE '%" + t + "%'");
+      _pushLikeOrs(orParts, tokens[i]);
     }
     if (orParts.length) {
       parts.push("<condition boolOperator=\"AND\" expr=\"(" + orParts.join(" OR ") + ")\"/>");
@@ -245,54 +499,15 @@ testWoo.fragments = (function () {
   }
 
   function _score(f, tokens, hintCat) {
-    var fields = [
-      { blob: _norm(f.sample_questions), w: 8 },
-      { blob: _norm(f.synonyms),         w: 6 },
-      { blob: _norm(f.label),            w: 4 },
-      { blob: _norm(f.tags),             w: 3 },
-      { blob: _norm(f.description),      w: 2 }
-    ];
-    var score = 0, hits = 0;
-    for (var i = 0; i < tokens.length; i++) {
-      var t = tokens[i], hit = false;
-      for (var j = 0; j < fields.length; j++) {
-        if (fields[j].blob.indexOf(t) >= 0) {
-          // 길이 정규화: 예시를 많이 넣은 fragment가 무조건 이기는 것 방지
-          score += fields[j].w / Math.sqrt(Math.max(fields[j].blob.length, 1) / 50);
-          hit = true;
-        }
-      }
-      if (hit) hits++;
-    }
-    if (!hits) return 0;
-    if (hintCat && _norm(f.category) === hintCat) score += 10;
-    return score;
+    if (testWoo.fragContract && testWoo.fragContract.scoreCard)
+      return testWoo.fragContract.scoreCard(f, tokens, hintCat);
+    return 0;
   }
 
-  // Pass0 searchKeywords + 범용 분할. 도메인 별칭 하드코딩 금지.
   function _keywordsFromSlot(slot) {
-    var cfg = testWoo.cfg.getConfig();
-    var maxTok = cfg.search.maxTokens;
-    var seen = {};
-    var out = [];
-    function push(raw) {
-      var t = _norm(raw);
-      if (!t || t.length < 2) return;
-      if (t.length > cfg.guard.MAX_TOKEN_LEN) t = t.substring(0, cfg.guard.MAX_TOKEN_LEN);
-      if (seen[t]) return;
-      seen[t] = true;
-      out.push(t);
-    }
-    var kws = slot.searchKeywords;
-    if (kws && _isArray(kws)) {
-      for (var i = 0; i < kws.length; i++) push(kws[i]);
-    }
-    // fallback: 구두점 기준 범용 분할만 (의미 확장 없음)
-    if (!out.length && slot.text) {
-      var raw = String(slot.text).toLowerCase().split(/[^0-9a-z가-힣]+/i);
-      for (var j = 0; j < raw.length; j++) push(raw[j]);
-    }
-    return out.slice(0, maxTok);
+    if (testWoo.fragContract && testWoo.fragContract.keywordsFromSlot)
+      return testWoo.fragContract.keywordsFromSlot(slot);
+    return [];
   }
 
   function _isArray(x) {
@@ -308,8 +523,14 @@ testWoo.fragments = (function () {
     getByName: getByName,
     toCard: toCard,
     searchBySlot: searchBySlot,
+    searchByAxis: searchByAxis,
     searchSlots: searchSlots,
+    listLexiconCards: listLexiconCards,
+    healDomain: healDomain,
+    saveParamDomain: saveParamDomain,
+    verifyGroupAlias: verifyGroupAlias,
     listCategories: listCategories,
     clearCache: clearCache
   };
 })();
+testWoo.fragments.__v = "166";

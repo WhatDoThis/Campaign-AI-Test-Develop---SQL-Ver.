@@ -1,0 +1,15 @@
+<!--
+woo:testWooSampleBill (Test Woo Sample Bill Form)
+form name = 스키마 name. 고객당 최근 청구 1건.
+-->
+<form _cs="Test Woo Sample Bill" entity-schema="woo:testWooSampleBill" img="xtk:form.png"
+      label="Test Woo Sample Bill" name="testWooSampleBill" namespace="woo" type="notebook"
+      xtkschema="xtk:form">
+  <container label="Bill">
+    <input xpath="@customer_id"/>
+    <input xpath="@bill_month"/>
+    <input xpath="@bill_amt"/>
+    <input xpath="@unpaid"/>
+    <input xpath="@pay_method"/>
+  </container>
+</form>

@@ -1,6 +1,181 @@
 # Log
 
 ## Log Index
+316. 2026-08-21 llm 187 — _negKey Rhino 구문 오류 수정
+315. 2026-08-21 #175 회귀 — region M3 axis·cands=0 rescue (v=186)
+314. 2026-08-21 Phase Gate — 기존 구현 회귀 검증으로 정정
+313. 2026-08-21 #176 C1~C3 — Clarify Chips repo (v=185)
+312. 2026-08-21 완성 로드맵 — 남은 일만 파도 1~3으로 고정
+311. 2026-08-21 #176 — 부분일치 합집합 + 행 수정일로 멤버 정렬
+310. 2026-08-21 #176 — 칩은 컬럼 종류가 아니라 닫힌 도메인
+309. 2026-08-21 #176 — 프롬프트 검증 Clarify Chips를 P0으로 등록
+308. 2026-08-21 N월 — YYYY-MM 카탈로그면 연도 묻지 않음
+307. 2026-08-21 분할 슬롯 — Foundry는 칸 원문만 본다
+306. 2026-08-21 다축 슬롯 — 카탈로그 값이 두 개면 자름
+305. 2026-08-21 debug — 진단 패널에 번역·슬롯·매칭 트레이스
+304. 2026-08-20 leftover — 이미 있는 7월/10대/푸시를 Foundry로 보내지 않음
+303. 2026-08-18 leftover — 색인 오염이 마케팅을 삼키던 것 수정
+302. 2026-08-18 서가 부분커버 — 남는 명사는 삼키지 않음
+301. 2026-08-18 N대~M대 바인딩 — 10대~30대는 10~40
+300. 2026-08-18 원자 분할 — 도메인 예시 없이 다컬럼 슬롯 분리
+299. 2026-08-18 EnPivot — July overdue는 슬롯 2개 (__v=175)
+298. 2026-08-18 Bill 검색 미스 수정 · 로그인별 최근 질문 (v=183)
+297. 2026-08-18 샘플 mart 3종 — Device/Bill/App + Seed2
+296. 2026-08-18 bind — live enum 우선 (별칭 STUDENT가 옛 값이면 교체)
+295. 2026-08-14 #175-5 repo — 칩 별칭·묶음 확인 (v=182) · 잔여차수 동결
+294. 2026-08-14 HUMAN PASS — sql_validate_wkf 실DB 타겟 추출
+293. 2026-08-14 새 SQL 쓰기 · 해시 중복은 행 재사용 (v=181)
+292. 2026-08-14 WKF SQL 반영=injected_at (v=180)
+291. 2026-08-14 param_key 유사 · WKFSQL 브레드크럼 (v=179)
+290. 2026-08-14 유사 목록=조건축 · 임시SQL Program 크럼 (v=178)
+289. 2026-08-14 WKF 목록 표기 · 브레드크럼 뎁스 (v=177)
+288. 2026-08-14 R6 — WF data 로드 E4X 가드 제거 (__v=162)
+287. 2026-08-14 브레드크럼 — Program:/Campaign:/Workflow: 접두
+286. 2026-08-14 R6 — data XML 로드 수정 · 브레드크럼 라벨만
+285. 2026-08-14 R6 — 커밋 트랜잭션 (락→주입→기록→해제)
+284. 2026-08-14 HUMAN PASS — 전남 사는 30대 고객 (N대 30~40)
+283. 2026-08-14 N대 — 번역 다히트 전에 30~40 묶음 (fragContract 175)
+282. 2026-08-14 UX-ST0 — 생성 후 비슷한 예전 조건 (v=172)
+281. 2026-08-14 UX-ST0 — 검색창 한글 조합 유지 (v=171)
+280. 2026-08-14 UX-ST0 — ST0 저장본 검색 + 칩 값 (v=170)
+279. 2026-08-14 R5 분기 B — 점프 후 해당 WKF SQL 이력 (v=169)
+278. 2026-08-14 HUMAN PASS — 복합 4축 NL (경기·Y·10~30대·남) gates 163
+277. 2026-08-14 gates enum — planCode∪nlMap·plan_code 별칭 (__v=163)
+276. 2026-08-14 compiler unused param — plan_code↔planCode 별칭 (__v=163)
+275. 2026-08-14 UX-ST1 repo — 멘트·임시=이어서·목록 분리 (v=168)
+274. 2026-08-14 INDEX §3 — 차수 답변 형식 (배포·테스트·짧게)
+273. 2026-08-14 진행판 핸드오프 — 다음 AI용 진행도·잔여·파일
+272. 2026-08-14 상용화 갭 — NL→SQL UI 레퍼런스 (ACC 비중심)
+271. 2026-08-14 상용화 여정 갭 — 추출≠제품 · C-1~C-7
+270. 2026-08-14 재개 3키+#174 닫힘 — 동일파일 흡수로 차수 단축
+269. 2026-08-14 HUMAN G5 PASS — 서울 빼고 universe EXCEPT
+268. 2026-08-14 G5 exclude-only — universe EXCEPT (include empty 허용)
+267. 2026-08-14 HUMAN G4 PASS — 판교도→경기 · G1/G6 유지
+266. 2026-08-14 G4 정책 — 닫힌 enum 편입 · 가장 구체적 값 우선
+265. 2026-08-14 G4 FAIL 판교도→경기 · 별칭 토큰 경계·M2C 단일추정 거절
+264. 2026-08-14 HUMAN #175-3 G1/G2/G6 PASS · G3는 가이드와 다른 입력
+263. 2026-08-14 #175-3 M2C 그룹 확장 · M2G 캐시 · Pass1 UNION 차단
+262. 2026-08-14 HUMAN G6 재확인 — 서울 남성 IN (2단계)
+261. 2026-08-13 #175-2 param_domain._group 읽기 경로
+260. 2026-08-13 HUMAN G6 PASS — 서울/인천/Z_PLAN IN 회귀
+259. 2026-08-13 #175-1 categorical IN({{param}}) · = 승격
+258. 2026-08-13 #174 V6 repo grep 0건 · #175 가이드 착수(0단계)
+257. 2026-08-13 HUMAN 전라도 사는 남성 — 게이트 PASS · 전남∪전북∩M
+256. 2026-08-13 gender enum:[] 게이트 오거절 — F가 nlMap에 있는데 실패
+255. 2026-08-13 HUMAN 클린환경 Foundry 164 PASS — 인천∩10대 SQL
+254. 2026-08-13 Foundry 게이트 전 도메인 스냅샷 — __sample__ G-C 0건 방지
+253. 2026-08-13 인천 오락가락 — NL캐시 __v · 긴 LLM스팬 미덮음 · 문장 별칭 금지
+252. 2026-08-13 HUMAN #251 smoke PASS (20/21, embed SKIP)
+251. 2026-08-13 인천 누락 — en_literal M2 보존 · merge 시 EnPivot 필드 복사
+250. 2026-08-13 「사는」 categorical glue가 Generate를 막던 구멍 수정
+249. 2026-08-13 Generate — 비조건 잔여(사는) 슬롯 드롭
+248. 2026-08-13 HUMAN #174-5 smoke PASS (20/21, embed SKIP)
+247. 2026-08-13 smoke 1b — unseen alias 히트는 concept 축
+246. 2026-08-13 smoke 1e — M1 covered≠NOISE 잔여 · WKF 스크립트 재등록
+245. 2026-08-13 HUMAN #174-5 ACC 배포 완료 · 다음 V6
+244. 2026-08-13 #174-5 한국어 매칭 사전 제거 (JOSA/NOISE/축 KO regex)
+243. 2026-08-13 Generate Rhino strict — for 안 function 선언 제거
+242. 2026-08-13 #174-4 M1→M2→M3 매칭 · unresolved · `_negative`
+241. 2026-08-13 #174-3 도메인 EN 사전화 · {db,en[]} · bind=db
+240. 2026-08-13 #174-2 패치 — 전체 NL 번역 필수 · M1 스킵 폐기 · retryInput
+239. 2026-08-13 #174-2 EN Pivot 추출 · M1 스킵·NL 캐시·concept 불변
+238. 2026-08-13 #174-1 Foundry 다중 JSON 첫 채택 · extra_fragment_dropped
+237. 2026-08-13 #174 문서 패치 P1~P5 (번역 스킵·V0·concept 불변·R6 게이트)
+236. 2026-08-13 #174 EN-Pivot 로드맵 반영 · #170/#168-B/#172 재개
+235. 2026-08-13 카탈로그 렉시콘 분할 · Stage A 매칭 방향 정정
+234. 2026-08-13 Pass0 청중명사(고객) 슬롯 제거
+233. 2026-08-13 libVersions expectedByMod heal 버전 정합 (v=164)
+232. 2026-08-13 heal 전 live _source 재스냅샷 (후속 적재)
+231. 2026-08-13 축 identity 재사용 · param_domain 자동 heal
+230. 2026-08-13 10대 미등재 시 age frag 재사용 (N대 유도)
+229. 2026-08-13 뒤로가기 시 미반영 SQL 캐시 유지 (v=163)
+228. 2026-08-13 매핑 중 [등록] 비활성 (v=162)
+227. 2026-08-13 R5 ST3~ST5 매핑 — listWkfs·기존SQL점프 (v=161)
+226. 2026-08-13 R4 SQL목록 — [등록]≠WKF선행 (v=160)
+225. 2026-08-13 smoke 9·9c — library hit·invoke 캐시 정합
+224. 2026-08-12 #172 FragContract 공유 계약 미들웨어
+223. 2026-08-12 #170-P2 — Stage A 본문토큰 병합·category 필터 제거
+222. 2026-08-12 #168-B Generate 값 바인딩 · 템플릿 계약
+221. 2026-08-12 #170-P1 — 축정합 library hit·Stage A 대소문자
+220. 2026-08-12 #170 Pass0 슬롯 원자 분할 (normalizeAtomicSlots)
+219. 2026-08-12 #169-P1 — 다중 JSON 파싱·dedup {{param}} 바인딩
+218. 2026-08-12 #169-P0 — library hit 타축 삼킴(단일축+_source) 차단
+217. 2026-08-12 #169 Library-First — Triage 서가 우선·invoke 캐시
+216. 2026-08-12 #168-A hotfix — {{param}} SQL에서 filter 컬럼 미추출 수정
+215. 2026-08-12 #168-A 개정 — frag=_source 탐색캐시·library hit·fingerprint
+214. 2026-08-12 #168-A 필드 도메인 자동 판정(schema-agnostic)·스냅샷
+213. 2026-08-12 #167 Foundry frag 원자화·파라미터화·값사전 merge
+212. 2026-08-12 Studio NL 입력창·목록 높이 +70px (embed/단독)
+211. 2026-08-12 #164 HUMAN 가이드 보강 — 배포목록·V1~V6 단계 상세
+210. 2026-08-12 #164 P0 — Foundry 슬롯 삼킴 차단(색인 오염·AND 커버리지 게이트·큐 이어달리기)
+209. 2026-08-12 #161 실측 — libs 불일치 8종을 필수 재등록 목록으로 격상
+208. 2026-08-12 #160 배포정합 진단 · twRequireLib · __v · libVersions
+207. 2026-08-12 개발가이드 AuthDebug 잔여 참조 제거 (#197 정합)
+206. 2026-08-12 Foundry→SQL Stage A 미매칭·재큐잉 루프 수정 · v=159
+205. 2026-08-12 R3 후속 — plan missing API 구분 · Match OFF 가드 · v=158
+204. 2026-08-12 #149R R3 ST0~ST6 · intent 폐기 · v=157
+203. 2026-08-12 upgrade_plan 연속번호 · `[완료]` 중위 표기
+202. 2026-08-12 upgrade_plan 문서번호 재배치 · 진행판 통합
+201. 2026-08-12 #148R R2 draft cache v=156
+200. 2026-08-12 new_ver/jssp module header HUMAN READ 보강
+199. 2026-08-12 new_ver/js module header HUMAN READ 보강
+198. 2026-08-12 #155 임베딩 OFF·영속화 · C1~C6 HUMAN가이드
+197. 2026-08-12 #154 값인식 매칭 · AuthDebug 폐기 · GapAdmin KEEP
+196. 2026-08-12 개편 진행 체크리스트 — R1스킵·#154다음·폐기1차
+195. 2026-08-12 #153 PoC-V — 값 인식 매칭 타당성 조사 (코드변경없음)
+194. 2026-08-12 #152 P0 — 매칭 오탐 긴급 차단 (Match OFF · v=154)
+193. 2026-08-12 #146R — SQL-First 로드맵 재설계 (13/14/15·SUPERSEDED·추적표·98)
+192. 2026-08-12 #145R PoC-S — SQL-First 타당성 조사 (코드변경없음)
+191. 2026-08-12 #147 교정 — create Match 제거 · discover valueContainment=1 (v=153)
+190. 2026-08-12 #147 — intent·plan-only discover·breadcrumb (v=152)
+189. 2026-08-11 #146 — Match 이원화 (dedup=Jaccard / discover=containment)
+188. 2026-08-11 PoC-M(#145) — 매칭의미론·복제가능성 조사 (코드변경없음)
+187. 2026-08-11 5차 — 매칭잔상/Max안내 분기 (matchShown · v=151)
+186. 2026-08-11 5차 보완 — 전역 유사WKF·3줄목록·컨텍스트 자동반영 v=150
+185. 2026-08-11 5차 — 조건매칭(Jaccard≥0.9)·SQL목록·Register dedup v=149
+184. 2026-08-11 4차·TG-E HUMAN PASS — Foundry→SQL등록 완료 · 다음 5차
+183. 2026-08-11 v=148 — 생성 성공 시 [등록] 안내 배너
+182. 2026-08-11 v=147 — Foundry done 안내·자동재생성 · WKF→SQL 목록
+181. 2026-08-11 4차 — Fragment 자동승인 (active + Option 킬스위치)
+180. 2026-08-11 v=146 HUMAN PASS — 고정 UI · 3차 셸 축 완료
+179. 2026-08-11 v=146 — Studio 작업영역 560px 고정 (목록 길이 무관)
+178. 2026-08-11 v=145 — litmus 정합 + 목록 스크롤 · v=144 HUMAN PASS 기록
+177. 2026-08-11 v=144 — createCampaign=T2 · createWkf=T3b 템플릿 API
+176. 2026-08-11 PoC-T3b PASS — WKF102/op-id=23000 · CreateInstanceFromModel 확정
+175. 2026-08-11 PoC-T3b 생성 OK id=29320 · 검증 쿼리 @operation-id 수정
+174. 2026-08-11 PoC-T3a FAIL — CreateWorkflowFromModelId returns 0 · T3b로 전환
+173. 2026-08-11 PoC-T2 PASS — CreateOperationFromModelId+program-id · OP48/WKF101
+172. 2026-08-11 PoC-T1 — opEmptyTemplate_LLM id=10002 확정
+171. 2026-08-11 PoC-T — 캠페인/WKF는 템플릿 API · 구현 보류
+170. 2026-08-11 3차 정정 — Program→Campaign→WKF · Max15 · PoC-C PASS · v=143
+169. 2026-08-11 PoC-C 스크립트 — Program id→fullName 조회 후 Campaign Write
+168. 2026-08-11 계층 정정 — Program→Campaign→WKF · PoC-C · Max15
+167. 2026-08-11 3차 WKF 라이프사이클 — Write클론·soft-lock·open폴백 v=142
+166. 2026-08-11 3차 템플릿 확정 — WKF89(id=26021) · PoC RESULT 정리
+165. 2026-08-11 PoC-2 보완 — WKF는 program 연결 필수(folder만으론 AI UI 미표시)
+164. 2026-08-11 PoC-1~3 종료 — PoC-3 스킵→soft-lock · 3차 가능
+163. 2026-08-11 PoC-2 PASS — Write 클론 WKF_testWooPoC2_001 (state=0)
+162. 2026-08-11 PoC-1 FAIL — xtk://open 미동작 · PoC-2 진행
+161. 2026-08-11 PoC-1~3 HUMAN 실측 절차 — RESULT 대기 (코드 변경 없음)
+160. 2026-08-11 isAiFolder 폼 colspan=2 — Advanced colcount=2 정렬
+159. 2026-08-11 isAiFolder nms:program 확장 — XML-110013 unknown attribute 해소
+158. 2026-08-11 isAiFolder 패치 대상 정정 — nms:program→nms:plan:lib/edition
+157. 2026-08-11 Folder 폼 isAiFolder UI — woo 확장폼 + nms:program ref 패치
+156. 2026-08-11 2차 상태머신·@isAiFolder — listAiFolders · 입력게이트 v=141
+155. 2026-08-11 1차 진입점과셸 — Tools rights · 정보바+table2열 · 더미목록 v=140
+154. 2026-08-11 INDEX §3.0 — 운영자 응답=배포·HUMAN·다음키만 · PoC-0 HUMAN 대기
+153. 2026-08-11 INDEX §3.5 — 배포/재배포 목록 필수 출력
+152. 2026-08-11 INDEX §8 — 캠페인 반영·테스트 게이트 TG-A~J
+151. 2026-08-11 0차 베이스라인 안정화 — 정적 검증 PASS · HUMAN_CONSOLE 대기
+150. 2026-08-11 INDEX 단일진입점 — 차수명만으로 라우팅·실행 프로토콜
+149. 2026-08-11 9차 가이드 — 미사용 코드 `_폐기` 개명·콘솔 삭제 정리
+148. 2026-08-11 로드맵 문서 P0-2·P1 수정 — PoC-0·INJ-8-2 본문승인·가드레일
+147. 2026-08-11 P0 브랜치 분리 — roadmap new_ver 복원 · fix/embed-layout
+146. 2026-08-11 고도화 기반 — 추적표·Rules/Skills/Agents·차수 가이드(0~8+PoC)
+145. 2026-08-10 embed UI — 입력 2줄 · 답변 영역 확대 (v=143)
+144. 2026-08-10 Studio UI — 진단/TW-BOOT 제거 · 입력·이력 확대 (v=142)
+143. 2026-08-10 재오픈 흰화면 — enter 에도 _r=tick (urlViewer 캐시)
+142. 2026-08-10 embed SQL 이력 세로 채움 — table-cell 2열 · composer→main (v=140)
 141. 2026-08-10 폼 그리드 좌측공백 — Reload 버튼 colspan=3
 140. 2026-08-10 폼 enter 방어 — twStudioUrl 선행 set · _r 는 Reload/Apply만
 139. 2026-08-10 baseline — #134/#136/#138 레이아웃 철회 (#133/#135/#137 유지)
@@ -144,6 +319,1489 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+316. 2026-08-21 llm 187 — _negKey Rhino 구문 오류 수정
+Purpose: Generate `[Generate] missing ) in parenthetical` — _tryMatchOrExpand 삽입 시 _negKey 함수 헤더가 깨진 Rhino parse error.
+Changes:
+- testWooLlm.js: _negKey 선언 복구 · __v=187
+- StudioContext expectedByMod llm=187 · Studio v=187
+Verification: node --check testWooLlm.js PASS
+Changed files: new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
+
+315. 2026-08-21 #175 회귀 — region M3 axis·cands=0 rescue (v=186)
+Purpose: `전라도` 슬롯 cands=0→Foundry infeasible 회귀 수정. enPivot concept=region vs fragment residential_region M3 불일치.
+Changes:
+- fragContract 186: conceptsAxisMatch · M3 axis 동치
+- llm 186: axis attach · cands=0 rescue→groupExpand · debug rescue
+- StudioContext expectedByMod · Studio v=186
+- smoke: M3 region/residential_region
+Verification: smoke 1b.fragContract PASS
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+314. 2026-08-21 Phase Gate — 기존 구현 회귀 검증으로 정정
+Purpose: Phase Gate를 “새 아이디어 금지”가 아니라 로드맵 작업이 #175/#176 등 기존 구현을 침해하지 않게 검증하는 절차로 정정.
+Changes:
+- `41` §1-b G3·회귀 체크 예(전라도=M2G/M2C 경로) 갱신
+Changed files: docs/report/upgrade_plan/41_완성로드맵.md, docs/log/log.md
+
+313. 2026-08-21 #176 C1~C3 — Clarify Chips repo (v=185)
+Purpose: 모호한 닫힌 도메인을 SQL 전에 입력창 위 칩으로 보강하고, 클릭 후 같은 Generate를 이어 돌린다.
+Changes:
+- `buildPromptHints`: 2+히트만 칩. 합집합 먼저. 시계 A(연월 내림) / B(수정일 GROUP BY 1회)
+- Generate unresolved·Foundry infeasible에 `promptHints`. union은 요청 단위 IN (`clarify_pick`)
+- Studio `#nlHints` 클릭=표면 보강+재생성. 카드 치환 칩 제거. v=185
+Verification: 로컬 C1 스모크 PASS (월 내림·합집합+수정일·enum순·highCard 빈 배열). HUMAN C4 남음
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooToolkit.js, new_ver/js/testWooLlm.js, new_ver/js/testWooFoundry.js, new_ver/jssp/testWooAiGenerate.jssp, new_ver/jssp/testWooAiQueueStatus.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/html/testWooAiStudio.js, new_ver/tools/testWooSmoke.js, docs/report/upgrade_plan/40_프롬프트검증_ClarifyChips_176.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+312. 2026-08-21 완성 로드맵 — 남은 일만 파도 1~3으로 고정
+Purpose: 미구현을 훑어 지금 제품에 필요 없는 큐를 빼고, 다음 AI가 #176부터 완성(ST6)까지 같은 순서로 가게 한다.
+Changes:
+- `41_완성로드맵.md`: 파도1 #176 → 파도2 셸 HUMAN → 파도3 R7배지/R8 E2E
+- `[S]`: 08-11 캠페인-먼저, Match/embed ON, 95% 유사, P2/P4/P5/P6, R7 relative, 지금 R8 삭제
+- 진행판·INDEX·39 P표 동기화. 관리자 원문 파일은 삭제하지 않음
+Verification: 문서만
+Changed files: docs/report/upgrade_plan/41_완성로드맵.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/39_상용화_여정갭.md, docs/report/upgrade_plan/40_프롬프트검증_ClarifyChips_176.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+311. 2026-08-21 #176 — 부분일치 합집합 + 행 수정일로 멤버 정렬
+Purpose: 범주 값도 그 행의 수정일·생성일로 줄 세운다. 접두 히트는 합집합 칩을 맨 앞에 둔다.
+Changes:
+- 규칙 4개(2+히트, 합집합 먼저, 시계 A/B, 칩 후 Generate 이어 돌림)
+- 감사 SQL은 슬롯당 GROUP BY 1회. 값당 SELECT 금지
+Verification: 문서만
+Changed files: docs/report/upgrade_plan/40_프롬프트검증_ClarifyChips_176.md, docs/log/log.md
+
+310. 2026-08-21 #176 — 칩은 컬럼 종류가 아니라 닫힌 도메인
+Purpose: 첫 초안이 7월·최신일 정렬로 읽혀 다른 컬럼에 못 쓰일 뻔한 구멍을 막는다.
+Changes:
+- 모호함 3종(값/컬럼/버킷). classifyField tier로 칩 여부 결정
+- 최신 정렬은 날짜·연월 값에만. enum은 빈도. 값마다 tsCreated 조회 금지
+- HUMAN을 월+범주 둘 다로
+Verification: 문서만
+Changed files: docs/report/upgrade_plan/40_프롬프트검증_ClarifyChips_176.md, docs/log/log.md
+
+309. 2026-08-21 #176 — 프롬프트 검증 Clarify Chips를 P0으로 등록
+Purpose: 모호한 NL을 SQL 전에 입력창 위 버튼(실데이터 최신 3~5개)으로 보강하는 차수를 최우선으로 고정한다.
+Changes:
+- 가이드 40: LangGraph interrupt 패턴을 ACC JSON+재생성으로 치환. 칩은 probe/enum만. 클릭=NL 보강, 자동 생성 없음
+- INDEX·진행판·ReportIndex에 #176을 트랙 A 다음 구현으로 올림
+Verification: 문서만. 코드 없음
+Changed files: docs/report/upgrade_plan/40_프롬프트검증_ClarifyChips_176.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/01_진행판.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+308. 2026-08-21 N월 — YYYY-MM 카탈로그면 연도 묻지 않음
+Purpose: 7월이 청구월 2026-07을 찾았는데도 연도 vs 매년으로 멈춰 미납·월이 SQL에 안 들어가던 것을 막는다.
+Changes:
+- N월/July → 도메인·probe의 YYYY-MM 중 그 월만. 1개면 그 값, 여러 해면 IN
+- LIKE '%-07' 나 연도 질문은 쓰지 않음. N대와 같은 형태 규칙
+Verification: 스모크 1b. 콘솔 fragContract 184 + feasibility 164. HUMAN: 7월이 ambiguous가 아님. SQL에 청구월·미납
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooFeasibility.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+307. 2026-08-21 분할 슬롯 — Foundry는 칸 원문만 본다
+Purpose: 7월+미납자를 잘라도 Pass1/큐가 다시 한 칸으로 합치고, triage가 문장 전체를 봐 unpaid에 7월을 넣던 것을 막는다.
+Changes:
+- 분할은 원문(KO)만. 번역 히트로 칸을 복제하지 않음
+- 한글 분할 슬롯은 concept 없어도 unmatched 유지
+- triage/generate는 슬롯 원문만. 큐 진입 시 한 번 더 분할
+Verification: 콘솔 fragContract 183 + llm 184 + feasibility 163 + foundry 169. HUMAN: 진단 slot에 7월·미납자 따로, foundry.slot이 «7월 미납자»가 아님
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/js/testWooFeasibility.js, new_ver/js/testWooFoundry.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+306. 2026-08-21 다축 슬롯 — 카탈로그 값이 두 개면 자름
+Purpose: EnPivot이 한 칸으로 남긴 복합 NP를 도메인 예시 없이 자른다. 통째 값 대조로 멈추지 않게 한다.
+Changes:
+- splitCompoundSlots: identity 카탈로그(별칭/enum/label, synonyms 제외) + N월 형태. 축이 2개이거나 1개+잔여면 분할
+- N대~M대 range는 유지. 색인 오염 명사는 identityOnly라 자르지 않음
+Verification: 스모크 1b. 콘솔 fragContract 182 + llm 183. HUMAN: 7월 미납자…남성 → 진단에 7월·미납 분리, 값 확인 필요 없음
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+305. 2026-08-21 debug — 진단 패널에 번역·슬롯·매칭 트레이스
+Purpose: 반복 leak을 추측으로 고치지 않고, LLM 번역·슬롯 절단·매칭·Foundry 결정을 Studio 진단에서 보게 한다.
+Changes:
+- testWooEnv.debug.enabled 한 줄로 온오프. 기본 ON
+- Generate/Foundry 트레이스를 jsonOut.debugTrace · #twDiag 에 표시
+Verification: Studio URL v=184. 콘솔 Env/Cfg/Common 160 + EnPivot 178 + llm 182 + foundry 168. 끄려면 Env.debug.enabled=false
+Changed files: new_ver/js/testWooEnv.js, new_ver/js/testWooConfig.js, new_ver/js/testWooCommon.js, new_ver/js/testWooEnPivot.js, new_ver/js/testWooLlm.js, new_ver/js/testWooFoundry.js, new_ver/jssp/testWooAiGenerate.jssp, new_ver/jssp/testWooAiQueueStatus.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
+
+304. 2026-08-20 leftover — 이미 있는 7월/10대/푸시를 Foundry로 보내지 않음
+Purpose: 서가에 billmonth/unpaid/push/age가 있는데도 10대·July 번역 토큰을 unmatched로 보내 신규 frag를 만들던 것을 막는다.
+Changes:
+- 매칭된 슬롯은 leftover 때문에 버리지 않음
+- leftover는 및/and가 있을 때만. 고객/customer는 glue
+Verification: 스모크 1b 10대 leftover 빈값. 콘솔 fragContract 181 + llm 181
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/tools/testWooSmoke.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+303. 2026-08-18 leftover — 색인 오염이 마케팅을 삼키던 것 수정
+Purpose: 푸시 조각 synonyms/sample에 예전 문장 마케팅이 남아 leftover가 비고 SQL이 3조각으로 끝나던 것을 막는다.
+Changes:
+- leftover는 xpath/label identity와 번역 토큰만. 색인은 커버로 보지 않음
+- 및/and 슬롯 분할. identity 없는 매칭은 버리고 leftover만 재검색
+Verification: 스모크 1b 오염 synonyms에도 leftover=marketing. 콘솔 fragContract 180 + llm 180 + EnPivot 177
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/js/testWooEnPivot.js, new_ver/tools/testWooSmoke.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+302. 2026-08-18 서가 부분커버 — 남는 명사는 삼키지 않음
+Purpose: 번역이 맞아도 한 슬롯·한 조각 재사용이 다른 독립 필터를 삼키던 것을 막는다.
+Changes:
+- libraryHitPredicate: 색인/도메인에 없는 내용 토큰이 남으면 히트 거부. 축만 같다고 통과하지 않음
+- generatePlan: 매칭 후 leftover를 새 슬롯으로 재검색. unmatched drop은 domainMatch만
+- Foundry: 부분 커버면 재사용 + leftover 재큐
+Verification: 스모크 1b leftover. 콘솔 fragContract 179 + llm 179 + foundry 167. HUMAN: 푸시+마케팅+7월 미납 → INTERSECT 4
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/js/testWooFoundry.js, new_ver/tools/testWooSmoke.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+301. 2026-08-18 N대~M대 바인딩 — 10대~30대는 10~40
+Purpose: 입력이 범위인데 첫 N대만 바인딩되어 SQL이 10~20이 되던 것을 고친다.
+Changes:
+- _induceNDae가 N대~M대 → ageMin=N, ageMax=M+10. 단일 N대는 기존과 동일
+- resolveNlParams는 유도 범위를 단일 버킷보다 먼저 씀
+Verification: 스모크 1g 10대~30대=10~40. 콘솔 fragContract 178
+Changed files: new_ver/js/testWooFragContract.js, new_ver/tools/testWooSmoke.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+300. 2026-08-18 원자 분할 — 도메인 예시 없이 다컬럼 슬롯 분리
+Purpose: 스키마마다 프롬프트 예시를 늘리지 않고, 독립 값=슬롯1 규칙과 Foundry 다컬럼 분할로 같은 실패를 막는다.
+Changes:
+- EnPivot: July/미납 예시 삭제. 독립 값·같은 척도 범위만. __v=176
+- Foundry: triage/생성에서 컬럼 2개면 원자 슬롯으로 나눠 재생성. 컬럼 락. __v=166
+Verification: 콘솔 EnPivot 176 + Foundry 166 + Context. 7월 미납 → 조각 2개 publish. 프롬프트에 청구/July 없음
+Changed files: new_ver/js/testWooEnPivot.js, testWooFoundry.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+299. 2026-08-18 EnPivot — July overdue는 슬롯 2개 (__v=175)
+Purpose: 번역은 맞는데 슬롯이 'overdue payment for July'를 한 축으로 묶어 non_atomic이 나던 것을 막는다.
+Changes:
+- 중첩 NP도 축 분리. 월/날짜와 미납/납부는 항상 슬롯 2개. 10대~30대는 연령 1슬롯
+Verification: 콘솔 EnPivot.js 재등록 __v=175. 같은 NL → 슬롯 7월 + 미납 + 푸시 + 연령
+Changed files: new_ver/js/testWooEnPivot.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+298. 2026-08-18 Bill 검색 미스 수정 · 로그인별 최근 질문 (v=183)
+Purpose: 청구 슬롯이 describe_schema 없이 ambiguous 난 원인을 막고, 당사자별 이전 NL만 남긴다.
+Changes:
+- Bill 라벨을 청구월/납입금/결제수단/미납으로. search_columns는 스키마 name/label도 매칭
+- triage: 관련 스키마가 보이면 describe_schema 필수
+- Studio 버튼과 진단 사이 최근 질문. Option testWooAiNlRecent_{login} 최대 8
+Verification: URL v=183. 같은 문장 재생성 시 s2 feasible. 질문 클릭하면 입력칸만 채움
+Changed files: new_ver/schema/testWooSampleBill.xml, new_ver/js/testWooToolkit.js, testWooFeasibility.js, new_ver/jssp/testWooAiValidate.jssp, testWooAiStudio.jssp, testWooAiStudioJs.jssp, testWooAiStudioContext.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
+
+297. 2026-08-18 샘플 mart 3종 — Device/Bill/App + Seed2
+Purpose: 기존 100명 customer_id로 조인되는 단말·청구·앱 테스트 테이블을 추가한다.
+Changes:
+- 스키마/폼 3종. 고객당 1행. 값=한글·통용코드(5G, iOS)로 NL 바인딩이 코드/라벨이 갈라지지 않게 함
+- Seed2는 기존 고객 ID만 Write. 고객·가입 테이블은 삭제/수정하지 않음
+Verification: 스키마 Update DB → Seed2 WF. 고객 0건이면 중단. 3테이블 count=고객 수
+Changed files: new_ver/schema/testWooSampleDevice.xml, testWooSampleBill.xml, testWooSampleApp.xml, new_ver/input_form/testWooSampleDevice.xml, testWooSampleBill.xml, testWooSampleApp.xml, new_ver/workflow/testWooSampleSeed2.js, new_ver/schema/testWooSampleCustomer.xml, .cursor/skills/campaign-ai-studio/acc-data-access.md, docs/log/log.md
+
+296. 2026-08-18 bind — live enum 우선 (별칭 STUDENT가 옛 값이면 교체)
+Purpose: SQL 바인딩이 저장된 nlMap 옛 db(STUDENT)가 아니라 라이브 DISTINCT enum을 쓰게 한다.
+Changes:
+- 닫힌 enum이 있으면 후보=enum만. planCode는 plan_code live enum을 같이 본다
+- refreshDomain 후 enum을 라이브 스냅샷으로 교체. bind는 resolve 값으로 LLM 파라미터를 덮음
+Verification: 스모크 1b live enum / planCode snap. HUMAN=DISTINCT sPlan_code 확인 후 재생성
+Changed files: new_ver/js/testWooFragContract.js, testWooToolkit.js, testWooCompiler.js, new_ver/jssp/testWooAiValidate.jssp, testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+295. 2026-08-14 #175-5 repo — 칩 별칭·묶음 확인 (v=182) · 잔여차수 동결
+Purpose: 잘 되는 추출 SQL을 이후 차수가 깨지 않게 축소하고, 칩에 별칭·확인만 넣는다.
+Changes:
+- 01 §5 잔여 vs 코드. R7=배지+기존복제(compiler 동결). R8=Inject 삭제 금지. G3 하지 말 것
+- groupHintForParams · verifyGroupAlias · chips 별칭 → 값 · [맞음]
+- SQL/llm/EnPivot/Gates 미변경
+Verification: 스모크 1b groupHintForParams. HUMAN=전라도 칩 별칭+[맞음]
+Changed files: new_ver/js/testWooFragContract.js, testWooFragments.js, testWooCompiler.js, new_ver/jssp/testWooAiGenerate.jssp, testWooAiStudioJs.jssp, testWooAiStudio.jssp, testWooAiStudioContext.jssp, new_ver/html/testWooAiStudio.js, new_ver/tools/testWooSmoke.js, docs/report/upgrade_plan/01_진행판.md, 21_SQLFirst_R차수_실행가이드.md, 38_값확장_GroupExpansion_175.md, 00_INDEX.md, docs/log/log.md
+
+294. 2026-08-14 HUMAN PASS — sql_validate_wkf 실DB 타겟 추출
+Purpose: Studio 생성 SQL이 ACC에서 타겟을 뽑는지 운영자 확인을 기록한다.
+Changes:
+- 검증 WKF 테스트 완료. 생성 SQL 기준 타겟 추출 문제없음
+- 추출 ST0 ~95%. R6(주입·열기)은 별개로 `[H]` 유지
+- `검증_요약.md` HUMAN PASS 배너
+Verification: HUMAN. 배포 없음.
+Changed files: new_ver/sql_validate_wkf/검증_요약.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/39_상용화_여정갭.md, docs/log/log.md
+
+293. 2026-08-14 새 SQL 쓰기 · 해시 중복은 행 재사용 (v=181)
+Purpose: 임시 SQL로 이미 반영된 WKF에 들어가면 덮어쓰기 2클릭이 아니라 목록에 추가(넣기)로 가게 한다. 같은 SQL을 여러 번 넣어도 행이 늘지 않게 한다.
+Changes:
+- SQL 목록 맨 위 `[새 SQL 쓰기]` 행. 임시 조건 선택 시 버튼=`WKF에 넣기`. 기존 행 클릭만 `덮어쓰기`
+- Register: 신규 SQL(해시 없음)=1클릭 넣기. 다른 저장본 해시=2클릭. 동일 해시는 save 없이 그 id 재사용+주입
+- 기존 행 클릭 전 임시 조건은 putDraft로 보관 → 새 SQL 쓰기로 복귀
+Verification: HUMAN. JSSP v=181 + Register. 스키마/repo 재배포 없음. 임시 SQL→기존 WKF→넣기 1클릭·목록 1행 추가. 같은 조건 재넣기→행 수 그대로
+Changed files: new_ver/jssp/testWooAiRegister.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+292. 2026-08-14 WKF SQL 반영=injected_at (v=180)
+Purpose: WKF SQL 목록의 반영 상태를 XML이 아니라 스키마 행으로만 본다. 2건 이상이면 가장 최근 주입 행을 표시하고, 클릭은 덮어쓰기, 이미 반영이면 WKF로 이동을 켠다.
+Changes:
+- schema `@injected_at` `@injected_by` `@inject_count` `@activity_name` `@prev_injected_id` `@injected_workflow_id`. 현재 반영=같은 WF에서 injected_at 최대
+- Register 2클릭 게이트=hasInjectedAiSql. 주입 성공 후 markAiSqlInjected (XML probeOccupied 폐기)
+- Studio: 반영됨 배지·자동 선택, 버튼 WKF에 덮어쓰기, WKF로 이동은 스키마 반영이면 활성
+Verification: HUMAN. 스키마 업데이트 후 repo 163 + v=180. 기존 행은 injected_at 빈값 → 한 번 넣기 후부터 반영됨
+Changed files: new_ver/schema/testWooAiSql.xml, new_ver/input_form/testWooAiSql.xml, new_ver/js/testWooRepository.js, new_ver/jssp/testWooAiRegister.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+291. 2026-08-14 param_key 유사 · WKFSQL 브레드크럼 (v=179)
+Purpose: 조사/NL 토큰 비교를 폐기하고 값 없는 조건축 키로 유사 목록을 만든다. WKF SQL 목록에서 Workflow 크럼으로 목록에 돌아간다.
+Changes:
+- schema `@param_key` (plan params 키 camelCase 정렬, 값 제외). Register 시 저장
+- 유사: param_key 교집합. 키 없으면 used_fragments 이름만. `_SIM_JOSA` 삭제
+- 브레드크럼: WKF 선택 후 `Workflow: 라벨`(클릭=목록) `> SQL목록(Workflow)` 읽기전용
+Verification: HUMAN. 스키마 업데이트 후 v=179. 충청 Z 저장본 + 충청 Y 생성 → 유사. WKF 선택 후 Workflow 크럼으로 목록 복귀
+Changed files: new_ver/schema/testWooAiSql.xml, new_ver/input_form/testWooAiSql.xml, new_ver/js/testWooCompiler.js, new_ver/js/testWooRepository.js, new_ver/jssp/testWooAiRegister.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+290. 2026-08-14 유사 목록=조건축 · 임시SQL Program 크럼 (v=178)
+Purpose: 같은 Param·다른 값(Y vs Z)이 유사 목록에서 빠지던 구멍과, 임시 SQL 클릭 시 Program 크럼 누락을 고친다.
+Changes:
+- 유사: 칩 값 비교 중단. fragment 이름 겹침 우선. NL은 조사·값접두(y요금제→요금제) 정규화
+- listRecentAiSql에 used_fragments. 행 메타는 「같은 조건 구성」·겹친 말(값 일치 단정 없음)
+- 임시 SQL 클릭 시 브레드크럼 `SQL선택 > Program`(읽기전용)
+Verification: HUMAN. v=178 + repo 161. 충청 Z 저장본 + 충청 Y 생성 → 유사에 Z 행
+Changed files: new_ver/js/testWooRepository.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+289. 2026-08-14 WKF 목록 표기 · 브레드크럼 뎁스 (v=177)
+Purpose: WKF 행을 라벨/인터널네임/반영SQL 개수만 보이게 하고, 브레드크럼이 목록(미선택)과 선택 깊이를 섞지 않게 한다.
+Changes:
+- WKF 제목 `WKF(라벨명 / 인터널네임 / 반영SQL 개수)`, 행은 짧은 라벨 / name / registered 건수
+- 브레드크럼은 listMode 기준. 목록 화면은 타입만(읽기전용), 선택 후에만 `타입: 라벨`
+- Program 클릭 시 folder를 비움. Campaign 클릭 시 Campaign 크럼만 남김. WKF 선택 시 그 WKF SQL 이력으로 진입
+Verification: HUMAN. Studio URL v=177. 아래 HUMAN 테스트
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+288. 2026-08-14 R6 — WF data 로드 E4X 가드 제거 (__v=162)
+Purpose: [WKF에 넣기]가 여전히 data XML missing. Rhino는 load/length를 JS function으로 안 본다.
+Changes:
+- typeof 검사 없이 load·toXMLString·length() 직접 호출
+- PoC-2와 같이 internalName 조회. children()으로 data/activities 탐색
+- 실패 시 id·자식 요소명을 오류에 붙여 다음 진단
+Verification: HUMAN. JS 라이브러리 162 재등록 후 [WKF에 넣기]
+Changed files: new_ver/js/testWooWorkflowUi.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+287. 2026-08-14 브레드크럼 — Program:/Campaign:/Workflow: 접두
+Purpose: 라벨만 보이던 크럼을 종류+라벨로 읽히게 한다.
+Changes:
+- SQL선택 > Program: 라벨 > Campaign: 라벨 > Workflow: 라벨
+Verification: HUMAN. v=176
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
+
+286. 2026-08-14 R6 — data XML 로드 수정 · 브레드크럼 라벨만
+Purpose: [WKF에 넣기]가 data XML missing으로 죽고, 브레드크럼 조건은 눌러도 반응이 없었다.
+Changes:
+- xtk.workflow.load 우선. data 메모/공백/중첩 activities를 모두 찾음
+- 브레드크럼: SQL선택 > Program라벨 > Campaign라벨 > WKF라벨. 조건 크럼 제거
+- 신규 생성 기본 라벨은 AI Campaign / AI WKF (부모 경로 붙이지 않음)
+Verification: HUMAN. v=175. 같은 WKF에 넣기 → 반영. 브레드크럼이 라벨만
+Changed files: new_ver/js/testWooWorkflowUi.js, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+285. 2026-08-14 R6 — 커밋 트랜잭션 (락→주입→기록→해제)
+Purpose: Register가 이력만 남기던 것을 WKF 액티비티 반영까지 한 트랜잭션으로 묶는다.
+Changes:
+- 락 실패·덮어쓰기 1클릭은 AiSql을 만들지 않음. 2클릭에만 덮어씀
+- 첫 ibankSqlDM에 registered SQL을 script+ai-sql-id로 Write. SOAP로 SQL 본문을 안 보냄
+- 반영 성공 후에만 [WKF 열기]·[다른 WKF에도 반영]. confirm/alert 없음. J-9-5-2 없음
+Verification: HUMAN. 빈 액티비티 반영 1 · 락 점유 실패 1 · 덮어쓰기 2클릭 1. 창 닫고 재오픈 시 편집기에 SQL
+Changed files: new_ver/js/testWooWorkflowUi.js, new_ver/js/testWooRepository.js, new_ver/jssp/testWooAiRegister.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/html/testWooAiStudio.js, new_ver/schema/testWooAiWorkflowUi.xml, new_ver/workflow/testWooSampleCustomActivityContract.xml, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/39_상용화_여정갭.md, docs/report/upgrade_plan/23_SQLFirst_AI명령문.md, docs/log/log.md
+
+284. 2026-08-14 HUMAN PASS — 전남 사는 30대 고객 (N대 30~40)
+Purpose: 운영자가 N대 생성 결과를 PASS로 회신했다. 「여러 항목과 맞음」은 없다.
+Changes:
+- 칩: 전남, 30~40. 준비됨
+- SQL: sRegion IN ('전남') INTERSECT iAge >= 30 AND iAge < 40
+- 다음: R5 점프 재확인 → R6. Match Option·COUNT 금지
+Verification: 운영자 화면 회신 (본 메시지).
+Changed files: docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/log/log.md
+
+283. 2026-08-14 N대 — 번역 다히트 전에 30~40 묶음 (fragContract 175)
+Purpose: 「전남 사는 30대 고객」이 값 30대를 여러 항목과 맞다고 멈추던 구멍을 막는다.
+Changes:
+- `30대`는 EN 토큰(30 / 30s / in their 30s)으로 나이 enum을 훑지 않고 {ageMin:30,ageMax:40}
+- _bucket 원문 키가 ageMin=30 접두 매칭보다 앞
+- EN 히트에서 숫자 1~2자리 토큰은 무시. heal-miss를 「여러 항목」으로 안 씀
+- 안내가 남으면 번역(en_literal)을 같이 보여 줌
+Verification: HUMAN. `전남 사는 30대 고객` → 전남 ∩ iAge 30~40. 「여러 항목과 맞음」 없음.
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+282. 2026-08-14 UX-ST0 — 생성 후 비슷한 예전 조건 (v=172)
+Purpose: NL 생성 뒤에 등록일 순 전체를 넣던 구멍을 막고, 지금 문장·칩 값과 겹치는 저장본만 보여 준다.
+Changes:
+- 분기1 ST0: 검색 + 예전에 쓴 조건(등록일). 클릭=WKF 점프
+- 분기2 생성 후: 이어서 할 작업(기존) + 비슷한 예전 조건(토큰 겹침). 클릭=같은 점프
+- Match Option 켜지 않음. 「포함/일치」 단정 없음. 행에 「겹친 말」 표시
+Verification: HUMAN. v=172. 경기·Y 생성 시 「전라도 사는 남성」이 아래에 안 나오거나 겹친 말만. 초기화는 검색 목록 유지.
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/39_상용화_여정갭.md, docs/log/log.md
+
+281. 2026-08-14 UX-ST0 — 검색창 한글 조합 유지 (v=171)
+Purpose: 글자마다 검색칸을 지우고 다시 만들어 자음·모음이 따로 들어가던 구멍을 막는다.
+Changes:
+- 타이핑 시 입력칸은 그대로 두고 아래 목록만 다시 그림
+- 목록 순서는 기존과 같음: `creation_date` 최신 등록이 위. 클릭 시각이 아님
+Verification: HUMAN. URL v=171. 「전라도」가 한 글자씩 조합. 자모 분리 없음.
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+280. 2026-08-14 UX-ST0 — ST0 저장본 검색 + 칩 값 (v=170)
+Purpose: 최초 진입·초기화에서 저장본을 바로 보고 타이핑으로 걸러 고르게 한다. 칩은 fragment 라벨 대신 바인딩 값을 보여 준다.
+Changes:
+- ST0/초기화: `listRegisteredSql` limit 50 로드. 검색창(즉시 필터). 클릭=`_jumpExistingSql`
+- 「대상 만들기」 후: 위 임시 / 아래 저장본. 검색 없음
+- 칩·해석 한 줄: params 값(경기, Y_PLAN, 10~40, M). 라벨은 값 없을 때만
+- R6 주입/열기 없음. Match Option 변경 없음
+Verification: HUMAN. URL v=170. 초기화→저장본+검색. 대상 만들기 후 검색 사라짐. 칩=값.
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/39_상용화_여정갭.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+279. 2026-08-14 R5 분기 B — 점프 후 해당 WKF SQL 이력 (v=169)
+Purpose: 예전에 쓴 조건 클릭이 WKF 고르기에서 멈추지 않고 그 WKF SQL 목록까지 들어가게 한다.
+Changes:
+- `_jumpExistingSql` → `selectWkf(..., { showSqlList: true })` → `loadSqlList`
+- 신규 매핑에서 WKF만 고른 경우는 기존처럼 목록 유지 (R6 주입 아님)
+Verification: HUMAN. 「예전에 쓴 조건」 클릭 → 제목 「이 WF SQL 이력」. 「WKF에 넣기」 재클릭 불필요.
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+278. 2026-08-14 HUMAN PASS — 복합 4축 NL (경기·Y·10~30대·남) gates 163
+Purpose: 운영자가 복합 조건 Generate를 PASS로 회신했다. R6 선구현은 하지 않는다.
+Changes:
+- SQL: 경기 ∩ Y_PLAN ∩ iAge 10~40 ∩ M. 준비됨
+- 진행판: 다음=R5 HUMAN (Program→Campaign→WKF). PASS면 R6
+- 칩 문구(거주 지역 조건…)는 U4 잔여. 이번 키 아님
+Verification: 운영자 PASS (본 회신). R5는 별도 HUMAN.
+Changed files: docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/log/log.md
+
+277. 2026-08-14 gates enum — planCode∪nlMap·plan_code 별칭 (__v=163)
+Purpose: SQL은 Y_PLAN인데 게이트가 planCode enum만 보고 오거절하던 구멍을 막는다.
+Changes:
+- PLAN 검사는 sql `{{}}` 키 기준. planCode↔plan_code spec 합침
+- enum∪nlMap. {db,en} 는 db만 비교
+- StudioContext expected gates=163
+Verification: HUMAN. 동일 문장 재생성. `param not in enum` 없이 준비됨. AI PASS 금지.
+Changed files: new_ver/js/testWooGates.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+276. 2026-08-14 compiler unused param — plan_code↔planCode 별칭 (__v=163)
+Purpose: 복합 NL에서 Pass1 extras/키 불일치로 compile이 죽던 구멍을 막는다.
+Changes:
+- `bindPlanParams`: sql `{{}}` 키만 유지. snake↔camel 별칭(plan_code↔planCode)
+- resolveNlParams 조회 키에도 별칭 포함
+- StudioContext expected compiler=163
+Verification: HUMAN. 입력 `경기도에 살고 Y요금제 쓰는 10대 20대 30대 남성 고객`. unused param 없어야 함. AI PASS 금지.
+Changed files: new_ver/js/testWooCompiler.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+275. 2026-08-14 UX-ST1 repo — 멘트·임시=이어서·목록 분리 (v=168)
+Purpose: 목록/임시/멘트를 마케터 카피로 바꾸고, 임시 클릭이 곧 매핑 이어가기가 되게 한다.
+Changes:
+- 「생성」→「대상 만들기」, 「등록」→「이 조건 쓰기」(WKF 있으면 「WKF에 넣기」)
+- 임시 클릭=`_restoreDraft`+`_beginMapping`. 「이 새 SQL로 진행」 행 제거
+- 목록 위=이어서 할 작업 / 아래=예전에 쓴 조건. 칩 해석 한 줄. 게이트 성공=U5 문장
+- unresolved는 경고+값. Match Option·R6·COUNT 미변경
+Verification: HUMAN. Studio URL v=168. AI PASS 금지.
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/39_상용화_여정갭.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+274. 2026-08-14 INDEX §3 — 차수 답변 형식 (배포·테스트·짧게)
+Purpose: 차수마다 운영자에게 줄 답변 뼈대를 고정한다.
+Changes:
+- `00_INDEX.md` §3: 시작 4줄 · 끝 4덩이(결과/배포/테스트/다음) · 종류별 표
+- 원칙: 할 일은 자세히, 설명은 짧게. 초보자=어디·뭘·뭐가 보이나
+- `01_진행판.md` 핸드오프에 §3 포인터
+Verification: 문서만.
+Changed files: docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+273. 2026-08-14 진행판 핸드오프 — 다음 AI용 진행도·잔여·파일
+Purpose: 다음 에이전트가 01만 읽고 UX-ST1을 이어가게 한다.
+Changes:
+- `01_진행판.md` 핸드오프 절. 추출 90 / 셸 25 / 상용 20. 키 25=끝20·부분2·미착수3
+- 참고 파일·다음=UX-ST1. P6 COUNT DEFERRED
+Verification: 문서만.
+Changed files: docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+272. 2026-08-14 상용화 갭 — NL→SQL UI 레퍼런스 (ACC 비중심)
+Purpose: 제품 축은 NL→SQL. ACC는 호스트. Cortex/Genie/Vanna/Amplitude UI를 1순위로 둔다.
+Changes:
+- 39 §1 교체. §5 UI 우선(U1~U6). §6 기능 제안 P1~P6(P6 COUNT는 DEFERRED)
+- Adobe/Journey는 반영 단계만
+Verification: 문서만.
+Changed files: docs/report/upgrade_plan/39_상용화_여정갭.md, docs/log/log.md
+
+271. 2026-08-14 상용화 여정 갭 — 추출≠제품 · C-1~C-7
+Purpose: 키 개수 %가 제품 완료처럼 보인 오류를 고친다. WKF 열기·주입·목록 UX는 키 4개여도 여정 후반 전부다.
+Changes:
+- `39_상용화_여정갭.md`: Adobe Query/Journey Draft·Publish 대조. C-1~C-7
+- 진행판 분모=ST0~ST6. 추출 ~90% · 셸 ~25% · 상용 ~20%
+- 임시 클릭+「이 새 SQL로 진행」은 중복 단계(C-5)
+Verification: 문서만. R6/UX 코드 없음.
+Changed files: docs/report/upgrade_plan/39_상용화_여정갭.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+270. 2026-08-14 재개 3키+#174 닫힘 — 동일파일 흡수로 차수 단축
+Purpose: #170/#168-B/#172는 #174와 같은 llm·enPivot·fragContract 로직. 재구현 없이 가이드를 닫아 남은 차수를 줄인다.
+Changes:
+- 34/35/36/37 상태 `[x]`. 진행판·INDEX·ReportIndex·추적표 재개 배너 제거
+- #175 5단계·R6~R8은 파일/선행이 달라 묶지 않음
+- 코드 변경 없음
+Verification: 문서만. HUMAN 추가 없음.
+Changed files: docs/report/upgrade_plan/34_Pass0_슬롯원자분할_170.md, docs/report/upgrade_plan/35_Generate_값바인딩_168B.md, docs/report/upgrade_plan/36_FragContract_공유계약.md, docs/report/upgrade_plan/37_ENPivot_CanonicalLayer_174.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+269. 2026-08-14 HUMAN G5 PASS — 서울 빼고 universe EXCEPT
+Purpose: exclude-only 배포 후 HUMAN 실측. 전체 대상 EXCEPT 서울 IN. NOT IN 없음.
+Changes:
+- 요약 `[AND] 전체 대상` · `[EXCEPT] 서울 거주 고객 (region=서울)`
+- 칩 EXCEPT만. 게이트 3통과
+- SQL: `FROM testWooSampleCustomer` EXCEPT `sRegion IN ('서울')`. include empty 해소
+- #175 G1/G2/G4/G5/G6 PASS. 잔여 G3(도메인 수술)·5단계 verified UI
+Verification: HUMAN 붙여넣기 1건. AI PASS 자체 처리 아님.
+Changed files: docs/report/upgrade_plan/38_값확장_GroupExpansion_175.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+268. 2026-08-14 G5 exclude-only — universe EXCEPT (include empty 허용)
+Purpose: HUMAN `서울 빼고`가 plan.include empty로 Generate 실패. exclude-only는 전체 대상 EXCEPT.
+Changes:
+- 원인: Pass1이 서울을 exclude만 넣고 include를 비움. 검증/컴파일러가 include 필수
+- llm 177: include 빈+exclude 있음 허용. polarity=exclude는 exclude[]로. Pass1 프롬프트에 universe 창작 금지
+- compiler 162: exclude fragment FROM으로 `SELECT DISTINCT grain FROM table` 후 EXCEPT. NOT IN 없음
+- gates 162: 동일. Context expected llm=177 compiler=162 gates=162
+- smoke 1h: TwSmokeCust + NorthA 픽스처
+Verification: HUMAN — 177+162+162+Context. `서울 빼고` → EXCEPT `IN ('서울')`. NOT IN 아님. G1/G6 한 건 유지.
+Changed files: new_ver/js/testWooLlm.js, new_ver/js/testWooCompiler.js, new_ver/js/testWooGates.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/report/upgrade_plan/38_값확장_GroupExpansion_175.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+267. 2026-08-14 HUMAN G4 PASS — 판교도→경기 · G1/G6 유지
+Purpose: 개정 G4(닫힌 enum 편입) HUMAN 실측. 판교∉후보일 때 경기 IN. G1/G6 SQL 유지.
+Changes:
+- `판교도` → 칩 `(판교 → 경기)` · `sRegion IN ('경기')` · 게이트 3통과
+- `전라도에 사는 남성 고객` → `IN ('M')` ∩ `IN ('전남','전북')`. 칩 제목은 `(전남)`이나 params=전남,전북 (표시만, SQL PASS)
+- `서울 사는 남성` → `IN ('서울')` ∩ `IN ('M')`
+- 3단계 G4 [x]. 4단계 토큰경계 [x] 흡수. 다음=G5 HUMAN 또는 5단계 UI
+Verification: HUMAN 붙여넣기 3건. G3 미실시. 판교∈enum 케이스는 샘플에 값 없어 이번 라운드 제외.
+Changed files: docs/report/upgrade_plan/38_값확장_GroupExpansion_175.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+266. 2026-08-14 G4 정책 — 닫힌 enum 편입 · 가장 구체적 값 우선
+Purpose: G4를 ‘없는 말은 거절’에서 ACC Alias cleansing + 차원 finest-grain으로 바꾼다. 자식이 후보에 없으면 상위 편입, 있으면 자식.
+Changes:
+- 레퍼런스: Campaign Alias cleansing(닫힌 enum에만 별칭 매핑) · 분석 차원 parent-child rollup · Ads는 타깃 불가 세부를 가용 상위/인근으로
+- M2C 단일멤버 거절 제거. 프롬프트: 후보에 없는 세부는 부모 후보 1개
+- domainMatch/resolveNl: enum 우선. 별칭이 지금 후보면 저장된 상위 대신 그 값
+- 토큰 경계는 유지(짧은 키⊂긴 토큰 금지). 지명 리터럴 없음. 스모크 교촌→NorthA / enum에 교촌이면 교촌
+- fragContract 174 · llm 176 · Context 동기
+Verification: HUMAN — 174+176+Context. `판교도`→경기 IN(판교 없음). G1 전라도 IN 유지. 판교가 enum에 생기면 경기 아님.
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/report/upgrade_plan/38_값확장_GroupExpansion_175.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+265. 2026-08-14 G4 FAIL 판교도→경기 · 별칭 토큰 경계·M2C 단일추정 거절
+Purpose: HUMAN이 `판교도`만 입력했는데 heal/부분문자열/M2C가 `경기` IN을 만들었다. 짧은 별칭이 긴 토큰을 삼키지 못하게 한다.
+Changes:
+- HUMAN G4 FAIL: 칩 `거주 지역 조건 (판교 → 경기)` · `IN ('경기')`. 라이브 nlMap `판교`⊂`판교도` + 단일멤버 추정
+- domainMatchSlot/resolveNlParams/splitByLexicon: `_boundHas` 토큰 경계. 그룹·정확 db만 1글자 꼬리 허용
+- `_enHit` 부분문자열 제거. EN 히트여도 원문 토큰이 짧은 별칭과 충돌하면 무시
+- M2C: 멤버 1개이고 원문에 그 db가 없으면 miss+`_negative`. 프롬프트에 parent region 금지(지명 리터럴 없음)
+- fragContract 173 · llm 175 · Context 동기. 스모크 픽스처 `교촌도`/`서부권에`/`서울은`
+Verification: HUMAN — fragContract 173 + llm 175 + Context.jssp. `판교도` SQL 없음. G1 전라도 IN·G6 서울 IN 재확인.
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/report/upgrade_plan/38_값확장_GroupExpansion_175.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+264. 2026-08-14 HUMAN #175-3 G1/G2/G6 PASS · G3는 가이드와 다른 입력
+Purpose: 3단계 배포 후 Studio SQL/칩으로 G1·G2·G6를 채점한다. 가이드 G3(전남 부재)는 이번 입력과 다르다.
+Changes:
+- G1: `전라도 거주 (region=전남,전북)` 칩 1장 ∩ `남성`. SQL `IN ('전남','전북')` INTERSECT `IN ('M')`. UNION 없음. **PASS**
+- G2: G1과 동일 SQL/칩. 저널 groupExpand 원문은 없음(화면 동일으로 PASS)
+- G6: `서울`∩`M` IN 유지. **PASS**
+- 라벨 G3: 칩 `거주 지역 조건 (판교 → 경기)` · `IN ('경기')`. 가이드 G3(전남 탈락+부분커버) 아님. heal/별칭 경로. 가이드 G4(`판교도` SQL 없음)도 미확인
+Verification: HUMAN Studio 원문. G4는 `판교도` 그 문자열로 재확인. 4단계 미착수.
+Changed files: docs/report/upgrade_plan/38_값확장_GroupExpansion_175.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+263. 2026-08-14 #175-3 M2C 그룹 확장 · M2G 캐시 · Pass1 UNION 차단
+Purpose: 상위어 1슬롯을 LLM⊆CANDIDATES 멤버로 풀어 한 frag IN으로 묶고, 실패 시 UNION으로 떨어지지 않게 한다.
+Changes:
+- M2/M3 miss → `_tryGroupExpand` (stage groupExpand). 멤버는 enum/nlMap db(+고유 en)만. `_group` 기록
+- 재입력은 M2G(`_group` 별칭). heal miss는 `_negative`를 찍지 않음(찍으면 같은 턴 M2C가 스킵됨)
+- 확장 실패·llm_fail → unresolved `ambiguous_group`/`ambiguous`. range만 Pass1 유지
+- 같은 frag include는 `_collapseSameFragmentPlan`으로 배열 병합. `_matchCard`는 ambiguous 카드 히트 금지
+- Studio litmus v=167 · Context llm=174 enPivot=174 fragContract=172. 스모크 1b upsertGroup 픽스처 `서부권`
+Verification: HUMAN — 아래 배포목록. G1 `전라도에 사는 남성 고객` 한 region IN∩gender. G2 재입력 저널에 groupExpand 없음. G4 `판교도` SQL 없음. G6 서울 IN 유지. AI가 G1 PASS 처리 금지.
+Changed files: new_ver/js/testWooLlm.js, new_ver/js/testWooFragContract.js, new_ver/js/testWooEnPivot.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/tools/testWooSmoke.js, docs/report/upgrade_plan/38_값확장_GroupExpansion_175.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+262. 2026-08-14 HUMAN G6 재확인 — 서울 남성 IN (2단계)
+Purpose: #175-2 배포 후 단일값 IN 회귀가 유지되는지 확인. 전라도 G1이 아님.
+Changes:
+- `서울 거주` ∩ `남성` → sRegion IN('서울') ∩ sGender IN('M'). 게이트 3종 통과
+- 진단: TW-BOOT v=166 · js ok v=164(스태일 문자열) · URL에 Studio `v=` 없음. libs 키가 fragContract/enPivot 미포함이라 allMatch expected=159로 보임. SQL은 서버 compiler=161
+- 라이브 `_group` 없음. 전라도는 이 시점까지 UNION
+Verification: HUMAN SQL 원문.
+Changed files: docs/log/log.md
+
+261. 2026-08-13 #175-2 param_domain._group 읽기 경로
+Purpose: 상위어 별칭을 param_domain JSON에서 읽어 렉시콘·색인·매칭·바인딩에 쓴다. 쓰기는 3단계.
+Changes:
+- `_group.<param>.<alias>={members,src,verified,en}`. 멤버는 enum/nlMap 후보 교집합만
+- collectLexicon·buildIndexFields·domainMatchSlot·resolveNlParams·mergeParamDomainJson
+- nlMap 키 삭제 금지. 전라도/전북 리터럴 없음. 스모크 픽스처만 `북부권`/`NorthA`
+- fragContract __v=171 · Context expected 171
+Verification: HUMAN — fragContract 171 + Context.jssp. 선택 smoke 1b. G6 한 건 재확인. 전라도는 아직 UNION.
+Changed files: new_ver/js/testWooFragContract.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/report/upgrade_plan/38_값확장_GroupExpansion_175.md, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+260. 2026-08-13 HUMAN G6 PASS — 서울/인천/Z_PLAN IN 회귀
+Purpose: #175-1 배포 후 단일값 SQL이 IN이고 age 범위는 유지되는지 확인.
+Changes:
+- `서울 사는 남성` → sRegion IN('서울') ∩ sGender IN('M') 게이트 통과
+- `인천 거주 10대 고객` → IN('인천') ∩ iAge>=10 AND iAge<20
+- `경기 살면서 Z요금제` → IN('경기') ∩ sPlan_code IN('Z_PLAN'). Foundry plan frag 신규
+- V6: 콘솔 JS는 repo 복사(하드코딩 없음). URL `v=` 없음·클라 v=164는 스태일 가능, 서버 compiler=161 foundry=165로 SQL은 신코드
+- 실현성 문구의 plan_label vs SQL plan_code 불일치는 표시 이슈. SQL 바인딩은 맞음
+Verification: HUMAN SQL 원문.
+Changed files: docs/log/log.md
+
+259. 2026-08-13 #175-1 categorical IN({{param}}) · = 승격
+Purpose: 단일값도 IN. 라이브 `=` 템플릿은 컴파일 시 승격해 콘솔 SQL 수정을 막는다. 배열 bind는 IN 자리에서만 join.
+Changes:
+- fragContract: promoteEqPlaceholderToIn · sampleBind 배열 join · validateBind 원소별 enum. __v=170
+- compiler: 치환 전 IN 승격 · 배열은 IN({{p}}) 아니면 throw. __v=161
+- foundry: 프롬프트 IN 강제 · persist 전 승격. __v=165
+- gates: 배열 params 원소별 enum. __v=161
+- Context expectedByMod 동기
+- 전라도 G1(한 frag IN)은 2~3단계. 이번은 인프라만
+Verification: HUMAN — 아래 배포목록. G6: 서울/인천/남성 단일값 SQL이 IN ('…') 이고 건수 동일. 전라도는 아직 UNION.
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooCompiler.js, new_ver/js/testWooFoundry.js, new_ver/js/testWooGates.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/report/upgrade_plan/38_값확장_GroupExpansion_175.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+258. 2026-08-13 #174 V6 repo grep 0건 · #175 가이드 착수(0단계)
+Purpose: 5단계 후 매칭 경로에 한국어 값/컬럼 하드코딩이 없는지 측정하고, #175 가이드를 카탈로그에 올린다.
+Changes:
+- 매칭 경로(EnPivot/FragContract/Llm generatePlan): JOSA_TAIL·NOISE_WORD 없음. 서울/인천/전북/전남/전라도/남성/여성/10대 리터럴 0
+- 제외: 토큰 문자클래스 가-힣, 스모크 픽스처, Foundry 프롬프트 iAge 예시(생성축·매칭 사전 아님)
+- `38_값확장_GroupExpansion_175.md` 신설. INDEX·진행판·ReportIndex·추적표 GE-1
+- V6 HUMAN PASS 아님(콘솔 교차 대기)
+Changed files: docs/report/upgrade_plan/38_값확장_GroupExpansion_175.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/37_ENPivot_CanonicalLayer_174.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+257. 2026-08-13 HUMAN 전라도 사는 남성 — 게이트 PASS · 전남∪전북∩M
+Purpose: gender enum 수정 후 재생성. 검증 통과. SQL UNION 전남/전북 INTERSECT sGender='M'.
+Changes:
+- 칩 라벨이 둘 다 '전라도 거주'(param은 전남/전북). SQL 무관
+- #175 IN() 아님. 같은 region frag 두 번 바인딩
+Verification: HUMAN SQL 확인.
+Changed files: docs/log/log.md
+
+256. 2026-08-13 gender enum:[] 게이트 오거절 — F가 nlMap에 있는데 실패
+Purpose: `전라도 거주하는 여성고객` SQL(여성∩전남∪전북)은 맞았으나 PLAN이 enum:[]에 F를 없다고 거절. ACC enum FQN이 sampleGender와 불일치.
+Changes:
+- gates: enum 빈 배열이면 nlMap db 값으로 검사(여성→F). 빈 enum=전면 거절 금지
+- toolkit: enumeration 이름 로컬/FQN/접미사 매칭. 라벨 맵 공백이면 probe_values
+- __v toolkit=161 gates=160
+Verification: HUMAN — toolkit+gates+Context.jssp. gender frag 삭제 없이 같은 NL 재생성. 게이트 통과.
+Changed files: new_ver/js/testWooGates.js, new_ver/js/testWooToolkit.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+255. 2026-08-13 HUMAN 클린환경 Foundry 164 PASS — 인천∩10대 SQL
+Purpose: frag/queue 삭제 후 `인천 거주 10대 고객` 재생성. Foundry processed=1 failed=0. region+age publish. SQL INTERSECT 인천∩10대.
+Changes:
+- 1차 패스. 2차 `인천 사는 10대 이상 20대 미만`도 동일 범위 SQL(의도 일치)
+- describe_schema woo:customer 오탐 후 sampleCustomer로 복구
+- region `_bucket`이 단일값 nlMap을 복제(다음 정리 후보, 이번 SQL 무관)
+Verification: HUMAN SQL 확인. #175 미착수.
+Changed files: docs/log/log.md
+
+254. 2026-08-13 Foundry 게이트 전 도메인 스냅샷 — __sample__ G-C 0건 방지
+Purpose: frag 전체 삭제 후 첫 생성에서 LLM이 {{region}}만 내고 nlMap이 비어 sampleBind가 '__sample__'이 됨. probe_sql(인천)은 6건인데 G-C는 0건.
+Changes:
+- generateFragmentForSlot: validateFragment 전에 _attachDomainSnapshot
+- enum/nlMap이 채워진 뒤 sampleBindSql → 실존 값으로 G-C
+- foundry __v=164
+Verification: HUMAN — woo:testWooFoundry.js + Context.jssp. 큐 실패 행 처리 후 `인천 거주 10대 고객` 재생성. Foundry G-C 통과·region frag publish.
+Changed files: new_ver/js/testWooFoundry.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+253. 2026-08-13 인천 오락가락 — NL캐시 __v · 긴 LLM스팬 미덮음 · 문장 별칭 금지
+Purpose: `인천 거주 10대`는 되고 `…고객`은 안 된 이유. 도메인에 인천은 이미 있음. 문장 해시 캐시·긴 슬롯 덮어쓰기·NL 전체 heal 별칭.
+Changes:
+- EnPivot 캐시 키에 __v. 배포 후 구추출 재사용 금지
+- mergeLexiconSlots: LLM 스팬이 렉시콘 키보다 길면 덮지 않음
+- attachAlias: 공백·12자 초과 거부. _slotTextForFrag NL 전체 폴백 삭제
+- smoke 1b 긴 스팬이 인천/10대를 삼키지 않는지
+- __v enPivot=173 llm=173 fragContract=169
+Verification: HUMAN — JS 3개+Context.jssp+스모크. `인천 거주 10대 고객`과 `인천 거주 10대` 둘 다 인천∩10대.
+Changed files: new_ver/js/testWooEnPivot.js, testWooFragContract.js, testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+252. 2026-08-13 HUMAN #251 smoke PASS (20/21, embed SKIP)
+Purpose: 172 스모크 스크립트·라이브러리 재등록 후 WKF93 전 스텝 통과. SKIP 8은 embedEnabled=false 전제.
+Changes:
+- 1e 메시지 `glue drop + en_literal keep` 확인 → 신 스크립트 적재
+- 1b merge 복사 포함 fragContract PASS
+- 7 pass0 first='서울' · 9 library_cache_hit id=33851
+Verification: Studio 4문장 미완. 다음=`인천 거주 10대 고객` 인천+10대 SQL.
+Changed files: docs/log/log.md
+
+251. 2026-08-13 인천 누락 — en_literal M2 보존 · merge 시 EnPivot 필드 복사
+Purpose: 171이 concept 없는 en_literal 슬롯을 버려 인천(M2)이 사라지고 10대만 SQL이 나왔다. glue(사는)는 concept 없으면 skip.
+Changes:
+- isNonConditionSlot: concept | resolvedName | en_literal 이면 유지
+- mergeLexiconSlots: 겹치면 concept·en_literal·kind를 렉시콘 슬롯에 복사
+- generatePlan: kind=empty 이고 concept 없으면 unmatched에 넣지 않음(사는+living이 SQL을 막지 않음)
+- smoke 1e: 빈 glue drop · en_literal 유지. 1b merge 복사 검증
+- __v enPivot=172 llm=172 fragContract=168
+Verification: HUMAN — EnPivot+FragContract+Llm 재등록. `인천 거주 10대 고객` → 인천+10대 SQL. 1·3·4 유지.
+Changed files: new_ver/js/testWooEnPivot.js, new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+250. 2026-08-13 「사는」 categorical glue가 Generate를 막던 구멍 수정
+Purpose: EnPivot이 사는에 kind=categorical·en_literal을 붙이면 잔여 필터를 통과하고, concept 없음이 전체 SQL을 중단시켰다.
+Changes:
+- isNonConditionSlot: 유지 조건은 concept 또는 resolvedName만
+- skipPass0+concept없음 → unresolved 금지, skip. Foundry 큐도 안 탐
+- smoke 1e: categorical+en_literal glue도 drop
+- __v enPivot=171 llm=171
+Verification: HUMAN — EnPivot+Llm 재등록. 1차 서울+남성 SQL. 3차는 전라도만 value_not_in_domain(사는 메시지 없음).
+Changed files: new_ver/js/testWooEnPivot.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+249. 2026-08-13 Generate — 비조건 잔여(사는) 슬롯 드롭
+Purpose: 5단계 후 EnPivot이 연결어(사는)를 concept 없는 슬롯으로 내면 concept_not_found로 SQL이 막혔다. KO 사전 없이 비조건 슬롯만 버린다.
+Changes:
+- EnPivot 프롬프트: 조건 축만 추출. glue/audience noun 슬롯 금지
+- isNonConditionSlot: concept·en_literal·resolvedName·축 kind 없으면 드롭
+- toPipelineSlots·translateAndExtract·generatePlan에서 적용
+- __v enPivot=170 llm=170. smoke 1e glue drop
+Verification: HUMAN — woo:testWooEnPivot.js, testWooLlm.js 재등록. StudioContext.jssp(expected). 스모크 1e. 동일 NL 재생성(사는 없어야 함).
+Changed files: new_ver/js/testWooEnPivot.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+248. 2026-08-13 HUMAN #174-5 smoke PASS (20/21, embed SKIP)
+Purpose: WKF93 스모크 전 스텝 통과. SKIP 8은 embedEnabled=false 전제.
+Changes:
+- 진행판·37: 5단계 smoke PASS · 다음=HUMAN V6
+Verification: HUMAN V6 grep. libVersions mismatch 0 권장. R6·Match ON 금지.
+Changed files: docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/37_ENPivot_CanonicalLayer_174.md, docs/log/log.md
+
+247. 2026-08-13 smoke 1b — unseen alias 히트는 concept 축
+Purpose: N대 regex 삭제 후 text만으로는 age 축이 안 나온다. 서가 재사용은 EnPivot concept로 판정한다.
+Changes:
+- libraryHitPredicate 스모크 슬롯에 concept=age_group · kind=range
+Verification: HUMAN — WKF93 jsSmokeTest에 testWooSmoke.js만 재붙여넣기. JS lib 재배포 불필요.
+Changed files: new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+246. 2026-08-13 smoke 1e — M1 covered≠NOISE 잔여 · WKF 스크립트 재등록
+Purpose: 5단계 후 잔여(에 사는 고객)는 노이즈가 아니다. 1e가 covered=true를 요구하면 실패한다. 1b/1c FAIL 문구는 구 스모크 WKF.
+Changes:
+- 1e: 서울+10대 슬롯만 검사. covered 강제 삭제
+Verification: HUMAN — WKF93 `jsSmokeTest`에 `new_ver/tools/testWooSmoke.js` 재붙여넣기 후 재실행. JS lib는 이미 새 버전(1g/1f/1d PASS).
+Changed files: new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+245. 2026-08-13 HUMAN #174-5 ACC 배포 완료 · 다음 V6
+Purpose: 5단계 JS/JSSP 배포 사실을 진행판에 반영한다. V6는 HUMAN 판정.
+Changes:
+- 진행판: #174-5 배포 · 다음=HUMAN V6
+Verification: HUMAN — libVersions mismatch 0 · smoke 1b/1c · V6 grep. AI가 V6 PASS 처리 금지.
+Changed files: docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+244. 2026-08-13 #174-5 한국어 매칭 사전 제거 (JOSA/NOISE/축 KO regex)
+Purpose: V0~V5 후 조사·청중명사·지역/성별 하드코딩을 매칭 경로에서 지운다. 추출은 EnPivot, 바인딩은 db만.
+Changes:
+- JOSA_TAIL/NOISE_WORD 삭제. stemToken/isNoiseResidue는 empty no-op
+- axisFromSlot은 concept·영문 힌트·hintedCategory. 지역명/성별/N대 regex 없음
+- normalizeAtomicSlots는 EnPivot 슬롯 통과(KO 축 분할 없음)
+- Foundry/Feasibility 프롬프트에서 한국어 값 예시 제거. Foundry는 concept 필드 보존
+- smoke 1b/1c를 concept 기준으로 교체
+- __v: fragContract=167 llm=169 enPivot=169 foundry=163 feasibility=161
+Verification: HUMAN — 아래 배포 목록. smoke 1b/1c. 다음=V6 grep(매칭 코드 한국어 값/컬럼 하드코딩 0). Studio UI·nlMap 키는 유지. Match Option ON 금지.
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/js/testWooEnPivot.js, new_ver/js/testWooFoundry.js, new_ver/js/testWooFeasibility.js, new_ver/js/testWooFragments.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/report/upgrade_plan/37_ENPivot_CanonicalLayer_174.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/23_SQLFirst_AI명령문.md, docs/report/upgrade_plan/34_Pass0_슬롯원자분할_170.md, docs/report/upgrade_plan/20_전환_자산판정표.md, docs/report/upgrade_plan/27_스펙드리프트.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, .cursor/skills/campaign-ai-studio/pipeline-contracts.md, docs/log/log.md
+
+243. 2026-08-13 Generate Rhino strict — for 안 function 선언 제거
+Purpose: ACC Rhino strict 모드에서 for 루프 안의 function 선언이 Generate를 죽였다.
+Changes:
+- `_attachLexiconCandidates`의 `addHit`를 함수 본문 최상위로 이동
+- llm __v=168 · StudioContext expected llm=168
+Verification: HUMAN — `woo:testWooLlm.js` 재등록. Generate 재시도. Context.jssp는 mismatch 표시용(선택).
+Changed files: new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+242. 2026-08-13 #174-4 M1→M2→M3 매칭 · unresolved · `_negative`
+Purpose: 번역 슬롯을 원문(M1)→en[](M2)→concept(M3) 순으로 붙이고, 값이 없으면 컬럼 heal 후 abstain한다. Foundry로 쓰레기 축을 만들지 않는다.
+Changes:
+- `matchEnPivotSlot`: M1 domainMatchSlot → M2 en_literal⊂en[] → M3 concept+kind. 다중 db는 ambiguous
+- M3 miss: `refreshDomain`+`enrichDomainEn` 1회(쿨다운 10분) → 재매칭. 실패 시 `_negative[값]` TTL 1일
+- Generate `unresolved[]` reason 3종만. Studio는 원문 surface 표시. 큐/SQL 없음
+- EnPivot 슬롯은 KO 축 재분할 건너뜀. smoke 1g (비과금)
+- __v: fragContract=166 llm=167 enPivot=168 fragments=165 Studio v=166
+Verification: HUMAN — 아래 배포 목록. smoke 1g.enMatch PASS. V0~V5는 배포 후. 5단계 선삭제 금지.
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/js/testWooFragments.js, new_ver/js/testWooEnPivot.js, new_ver/jssp/testWooAiGenerate.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/html/testWooAiStudio.js, new_ver/tools/testWooSmoke.js, docs/report/upgrade_plan/37_ENPivot_CanonicalLayer_174.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/23_SQLFirst_AI명령문.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, .cursor/skills/campaign-ai-studio/SKILL.md, .cursor/skills/campaign-ai-studio/pipeline-contracts.md, docs/log/log.md
+
+241. 2026-08-13 #174-3 도메인 EN 사전화 · {db,en[]} · bind=db
+Purpose: 컬럼 값 전체를 한 번 번역해 EN 매칭 사전을 만들고, WHERE에는 원본 db만 쓴다.
+Changes:
+- `enrichDomainEn`: pending nlMap/_bucket 키 1콜 번역 → `{db, en[]}`. concept 불변. 실패 시 원본 유지
+- Foundry `_attachDomainSnapshot`·Fragments `healDomain`에서 호출
+- `entryDb`로 sampleBind/resolveNlParams/domainMatchSlot이 객체를 바인딩하지 않음
+- merge `_source.concept` 보존. smoke 1f (비과금)
+- __v: enPivot=167 fragContract=165 fragments=164 foundry=162
+Verification: HUMAN — 아래 배포 목록. smoke 1f.domainEn PASS. 신규/heal frag의 param_domain에 en[] · SQL은 db.
+Changed files: new_ver/js/testWooEnPivot.js, new_ver/js/testWooFragContract.js, new_ver/js/testWooFoundry.js, new_ver/js/testWooFragments.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/report/upgrade_plan/37_ENPivot_CanonicalLayer_174.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/23_SQLFirst_AI명령문.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+240. 2026-08-13 #174-2 패치 — 전체 NL 번역 필수 · M1 스킵 폐기 · retryInput
+Purpose: 조사/청중명사로 번역을 건너뛰면 오타(셔율·10데)를 놓친다. 번역이 의미를 살린 뒤에야 사용자가 결과를 판단할 수 있다.
+Changes:
+- extractSlots: 전체 NL 1콜이 기본. JOSA/NOISE·M1 커버로 스킵하지 않음
+- 동일 문자열 해시 캐시만 0콜(이미 번역한 재사용). 실패는 캐시하지 않음
+- 추출 실패 → retryInput, Pass0/Foundry 우회 금지. Studio는 재입력 안내
+- M1은 매칭 층으로 유지(scanM1). smoke 1e는 캐시 시드(비과금)
+- enPivot/llm __v=166 · Studio litmus v=165
+Verification: HUMAN — EnPivot+Llm+Generate+StudioContext+Studio.jssp/Js 재등록. URL v=165. smoke 1e. 오타 NL은 번역 후 슬롯, 해석 불가면 재입력(큐 없음).
+Changed files: new_ver/js/testWooEnPivot.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiGenerate.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/tools/testWooSmoke.js, docs/report/upgrade_plan/37_ENPivot_CanonicalLayer_174.md, docs/report/upgrade_plan/01_진행판.md, .cursor/skills/campaign-ai-studio/SKILL.md, .cursor/skills/campaign-ai-studio/pipeline-contracts.md, docs/log/log.md
+
+239. 2026-08-13 #174-2 EN Pivot 추출 · M1 스킵·NL 캐시·concept 불변
+Purpose: 추출 주경로를 한국어 Pass0에서 EN Pivot으로 옮기되, 카탈로그 원문이 NL을 덮으면 번역 LLM을 0회 호출한다.
+Changes:
+- 신규 `testWooEnPivot.js` (`testWoo.enPivot` __v=165): scanM1 → 잔여만 translateAndExtract 1콜 · NL 해시 캐시 TTL 1일
+- `_source.concept`이 있으면 LLM 제안을 aliases만 적립. surface(원문)를 pipeline `text`로 유지
+- `generatePlan`은 EnPivot 성공(m1/cache/llm) 시 Pass0 생략. 실패 시에만 잔여 Pass0
+- smoke 1e (비과금). llm __v=165. expectedByMod llm=165 enPivot=165
+Verification: HUMAN — **신규** `woo:testWooEnPivot.js` 등록 후 Generate/StudioContext/Llm/Smoke 재등록. smoke 1e.enPivot PASS. 서버 로그 skip=m1 또는 cache_hit.
+Changed files: new_ver/js/testWooEnPivot.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiGenerate.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, new_ver/workflow/testWooFoundryBatch.js, new_ver/workflow/testWooFoundryDryRun.js, new_ver/workflow/testWooGoldenRun.js, .cursor/skills/campaign-ai-studio/SKILL.md, .cursor/skills/campaign-ai-studio/pipeline-contracts.md, docs/report/upgrade_plan/37_ENPivot_CanonicalLayer_174.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/23_SQLFirst_AI명령문.md, docs/report/upgrade_plan/34_Pass0_슬롯원자분할_170.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+238. 2026-08-13 #174-1 Foundry 다중 JSON 첫 채택 · extra_fragment_dropped
+Purpose: gender 실종 원인인 다중 JSON 파싱을 V0 계약에 맞춤. 2개 이상이면 죽이지 않고 첫 객체 채택, 나머지는 미처리 슬롯으로 큐에 되돌린다.
+Changes:
+- `_parseFragmentJson`: objs[0] 채택. 축 mismatch throw 제거. 로그 `extra_fragment_dropped`
+- `generateFragmentForSlot` extraSlots 반환 · `processQueueItem` pending merge
+- 프롬프트: 산문/표/경고/두 번째 JSON 금지
+- smoke 1d V0 유닛. foundry __v=161 · expectedByMod foundry=161
+Verification: HUMAN — woo:testWooFoundry.js + StudioContext.jssp 재등록. smoke 1d.parseMultiJson PASS. 서버 로그 extra_fragment_dropped.
+Changed files: new_ver/js/testWooFoundry.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/report/upgrade_plan/37_ENPivot_CanonicalLayer_174.md, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+237. 2026-08-13 #174 문서 패치 P1~P5 (번역 스킵·V0·concept 불변·R6 게이트)
+Purpose: 검수 결함 5건을 0단계 착수 전 문서 37에 고정. V3 번역 0회가 설계상 불가능했던 구멍(캐시 미정의)과 1단계 스킵 분기·concept 분기·V6/5단계 순환·R6 조기 착수를 막는다.
+Changes:
+- P1: M1 선 스캔 + NL 해시 캐시(TTL 1일). V3는 이 게이트로 달성
+- P2: V0 신설. D3=#219이면 1단계 코드 수정 없이 V0만
+- P3: concept은 schema+xpath 최초 1회 불변. 다른 제안은 conceptAliases[]
+- P4: 합격 순서 V0~V5 → 5단계 → V6
+- P5: R6은 #174-4 후. testWooLlm.js 수정 허용 목록 포함
+Verification: 문서만. 코드 없음. 다음 = #174 0단계 D1~D5.
+Changed files: docs/report/upgrade_plan/37_ENPivot_CanonicalLayer_174.md, docs/log/log.md
+
+236. 2026-08-13 #174 EN-Pivot 로드맵 반영 · #170/#168-B/#172 재개
+Purpose: 08-13 원문(번역 기반 param 추출)을 고도화 정본에 넣고, 조사/어미 사전 증식 경로를 폐기하며, 수정이 필요한 완료 차수를 미완료로 되돌린다.
+Changes:
+- 신규 `37_ENPivot_CanonicalLayer_174.md` — 0~5단계 · M1/M2/M3 · 5단계 선삭제 금지 · V7은 부록
+- 트랙 A(추출 #174 최우선) / 트랙 B(SQL-First 셸) 분리. R6 추출 우회 금지
+- 재개: #170 Pass0 · #168-B 바인딩 · #172 매칭. 유지: #164/#167헌법/#168-A/#169
+- 폐기(전략): JOSA/NOISE 증식, #170 S5 KO 축힌트 주경로, nlMap 수기 주좌표계
+- 드리프트 D-5 · 추적표 EP-1~EP-8 · 관리자 원문 08-13 확정 설계 블록
+Verification: 문서만. 코드 변경 없음. 다음 Chat = #174 0단계 조사(D1~D5).
+Changed files: docs/report/upgrade_plan/00_INDEX.md, 01_진행판.md, 16_고도화_추적표_포인터.md, 19_SQLFirst_여정정본.md, 20_전환_자산판정표.md, 21_SQLFirst_R차수_실행가이드.md, 23_SQLFirst_AI명령문.md, 27_스펙드리프트.md, 30_Foundry_슬롯삼킴_P0.md, 31_Foundry_원자화_파라미터화.md, 32_필드도메인_자동판정_168A.md, 33_LibraryFirst_서가우선_169.md, 34_Pass0_슬롯원자분할_170.md, 35_Generate_값바인딩_168B.md, 36_FragContract_공유계약.md, 37_ENPivot_CanonicalLayer_174.md, [별도]_고도화_개발아이디어_관리자작성본.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+235. 2026-08-13 카탈로그 렉시콘 분할 · Stage A 매칭 방향 정정
+Purpose: `인천에 사는`이 region nlMap의 `인천`과 안 붙음. Stage A는 토큰⊂카탈로그라 `인천에`를 찾고, 실제 값은 카탈로그 키⊂문장이다. Pass0 문구 패치로는 조사·대소문자·슬롯 경계가 계속 샌다.
+Changes:
+- fragContract: 조사 어간, 기능어 제외, collectLexicon/splitByLexicon(nlMap·enum·_bucket 최장일치)
+- generatePlan: 라이브러리 값으로 슬롯을 먼저 확정하고 Pass0 잔여만 합침
+- searchBySlot: 축 폴백을 LIKE 성공 여부와 무관하게 항상 합침
+- smoke 1b가 `인천에 사는 20대 z요금제 쓰는 고객` → region+age+plan 3슬롯
+Verification: HUMAN — FragContract `164` · Fragments `163` · Llm `164` · StudioContext.jssp 재등록. 같은 문장 → 큐 없이 3축 계획. 서버 로그 `lexicon=3`.
+Changed files: new_ver/js/testWooFragContract.js, testWooFragments.js, testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, .cursor/skills/campaign-ai-studio/pipeline-contracts.md, docs/log/log.md
+
+234. 2026-08-13 Pass0 청중명사(고객) 슬롯 제거
+Purpose: region·plan frag가 있는데 Pass0가 「고객」을 슬롯으로 남겨 Stage A가 전체를 unmatched로 중단함. Foundry Done 후에도 같은 슬롯이 재등장.
+Changes:
+- normalizeAtomicSlots: 고객/대상자 등 조건 없는 잔여 삭제. 단일 축은 추출 phrase만 유지
+- 지역 최장일치(경기도 > 경기). 노이즈에 「사용하는」 추가
+- generatePlan: 노이즈 empty는 무시하고 매칭 슬롯만 Pass1에 전달
+- smoke 1c · llm __v=163 · expectedByMod llm=163
+Verification: HUMAN — testWooLlm.js + StudioContext.jssp 재등록. `경기도에 사는 학생요금제 사용하는 고객` → 큐 없이 region+plan 계획.
+Changed files: new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, .cursor/skills/campaign-ai-studio/pipeline-contracts.md, docs/log/log.md
+
+233. 2026-08-13 libVersions expectedByMod heal 버전 정합 (v=164)
+Purpose: heal 모듈 __v를 올렸더니 Studio가 기본 159와 비교해 [LIB] 배너가 뜸. JS는 이미 새 버전인데 Context 기대표가 옛값.
+Changes:
+- expectedByMod: fragContract=163 · fragments=162 · llm=162 · toolkit=160
+- 배너 want=모듈별 기대값. Studio litmus v=164
+- foundry __v 160 유지(미배포 모듈 추가 불일치 방지)
+Verification: HUMAN — StudioContext.jssp + Studio.jssp/StudioJs v=164 저장 후 재오픈. [LIB] 배너 없어야 함.
+Changed files: new_ver/jssp/testWooAiStudioContext.jssp, testWooAiStudio.jssp, testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/js/testWooFoundry.js, docs/log/log.md
+
+232. 2026-08-13 heal 전 live _source 재스냅샷 (후속 적재)
+Purpose: age는 range라 DISTINCT를 안 타고 MIN/MAX만 남김. nlMap의 10대는 DB 값이 아님. 운영에서 제작 후 적재된 값을 stale _range/enum으로 거절하면 heal이 깨짐.
+Changes:
+- toolkit.refreshDomain — _source로 재스냅샷, 기존 별칭 유지
+- mergeParamDomainJson — _range는 넓히기만(후속 max 증가 수용)
+- Generate가 Probe+Toolkit 로드. propose/heal은 fresh domain 기준
+- 라이브에 없는 값만 validateBind 실패(신규 frag 금지)
+Verification: HUMAN — FragContract `163` · Toolkit `160` · Fragments `162` · Llm `162` · Generate.jssp 재배포. 같은 축 재사용 + 이후 적재 값은 refresh 후 bind.
+Changed files: new_ver/js/testWooFragContract.js, testWooToolkit.js, testWooFragments.js, testWooLlm.js, new_ver/jssp/testWooAiGenerate.jssp, new_ver/tools/testWooSmoke.js, .cursor/skills/campaign-ai-studio/pipeline-contracts.md, docs/log/log.md
+
+231. 2026-08-13 축 identity 재사용 · param_domain 자동 heal
+Purpose: 같은 tags/name frag인데 nlMap만 비면 Foundry가 새 frag를 만들려 함. 연령대 특수식은 스키마를 모르는 운영에서 확장되지 않음.
+Changes:
+- Identity = 축+_source+단일 tags. 값 미등재는 신규 frag가 아니라 heal
+- Stage A LIKE 미스 → searchByAxis(tags) 폴백
+- Pass1/proposeParams가 기존 nlMap 예시+_range/enum으로 params 제안 → validateBind → healDomain(merge+색인)
+- N대 하드코딩 derive 제거. Foundry merge는 fragContract.mergeParamDomainJson 위임
+Verification: HUMAN — FragContract `__v=162` · Fragments `161` · Llm `161` · Foundry `161` 재배포 후, 기존 age/gender/region으로 `경기도에 사는 10대 여성 고객` → 큐 없이 재사용, age `param_domain`에 `10대` 별칭이 merge되어야 함.
+Changed files: new_ver/js/testWooFragContract.js, testWooFragments.js, testWooLlm.js, testWooFoundry.js, new_ver/tools/testWooSmoke.js, .cursor/skills/campaign-ai-studio/pipeline-contracts.md, docs/report/upgrade_plan/36_FragContract_공유계약.md, docs/log/log.md
+
+230. 2026-08-13 10대 미등재 시 age frag 재사용 (N대 유도)
+Purpose: Active `woo__customer__age` nlMap이 20~60대만 있어 NL `10대`가 Stage A 미스 → Foundry 큐. `_range` 0~69인데도 새 frag를 만들려 함.
+Changes:
+- keywordsFromSlot에 축 태그(age/gender/region) 추가 — 값 미색인이어도 tags LIKE로 축 frag 검색
+- domainMatchSlot/resolveNlParams: nlMap에 없는 N대 → `{ageMin:N, ageMax:N+10}` (`_range` 겹칠 때만). 70대는 거부
+- Pass1: 축 frag는 nlMap 키 없어도 선택. include된 frag가 바인딩 가능하면 unmatched에서 제거(큐 방지)
+- smoke 1b: 10대→10/20, 여성↛age, 70대 범위 밖
+Verification: HUMAN — JS `testWooFragContract.js` `__v=161` + `testWooLlm.js` `__v=160` 재배포 후 `경기도에 사는 10대 여성 고객` → Foundry 큐 없이 기존 age/gender/region 재사용, SQL `iAge >= 10 AND iAge < 20`.
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/tools/testWooSmoke.js, .cursor/skills/campaign-ai-studio/pipeline-contracts.md, docs/report/upgrade_plan/36_FragContract_공유계약.md, docs/log/log.md
+
+229. 2026-08-13 뒤로가기 시 미반영 SQL 캐시 유지 (v=163)
+Purpose: 뒤로가기가 스택 비면 resetCtx와 같아져 방금 생성한 임시 SQL이 목록에서 사라지고, 서버 기존(반영됨)만 다시 보임.
+Changes:
+- goBack 빈 스택 → SQL 목록(`_enterSqlList`). 캐시 삭제·초기화 금지
+- 브레드크럼 Program/Campaign은 스택을 SQL 프레임으로 남겨 뒤로가기가 목록으로 복귀
+- 목록 진입 시 최신 draft 복원
+Verification: HUMAN — Studio `v=163` · 생성→등록→프로그램 진입→뒤로가기 → 미반영 SQL이 목록에 남아 있어야 함. 초기화만 캐시 삭제.
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
+
+228. 2026-08-13 매핑 중 [등록] 비활성 (v=162)
+Purpose: Program/Campaign/WKF 미선택 단계에서 [등록]이 SQL 목록으로 되돌아감. 브레드크럼·뒤로가기가 있으므로 매핑 중에는 버튼을 끈다.
+Changes:
+- ST3~ST5이고 WKF 없으면 `btnReg` disabled. 생성 직후 [등록]→SQL 목록은 유지. WKF 선택 후 다시 활성.
+Verification: HUMAN — Studio.jssp+StudioJs `v=162` · 새 SQL 진행 중 [등록] 비활성 · WKF 선택 후 활성.
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+227. 2026-08-13 R5 ST3~ST5 매핑 — listWkfs·기존SQL점프 (v=161)
+Purpose: R4 SQL목록 HUMAN 확인 후 매핑. 캠페인 진입이 SQL을 지우고 Match OFF가 WKF 목록을 비움 → listWkfs 미호출.
+Changes:
+- `_enterCampaign` SQL 유지 · `loadWkfs`(listWkfs) · Match OFF wipe 제거
+- WKF 선택/생성 후 compose 유지 · `[등록]하면 반영` 안내 (ST6 커밋은 R6)
+- `listRecentAiSql` + Context `listRegisteredSql` · 기존(반영됨) 점프(유사 단정 없음)
+- litmus v=161
+Verification: Rhino-safe ES5. HUMAN — Repository+Context+Studio.jssp+StudioJs 재배포 · URL `v=161` · 새 SQL→Program→Campaign→WKF · 기존 SQL 클릭 점프.
+Changed files: new_ver/js/testWooRepository.js, new_ver/jssp/testWooAiStudioContext.jssp, testWooAiStudioJs.jssp, testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/{00_INDEX,01_진행판,21_SQLFirst_R차수_실행가이드,23_SQLFirst_AI명령문}.md, docs/log/log.md
+
+226. 2026-08-13 R4 SQL목록 — [등록]≠WKF선행 (v=160)
+Purpose: 08-12 SQL-First(조건→SQL목록→프로그램/WKF)는 정본에 있었으나 코드 `register()`가 WKF 필수. 가이드 폐기 아님 — R4 미착수+21 DoD가 레이아웃만 적힘.
+Changes:
+- [등록] WKF 없으면 `_enterSqlList` (ST1/ST2) · Register.jssp 호출 안 함
+- ST0 폴더 선로드 제거 · 브레드크럼 조건>SQL>Program… · “이 새 SQL로 진행”→ST3
+- navToProgram/goBack은 확정 SQL 유지 · litmus v=160
+- `21` R4 DoD·`27` D-1 구현지연 주석 · 진행판 R4 [~]
+Verification: Rhino-safe ES5. HUMAN — Studio.jssp+StudioJs 재배포 후 URL `v=160` · 동일 NL [생성]→[등록]→우측 SQL 목록(WKF 에러 없음).
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/{00_INDEX,01_진행판,21_SQLFirst_R차수_실행가이드,23_SQLFirst_AI명령문,27_스펙드리프트}.md, docs/log/log.md
+
+225. 2026-08-13 smoke 9·9c — library hit·invoke 캐시 정합
+Purpose: FragContract 배포 후 smoke가 #169 정상 동작(library_cache_hit·캐시 미차감)을 FAIL로 오인.
+Changes:
+- 9: `library_cache_hit` → PASS (#169 서가 우선)
+- 9c: list_schemas `limit` 변형으로 캐시 미스 소진 후 phase 상한 검증
+Verification: Rhino. HUMAN — testWooSmoke.js 재배포 후 WKF smoke 재실행.
+Changed files: new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+224. 2026-08-12 #172 FragContract 공유 계약 미들웨어
+Purpose: 축 추가마다 StageA/Feasibility/Dedup/Foundry가 연쇄 깨지던 계약 복제를 testWoo.fragContract로 수렴.
+Changes:
+- 신규 testWooFragContract.js — axis·matchProfile·buildIndexFields·sampleBindSql·libraryHitPredicate·resolveNlParams·errorCodes
+- Fragments/Feasibility/Foundry/Dedup/Compiler 위임 · Dedup peer `@param_domain` 로드
+- reuse_after_publish = libraryHitPredicate · loadLibrary 선행(Batch/DryRun/Smoke/Generate/Register/Validate/Match)
+- smoke 1b.fragContract (joindate 축·bind·index) · upgrade_plan/36 · pipeline-contracts 표
+Verification: Rhino. HUMAN — FragContract 먼저 배포 후 계열 JS·JSSP · smoke 1b · 가입일 NL 재생성.
+Changed files: new_ver/js/testWooFragContract.js, testWooFragments.js, testWooFeasibility.js, testWooFoundry.js, testWooDedup.js, testWooCompiler.js, new_ver/workflow/*, new_ver/tools/testWooSmoke.js, new_ver/jssp/testWooAi*.jssp, docs/report/upgrade_plan/36_*, 00_INDEX, 01_진행판, 00_ReportIndex, pipeline-contracts.md, docs/log/log.md
+
+223. 2026-08-12 #170-P2 — Stage A 본문토큰 병합·category 필터 제거
+Purpose: joindate frag 생성 후에도 unmatched「가입한지 1년 이내」. Pass0 searchKeywords만 쓰거나 category=foundry≠hint other 필터로 미스.
+Changes:
+- Fragments: keywords=searchKeywords∪본문 토큰(공백 유지+compact). category hint는 WHERE 제거·점수만.
+- Foundry synonyms에 `_bucket.nlMap` 키 포함. 상대일자 AddDays+{{param}} 프롬프트.
+- Dedup sampleBind: int/number 타입은 0 (consent `__sample__` PG 오류 방지).
+Verification: Rhino. HUMAN — Fragments(+Foundry) 배포 후 동일 NL [생성] → joindate Stage A 히트.
+Changed files: new_ver/js/testWooFragments.js, new_ver/js/testWooFoundry.js, new_ver/js/testWooDedup.js, docs/log/log.md
+
+222. 2026-08-12 #168-B Generate 값 바인딩 · 템플릿 계약
+Purpose: gender 생성 후 Generate가 `unresolved {{param}}` age로 실패. 원인=템플릿 계약을 최종 SQL처럼 검사 + Pass1 params 미기입.
+Changes:
+- Gates: fragmentSqlContract가 {{param}} 허용. 필수 param은 sql_text placeholder만.
+- Compiler `bindPlanParams`: NL/_bucket/nlMap → plan.params. compile 시 호출.
+- Pass1 프롬프트·selectPlan 후 bind. Dedup 잔여 {{ 강제 치환.
+- 문서 `35_Generate_값바인딩_168B.md`.
+Verification: Rhino. HUMAN — 동일 NL 재생성 시 age/gender 리터럴 SQL.
+Changed files: new_ver/js/testWooGates.js, new_ver/js/testWooCompiler.js, new_ver/js/testWooLlm.js, new_ver/js/testWooDedup.js, docs/report/upgrade_plan/35_Generate_값바인딩_168B.md, docs/report/upgrade_plan/{00_INDEX,01_진행판}.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+221. 2026-08-12 #170-P1 — 축정합 library hit·Stage A 대소문자
+Purpose: 1~2차 Done+무생성인데 unmatched「남성」— age synonyms 오염으로 키워드 커버가 gender를 삼킴. 3차 unmatched「y요금제」— PG LIKE 대소문자로 plan 미스.
+Changes:
+- Feasibility `axesCompatible` · libraryCover에 축 정합 필수. 도메인 매칭 대소문자 무시.
+- Foundry `_coversSlot`도 축 정합. publish synonyms에 nlMap 키(+lower) 추가.
+- Fragments: LIKE 토큰 대소문자 변형 · param_domain 검색/스코어.
+- Studio 오안내(Fragments 배포) 문구 수정.
+Verification: Rhino OK. HUMAN — 「20대 남성」후 gender frag 생성 · 「y요금제」Stage A 히트.
+Changed files: new_ver/js/testWooFeasibility.js, new_ver/js/testWooFoundry.js, new_ver/js/testWooFragments.js, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
+
+220. 2026-08-12 #170 Pass0 슬롯 원자 분할 (normalizeAtomicSlots)
+Purpose: 복합 슬롯(20대 남성)이 Foundry/서가 재사용 전제를 깨는 제품 경로를 차단. LLM 프롬프트만 믿지 않고 결정적 정규화.
+Changes:
+- Pass0 프롬프트: 축1슬롯1 강제 · “MAY keep one slot” 삭제.
+- `normalizeAtomicSlots`: region/plan/age/gender 추출 · 30대50대→age 1슬롯 · 잔여 other 유지.
+- generatePlan `unmatchedSlots` · Generate 큐잉 · Foundry `_normalizeSlots` 동일 규칙.
+- 문서 `34_Pass0_슬롯원자분할_170.md`.
+Verification: 로컬 CASE 서울/Z/20대/남성 · Y요금제/30대~50대/홈페이지. HUMAN V1~V4.
+Changed files: new_ver/js/testWooLlm.js, new_ver/js/testWooFoundry.js, new_ver/jssp/testWooAiGenerate.jssp, docs/report/upgrade_plan/34_Pass0_슬롯원자분할_170.md, docs/report/upgrade_plan/{00_INDEX,01_진행판}.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+219. 2026-08-12 #169-P1 — 다중 JSON 파싱·dedup {{param}} 바인딩
+Purpose: gender 미생성 루프 — LLM이 age+gender를 한 응답에 붙여 first{…last} 파싱 실패→재시도→age만 near-dedup. dedup이 {{param}} 그대로 실행해 diff=-1을 near로 위장.
+Changes:
+- Foundry: 균형 JSON 다중 추출 → 슬롯 축 힌트·미존재 frag 우선 선택. 단일 힌트와 축 불일치 시 shape 재시도. 프롬프트/피드백에 ONE JSON 강제.
+- Dedup: probe/L3 전 sampleBind. bestDiff<0 → novel(near 위장 금지).
+Verification: Rhino syntax. HUMAN — 동일 NL 후 woo__customer__gender Active·unmatched에 남성 없음.
+Changed files: new_ver/js/testWooFoundry.js, new_ver/js/testWooDedup.js, docs/log/log.md
+
+218. 2026-08-12 #169-P0 — library hit 타축 삼킴(단일축+_source) 차단
+Purpose: 2회차 동일 NL에서 age library_cache_hit 후 gender 미생성·Stage A unmatched「남성」. 원인=libraryLookup이 키워드 커버 없이 단일축+_source만으로 히트.
+Changes:
+- `_libraryCoverOk`: AND 커버 또는 (단일축+_source ∧ domain nlMap/bucket 값 매칭). 값 매칭 없으면 미스→triage/생성.
+- Foundry 구 `_coversCachedAxis` 제거(공유 libraryLookup만 사용).
+Verification: 「서울/Z요금제/20대」는 도메인 매칭으로 히트 유지 · 「남성」은 gender frag 없으면 미스. HUMAN 재검증.
+Changed files: new_ver/js/testWooFeasibility.js, new_ver/js/testWooFoundry.js, docs/log/log.md
+
+217. 2026-08-12 #169 Library-First — Triage 서가 우선·invoke 캐시
+Purpose: Active `_source` frag(region/plan)가 있는데도 Triage가 서가를 안 읽고 search_columns만 태워 Infeasible가 되던 경로를 차단. 0-2 실측 도메인 JSON은 수집 완료.
+Changes:
+- Feasibility: `libraryLookup` → triage 전 Stage A. 히트 시 툴0·feasible. 미스 시만 toolkit. 컬럼有·probe無면 probe_values 강제 → value_not_found+후보.
+- Toolkit: 요청 단위 invoke 캐시·resultCount/cacheHit/elapsedMs.
+- Foundry: `_tryLibraryCacheHit`가 `feasibility.libraryLookup` 공유. triage libraryHit도 generate 스킵.
+- 문서 `33_LibraryFirst_서가우선_169.md` · INDEX/진행판/ReportIndex.
+Verification: Rhino syntax OK. HUMAN V1=2회차 스키마툴0·신규frag0 (배포 후).
+Changed files: new_ver/js/testWooFeasibility.js, new_ver/js/testWooToolkit.js, new_ver/js/testWooFoundry.js, docs/report/upgrade_plan/33_LibraryFirst_서가우선_169.md, docs/report/upgrade_plan/{00_INDEX,01_진행판}.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+216. 2026-08-12 #168-A hotfix — {{param}} SQL에서 filter 컬럼 미추출 수정
+Purpose: queueId=29894에서 4슬롯 모두 domain attach가 filter column missing으로 실패·frag 0건. 원인=_sqlFilterColumns 연산자 뒤 \b가 RHS 공백/리터럴에서 실패.
+Changes:
+- 기호 연산자(=,>= 등) trailing \b 제거. {{param}}→0 · 리터럴 치환 후 컬럼 추출.
+- gap verdict를 filter_column_missing / path_unresolved 로 구분.
+Verification: 로컬 샘플 4종 컬럼 추출 PASS. Foundry.js만 재배포 후 동일 NL 재실행.
+Changed files: new_ver/js/testWooFoundry.js, docs/log/log.md
+
+215. 2026-08-12 #168-A 개정 — frag=_source 탐색캐시·library hit·fingerprint
+Purpose: 탐색(Toolkit) 결과를 frag에 굳혀 2회차 툴 0회(V3). describe 절단 명시·partialScan·스키마 fingerprint/TTL·stale 매핑.
+Changes:
+- describe_schema: offset/nextOffset/coverage(M of N)/truncated 명시. 조용한 절단 금지.
+- list/search: partialScan+scanNote(캡 미상향). classify toolCalls·_source.discoveredBy/fingerprint/freshness.
+- Foundry library_cache_hit: _source 신선 시 triage/generate 스킵. stale→deprecated·orphaned→revoked(enum 부재 매핑).
+- 문서 32 개정·운영 체크리스트(namespace·캡·재설계).
+Verification: V2 grep 0. V3는 배포 후 evidence_log 1회차 N / 2회차 0. Generate 미수정.
+Changed files: new_ver/js/testWooToolkit.js, new_ver/js/testWooFoundry.js, docs/report/upgrade_plan/32_필드도메인_자동판정_168A.md, docs/log/log.md
+
+214. 2026-08-12 #168-A 필드 도메인 자동 판정(schema-agnostic)·스냅샷
+Purpose: 컬럼명 하드코딩 없이 메타데이터로 tier 판정하고 Foundry 생성 시 param_domain._source 스냅샷을 붙인다. Generate 바인딩(#168-B)은 분리.
+Changes:
+- describe_schema에 enum/userEnum/length/isLink/target/isPrimary/isAutoPk 추가.
+- classifyField(R1~R5+S1/S3)·resolveDomain·pathFromGrain·캐시·TTL. distinct는 기존 probe_values 재사용(groupBy 이중구현 금지).
+- snapshotCap=valueProbeLimitMax 재사용. domainProbeRowLimit·domainTtlDays만 신규.
+- Foundry `_attachDomainSnapshot`: 경로 미확정 시 gap skip. few-shot에서 금지 물리컬럼 리터럴 제거(V2).
+- 문서 `32_필드도메인_자동판정_168A.md`.
+Verification: V2 grep 실행경로 0건. V1/V3~V7은 배포 후 HUMAN(ACC). 배포 취합 대기.
+Changed files: new_ver/js/testWooToolkit.js, new_ver/js/testWooFoundry.js, new_ver/js/testWooEnv.js, new_ver/js/testWooConfig.js, docs/report/upgrade_plan/32_필드도메인_자동판정_168A.md, docs/report/upgrade_plan/{00_INDEX,01_진행판}.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+213. 2026-08-12 #167 Foundry frag 원자화·파라미터화·값사전 merge
+Purpose: 다축·값구이 1회용 frag를 막고, 축 양식({{param}}+param_domain)과 domain merge 재사용으로 V2(신규 0건)를 가능하게 한다.
+Changes:
+- 0단계: 원인=①프롬프트(코드 배열병합 아님). 샘플 스키마에 iAge+dBirthDate 공존→ageGroup은 iAge 범위.
+- 프롬프트/few-shot을 축·{{param}}·paramDomain 모범으로 교체. 검증만 샘플바인딩.
+- `_assertAtomicFrag`: 컬럼수·tags축·name 세그먼트(값구이) 거부. 같은 컬럼 범위 AND 허용(V5).
+- 동명 축 존재 시 INSERT 없이 param_domain merge. non_atomic은 skip+evidence.
+- 문서 `31_Foundry_원자화_파라미터화.md` 원칙 고정.
+Verification: HUMAN V1~V5(특히 V2 신규 0). 배포 취합 대기. 수동검토: woo__customer__gyeonggi__yplan_f.
+Changed files: new_ver/js/testWooFoundry.js, docs/report/upgrade_plan/31_Foundry_원자화_파라미터화.md, docs/report/upgrade_plan/{00_INDEX,01_진행판}.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+212. 2026-08-12 Studio NL 입력창·목록 높이 +70px (embed/단독)
+Purpose: 두 줄 이상 NL이 textarea에 잘려 보이던 문제 — 기본 고정 height를 70px 키우고 우측 목록·메인 테이블·폼 urlViewer도 동일하게 맞춤. Changes:
+
+- 단독: textarea 48→118 · composer 140→210 · main/list 560→630 · 목록영역 500→570
+- embed: textarea 36→106 · composer 120→190 · main/list 440→510 · 목록 390→460
+- 폼 `twStudioViewer` height 560→630 (잘림 방지)
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
+
+211. 2026-08-12 #164 HUMAN 가이드 보강 — 배포목록·V1~V6 단계 상세
+Purpose: 한 줄 배포 안내로는 운영이 어려워 `30` 문서에 콘솔 재등록 목록·본문 확인 문자열·V1~V6 절차·회신 칸을 상세화. Changes:
+
+- `30_Foundry_슬롯삼킴_P0.md` §6을 HUMAN_CONSOLE 전용으로 확장(필수 Env+Foundry, #161 B잔여, litmus 미bump 주의, V4 리트머스)
+- 코드 변경 없음
+Changed files: docs/report/upgrade_plan/30_Foundry_슬롯삼킴_P0.md, docs/log/log.md
+
+210. 2026-08-12 #164 P0 — Foundry 슬롯 삼킴 차단(색인 오염·AND 커버리지 게이트·큐 이어달리기)
+Purpose: 큐 1건당 fragment 1건만 생기던 슬롯 삼킴을 막고, 상한 도달 시 남은 슬롯을 다음 배치로 이어달린다.
+Changes:
+- #164-A (`e7dab7f`): `_fragDocFromLlm`에서 nlText 색인 제거 · `_coversSlot` AND 게이트 · 부분 히트는 pending 유지
+- #164-B (`09e75c9`): maxNewFragments=10 · tokenBudget=200000 · totalCallBudget=384 · created>0이면 queued 재적재(attempt 복원)
+- 문서: `30_Foundry_슬롯삼킴_P0.md` · 진행판에 #164를 #162 앞에 삽입
+Verification: HUMAN — 검증표 #1~#6(특히 #4 synonyms 오염 없음). litmus/`__v` bump는 별도 지시 대기.
+Changed files: new_ver/js/testWooFoundry.js, new_ver/js/testWooEnv.js, docs/report/upgrade_plan/30_Foundry_슬롯삼킴_P0.md, docs/report/upgrade_plan/01_진행판.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+209. 2026-08-12 #161 실측 — libs 불일치 8종을 필수 재등록 목록으로 격상
+Purpose: Studio 진입 시 배너에 match/probe/dedup/toolkit/feasibility/studioContext/wfClone/workflowUi 불일치가 남음 — 코어만 올린 상태. Changes:
+
+- `28_배포정합_진단.md` #161: 위 8종을 “권장”→**필수 B그룹**으로 명시
+- 코드 변경 없음(진단 정상 동작)
+Changed files: docs/report/upgrade_plan/28_배포정합_진단.md, docs/log/log.md
+
+208. 2026-08-12 #160 배포정합 진단 · twRequireLib · __v · libVersions
+Purpose: `testWoo.repo is undefined`를 배포 누락으로 즉시 가시화하고 JS lib 버전을 litmus와 분리 증명. Changes:
+
+- `28_배포정합_진단.md` 배포 대조표 + #161 HUMAN 체크리스트
+- `twRequireLib` + handleApiError code=LIB · Generate/Register/Validate/Match/StudioContext 가드
+- 전 JS 모듈 `testWoo.*.__v="159"` · StudioContext `action=libVersions` · StudioJs 부팅 diag `libs:`
+- INDEX/진행판/ReportIndex — 다음=#161 HUMAN (R4/#162는 PASS 후)
+Changed files: docs/report/upgrade_plan/28_배포정합_진단.md, docs/report/upgrade_plan/{00_INDEX,01_진행판}.md, docs/report/00_ReportIndex.md, new_ver/js/testWoo*.js (19), new_ver/jssp/testWooAi{Generate,Register,Validate,Match,StudioContext,StudioJs}.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
+
+207. 2026-08-12 개발가이드 AuthDebug 잔여 참조 제거 (#197 정합)
+Purpose: AuthDebug.jssp 폐기 후에도 가이드 표·스모크에 남아 있던 경로를 정리. Changes:
+
+- JSSP 표에서 AuthDebug 행 제거 → 배포하지 않음(폐기)으로 이동
+- Studio 접속 URL·스모크 AuthDebug 체크 항목 삭제
+Changed files: docs/report/01_개발가이드.md, docs/log/log.md
+
+206. 2026-08-12 Foundry→SQL Stage A 미매칭·재큐잉 루프 수정 · v=159
+Purpose: Foundry 완료 후 Studio가 SQL로 못 가고 대기로 되돌아가던 루프 차단. Changes:
+
+- Stage A LIKE에 @name·@description 추가(기존 Foundry frag 즉시 검색 가능)
+- Foundry: sample_questions·synonyms에 슬롯/NL 토큰 · dedup reuse 후에도 잔여 슬롯 resolve · done 시 missing 비움
+- Generate after_foundry/no_enqueue — 재큐잉 금지
+- StudioJs: done 후 generate({afterFoundry:true}) · litmus v=159
+Changed files: new_ver/js/testWooFragments.js, new_ver/js/testWooFoundry.js, new_ver/jssp/testWooAiGenerate.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
+
+205. 2026-08-12 R3 후속 — plan missing API 구분 · Match OFF 가드 · v=158
+Purpose: ST0 [생성] 시 `plan missing [TW…]` 원인 분리. Match OFF인데 plan 검사로 실패하던 경로 차단. Changes:
+
+- Match.jssp: Option OFF면 plan 검사 전에 disabled 빈 목록 반환
+- Validate/Register/Match/Generate: 오류 메시지에 API 접두 (`Validate:` / `Match:` / `Register:` / `[Generate]`)
+- StudioJs: Generate 실패 시 `Generate:` 접두 + diag에 error/errId · litmus v=158
+Changed files: new_ver/jssp/testWooAi{Match,Validate,Register,Generate,Studio,StudioJs}.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
+
+204. 2026-08-12 #149R R3 ST0~ST6 · intent 폐기 · v=157
+Purpose: SQL-First 상태머신 반전 — ST0 즉시 입력 · phase ST0~ST6 · create/reuse intent UI 제거. 셸 패널은 R4. Changes:
+
+- ctx.phase ST0~ST6 · generate→ST1/ST2 · folder/campaign/wkf→ST3~ST5 · register→ST6 · reset→ST0
+- 폴더·intent generate/NL 게이트 제거 · setIntent/_syncIntentUi·twIntentBar 삭제
+- goBack/resetCtx 스택 유지 · NL 상시 활성(busy 제외) · embed 경로 유지
+- litmus v=157 (Studio · StudioJs · html 미러 · TW-BOOT)
+- 진행판/INDEX/21/23 갱신 · 다음=R4
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/{00_INDEX,01_진행판,21_SQLFirst_R차수_실행가이드,23_SQLFirst_AI명령문}.md, docs/log/log.md
+
+203. 2026-08-12 upgrade_plan 연속번호 · `[완료]` 중위 표기
+Purpose: 파일명 앞 번호를 00→27 연속으로 맞추고, 완료 표기를 접미 `_완료`에서 `NN_[완료]_이름`으로 이동. Changes:
+
+- 완료 문서: `02~11_[완료]_구차수_*` · `17/18/24/25_[완료]_*`
+- 현행: `12~16` 구잔여/포인터 · `19~23` SQL-First/사고/명령 · `26` C1C6 · `27` 드리프트 · `[별도]_관리자원본`
+- `01_진행판` 카탈로그·`00_INDEX`·`00_ReportIndex`·교차참조(23/21/16) 정합
+Changed files: docs/report/upgrade_plan/* (rename+INDEX+진행판), docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/log/log.md
+
+202. 2026-08-12 upgrade_plan 문서번호 재배치 · 진행판 통합
+Purpose: 번호 중복 해소 · `_완료` 표시 · 분산 체크리스트를 `01_진행판`으로 통합. 본문 삭제 없음(중복 체크리스트만 병합 삭제). Changes:
+
+- 번호 대역: 00~01 진입 · 10~24 구차수 · 30~39 조사/사고 · 32~36·40 SQL-First 정본
+- `17_개편진행_체크리스트` → `01_진행판.md` 통합 후 제거
+- `_완료` 접미: 구0~5·PoC조사·임베딩실태 등 역할 종료 문서
+- `00_INDEX`·`00_ReportIndex` 경로 전면 갱신
+Changed files: docs/report/upgrade_plan/* (rename+01_진행판+00_INDEX), docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md(경로), docs/log/log.md
+
+201. 2026-08-12 #148R R2 draft cache v=156
+Purpose: Studio 클라이언트 미반영 SQL 임시 캐시(twStudioCache). Register만 DB. S8 runtime probe — HUMAN PASS 미주장. Changes:
+
+- twStudioCache v:1 · cacheId twc_* · sessionStorage probe / memory fallback · localStorage 금지
+- putDraft on generate/validate passed · renderListPane draft rows [미반영(임시)] · Match OFF에도 표시
+- resetCtx clears cache · register removes cacheId · state.cacheId · memory backend 상시 경고
+- litmus v=156 (TW-BOOT · StudioJs src · okMsg)
+- docs: 12 S8 probe note · 13 §7 R8 defer · 16/17 R2 [x] repo
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md, docs/report/upgrade_plan/{12_PoC-S_SQLFirst타당성,13_SQLFirst_여정정본,16_SQLFirst_AI명령문,17_개편진행_체크리스트}.md
+(선행 #200: jssp module headers HUMAN READ)
+
+200. 2026-08-12 new_ver/jssp module header HUMAN READ 보강
+Purpose: new_ver/jssp 11개 JSSP 헤더를 module-header-docstring 형식으로 통일. Changes:
+
+- 역할·Main Functions(endpoint action)·Dependencies 재작성 · changelog 제거
+- Studio/StudioJs/Generate/Register/Match에 [Invariants] 선택 추가
+Changed files: new_ver/jssp/testWooAi{FragmentAdmin,FragmentReview,GapAdmin,Generate,Match,QueueStatus,Register,Studio,StudioContext,StudioJs,Validate}.jssp, docs/log/log.md
+
+199. 2026-08-12 new_ver/js module header HUMAN READ 보강
+Purpose: new_ver/js 19개 헤더 통일 + 이후 파일에도 동일 형식이 적용되도록 Rule/Skill 고정. Changes:
+
+- 역할·Main Functions(공개 API)·Dependencies 재작성 · 고중요도만 [Options]/[Invariants]
+- 신규 rule `module-header-docstring.mdc` · campaign-ai-project / SKILL / AGENTS 연동
+Changed files: new_ver/js/testWoo*.js (19), .cursor/rules/{module-header-docstring.mdc,campaign-ai-project.mdc}, .cursor/skills/campaign-ai-studio/SKILL.md, AGENTS.md, docs/log/log.md
+
+198. 2026-08-12 #155 임베딩 OFF·영속화 · C1~C6 HUMAN가이드
+Purpose: dedup L2 무효 과금 차단 + emb_* publish 영속화. Match와 무관. C1~C6 절차 명문화. Changes:
+
+- Task1: testWooEnv embedEnabled=false(+사유 주석)
+- Task2: 25_[완료]_임베딩경로_실태점검.md (F-1~F-10)
+- Task3: lifecycle.publish emb_* · ensureEmbedding emb_updated_at · postEmbedding wrap.error · _embedEndpoint null
+- 26_Match_C1C6_HUMAN검증.md · INDEX/체크리스트 갱신 · embedEnabled true 복구는 스모크+승인만
+Changed files: new_ver/js/{testWooEnv,testWooEmbedding,testWooLifecycle,testWooLlm}.js, docs/report/upgrade_plan/{17_임베딩경로,18_Match_C1C6,17_체크리스트,16_AI명령문,00_INDEX,15_매칭오탐}.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+197. 2026-08-12 #154 값인식 매칭 · AuthDebug 폐기 · GapAdmin KEEP
+Purpose: P0 오탐 원인(값 미비교·“포함” 단정)을 discover에서 제거하고 AuthDebug repo 정리. Option ON은 하지 않음. Changes:
+
+- AuthDebug.jssp: repo 삭제(콘솔 기삭제) · GapAdmin KEEP(Foundry upsertGapLog 소비자)
+- Match: SAME/CONFLICT/MISSING · CONFLICT 제외 · Top-10 · 범위/레거시 제외 · sqlContentHash 동일 배지
+- Repository listAiSqlForMatch `@sql_query` · Studio/html 대조표 UI · litmus v=155
+- 사고기록·17체크·07 dedup 주석 · Option 기본 OFF 유지
+Changed files: new_ver/js/{testWooMatch,testWooRepository}.js, new_ver/jssp/{testWooAiMatch,testWooAiStudio,testWooAiStudioJs,testWooAiGapAdmin}.jssp, new_ver/html/testWooAiStudio.js, (deleted) testWooAiAuthDebug.jssp, docs/report/upgrade_plan/{07,15_매칭오탐,16_AI명령문,17,00_INDEX}.md, docs/log/log.md
+
+196. 2026-08-12 개편 진행 체크리스트 — R1스킵·#154다음·폐기1차
+Purpose: R1 미실시 상태로 넘어가면 안 됨을 확정하고 #* 체크·폐기1차 정리. Changes:
+
+- 17_개편진행_체크리스트: [x]/[S]/누락흡수 · 다음키=#154 · AuthDebug 등 폐기1차
+- 16 AI명령문·15 R1 행·INDEX 별칭 정합
+Changed files: docs/report/upgrade_plan/{17_개편진행_체크리스트,16_SQLFirst_AI명령문,15_SQLFirst_R차수,00_INDEX}.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+195. 2026-08-12 #153 PoC-V — 값 인식 매칭 타당성 조사 (코드변경없음)
+Purpose: 복합키 매칭 전 값 저장·정규화·범위·레거시 사실 확정. Changes:
+
+- V1~V7 파일:라인 · 결론 (a)가능 (b)plan_json만 (c)domain정규화불가 (d)범위exact만 (e)레거시제외·건수HUMAN
+- #154 착수 가능(단 c 한계·범위제외·Option ON 승인 필수)
+Changed files: docs/report/upgrade_plan/24_[완료]_PoC-V_값인식매칭.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+194. 2026-08-12 #152 P0 — 매칭 오탐 긴급 차단 (Match OFF · v=154)
+Purpose: 서울≠인천을 “포함”으로 단정하던 유사목록 즉시 차단. matchByPlan 미삭제. Changes:
+
+- Option testWooAiMatchEnabled 기본 OFF · Studio/Match API 가드 · reuse 숨김 · litmus v=154
+- 사고기록·98 D-4·07 TBD 사고표기 · 가드레일 TBD/단정문구 금지
+Changed files: new_ver/jssp/testWooAiStudio.jssp, testWooAiStudioJs.jssp, testWooAiMatch.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/{15_매칭오탐,07_5차,98,00_INDEX}.md, .cursor/rules/00-acc-guardrails.mdc, docs/report/00_ReportIndex.md, docs/log/log.md
+
+193. 2026-08-12 #146R — SQL-First 로드맵 재설계 (13/14/15·SUPERSEDED·추적표·98)
+Purpose: 여정 반전 정본화 · 구 0~9차 SUPERSEDED · AI가 R0~R8로 재작업 가능하도록 라우팅. Changes:
+
+- 13 여정정본(ST0~ST6) · 14 자산판정 · 15 R차수 실행가이드 · 16 AI명령문 · 98 스펙드리프트 D-1~D-3
+- 01~11 구 가이드 SUPERSEDED 배너 · INDEX 라우팅 R0~R8 우선
+- 추적표 v1.1: 신규 차수 재배정 열 + SF-1~SF-12 (기존 ID 삭제·재번호 없음)
+Changed files: docs/report/upgrade_plan/{00_INDEX,01~11배너,11_포인터,13,14,15,16,98}.md, docs/report/11_고도화_추적표.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+192. 2026-08-12 #145R PoC-S — SQL-First 타당성 조사 (코드변경없음)
+Purpose: 조건선입력·plan-only·캐시·큐·락·복제 API를 파일:라인으로 확정. new_ver 미수정. Changes:
+
+- S1~S12 사실·미확인·HUMAN_CONSOLE 분리 · 결론 (a)~(f) 단정
+- (a)(b) 가능 · (c) DB미기록 가능/저장처 HUMAN · (d) WKF별 신규행 · (e) 큐정리 필요 · (f) 상대시점 미사용
+Changed files: docs/report/upgrade_plan/18_[완료]_PoC-S_SQLFirst타당성.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+191. 2026-08-12 #147 교정 — create Match 제거 · discover valueContainment=1 (v=153)
+Purpose: create 전역 유사목록·reuse name-only 오매칭(서울≠인천) 수정. Changes:
+
+- discover: valueKey containment==1만 통과 · 라벨/카운트 value 기준 · plan_json 없으면 제외
+- Studio create: generate 후 runMatch 제거 · 빈목록 안내 정합 · litmus v=153
+Changed files: new_ver/js/testWooMatch.js, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
+
+190. 2026-08-12 #147 — intent·plan-only discover·breadcrumb (v=152)
+Purpose: 캠페인 선택 후 create|reuse 의도 분기 · 탐색은 plan-only+Match(discover) · 브레드크럼 네비. Changes:
+
+- Generate: plan_only 시 compile/gates/Foundry 큐 생략
+- Studio: intent 버튼 · [찾기] discoverFind · 포함카드(수치 숨김) · Program>Campaign>WKF crumb · litmus v=152
+- 뒤로/초기화/의도전환 시 matchShown·compose 클리어 (v=151 패턴 유지)
+Changed files: new_ver/jssp/testWooAiGenerate.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
+
+189. 2026-08-11 #146 — Match 이원화 (dedup=Jaccard / discover=containment)
+Purpose: 탐색용 containment Top-N과 중복판정 Jaccard 0.9를 모드 분리. Changes:
+
+- containment() 추가 · mode=dedup|discover (기본 dedup=기존 동일)
+- discover: intersection≥1 · Top20 · name/valueContainment (plan_json)
+- Match.jssp mode 통과 · listAiSqlForMatch에 plan_json
+Changed files: new_ver/js/testWooMatch.js, new_ver/jssp/testWooAiMatch.jssp, new_ver/js/testWooRepository.js, docs/report/upgrade_plan/17_[완료]_PoC-M_매칭의미론.md, docs/log/log.md
+
+188. 2026-08-11 PoC-M(#145) — 매칭의미론·복제가능성 조사 (코드변경없음)
+Purpose: 탐색 매칭·복제·시점정합 설계용 사실 확인. new_ver 미수정. Changes:
+
+- M1~M8 파일:라인·Adobe URL 근거 기입 · 결론 (a)(b)(c)(d) 단정
+- #146/#147 착수 게이트: M1·M3 확인 · plan-only 분리 가능
+Changed files: docs/report/upgrade_plan/17_[완료]_PoC-M_매칭의미론.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+187. 2026-08-11 5차 — 매칭잔상/Max안내 분기 (matchShown · v=151)
+Purpose: 뒤로/초기화 후 캠페인 재진입 시 이전 plan 매칭·Max 모순 안내 제거. Changes:
+
+- matchShown: Generate→runMatch 성공 후에만 "유사 WKF" 모드
+- 캠페인 진입 시 자동 runMatch 제거 · goBack/reset 시 _clearComposeState
+- Max일 때 빈목록 문구를 "새 WKF 생성" 권유와 분리
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
+
+186. 2026-08-11 5차 보완 — 전역 유사WKF·3줄목록·컨텍스트 자동반영 v=150
+Purpose: 유사 WKF를 캠페인 한정→전역 registered SQL로 검색하고, 선택 시 Program/Campaign 반영. Changes:
+
+- Match: campaign 필터 제거 · resolveWorkflowsByName enrichment(nl/캠페인/Program)
+- Studio: sql-item 3줄(WKF·캠페인|Program·NL) · ellipsis+title · litmus v=150
+- 새 WKF는 여전히 현재 선택 캠페인에 생성
+Changed files: new_ver/js/testWooMatch.js, new_ver/js/testWooWorkflowClone.js, new_ver/js/testWooRepository.js, new_ver/jssp/testWooAiMatch.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
+
+185. 2026-08-11 5차 — 조건매칭(Jaccard≥0.9)·SQL목록·Register dedup v=149
+Purpose: NL plan fragment 집합 Jaccard 매칭(경로 A/B) · 동일 SQL 해시 스킵 · 정보바 SQL ID. Changes:
+
+- testWooMatch.js + testWooAiMatch.jssp (exact + Jaccard≥0.9, overlapCount/unionCount)
+- Register: sqlContentHash + findAiSqlBySqlHash → created:false + 안내 banner
+- Studio: 캠페인 listWkfs 제거 · runMatch · 새 WKF 항상 노출 · litmus v=149
+Changed files: new_ver/js/testWooMatch.js, new_ver/jssp/testWooAiMatch.jssp, new_ver/js/testWooRepository.js, new_ver/js/testWooLifecycle.js, new_ver/jssp/testWooAiRegister.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/input_form/testWooExtendWorkflow.xml, docs/plan/5차_plan.md, docs/log/log.md
+
+184. 2026-08-11 4차·TG-E HUMAN PASS — Foundry→SQL등록 완료 · 다음 5차
+Purpose: HUMAN — 신규 frag active·승인 없이 Generate→등록·SQL 목록. Changes:
+
+- 4차_plan PASS · 다음 라우팅 5차
+Changed files: docs/plan/4차_plan.md, docs/log/log.md
+
+183. 2026-08-11 v=148 — 생성 성공 시 [등록] 안내 배너
+Purpose: HUMAN — SQL 생성 후 등록 안내 없어 목록 비어 헤맴. Changes:
+
+- renderSummaryHint(passed)에 [등록] CTA · 빈 SQL 목록 문구 강화 · litmus v=148
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
+
+182. 2026-08-11 v=147 — Foundry done 안내·자동재생성 · WKF→SQL 목록
+Purpose: HUMAN — 큐 done 후 재생성 안내 없음·WKF 선택 시 SQL 미전환/에러. Changes:
+
+- done 배너 + queueId당 자동 generate 1회
+- selectWkf→WORKFLOW_NAME·loadSqlList · lock soft-fail · locked_at formatDate
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/js/testWooWorkflowClone.js, new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
+
+181. 2026-08-11 4차 — Fragment 자동승인 (active + Option 킬스위치)
+Purpose: Foundry publish→active·큐 done. near도 승인대기 제거. Option testWooAiAutoApprove. Changes:
+
+- Foundry isAutoApprove · fragDoc active · queue done
+- Lifecycle 기본 active + approved_by/at
+- FragmentReview note · navtree verified 주석 폐기
+- Studio UI 미변경 (본 차수)
+Changed files: new_ver/js/testWooFoundry.js, new_ver/js/testWooLifecycle.js, new_ver/js/testWooFragments.js, new_ver/js/testWooRepository.js, new_ver/jssp/testWooAiFragmentReview.jssp, new_ver/navtree/testWooAiNavtree.xml, docs/plan/4차_plan.md, docs/log/log.md
+
+180. 2026-08-11 v=146 HUMAN PASS — 고정 UI · 3차 셸 축 완료
+Purpose: HUMAN — litmus v=146 · 작업영역 고정 UI 원하는 대로. 생성/Max15는 v=144에서 PASS. Changes:
+
+- RESULT/plan 3차 UI+기능 PASS · 다음 TG-D 잔여 또는 4차
+Changed files: docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/plan/3차_plan.md, docs/log/log.md
+
+179. 2026-08-11 v=146 — Studio 작업영역 560px 고정 (목록 길이 무관)
+Purpose: HUMAN UI — 목록 max 시 composer 부유·min 시 버튼 잘림. 작업영역 고정 px. Changes:
+
+- #twMainTable 560px · 답변420 + composer140 · 목록 height:500 고정
+- litmus/embed URL v=146
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
+
+178. 2026-08-11 v=145 — litmus 정합 + 목록 스크롤 · v=144 HUMAN PASS 기록
+Purpose: HUMAN 기능 PASS. 진단 v=143 잔존·15건 목록 UI 깨짐 수정. Changes:
+
+- StudioJs/html litmus v=145 · ListPane max-height 420px overflow
+- ExtendWorkflow embed URL v=145
+- RESULT에 HUMAN PASS · BindPick 삭제 가이드 · Integer Option OK
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/input_form/testWooExtendWorkflow.xml, docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/log/log.md
+
+177. 2026-08-11 v=144 — createCampaign=T2 · createWkf=T3b 템플릿 API
+Purpose: PoC-T2/T3b 확정 API를 Studio 생성 경로에 반영. bare Write·WKF89 클론 제거. Changes:
+
+- createCampaign: CreateOperationFromModelId + program-id Write
+- createWkfFromTemplate: CreateInstanceFromModel(17234)
+- Options 기본: CampaignTemplateId=10002 · WkfTemplateId=17234 · Name=wfEmptyTemplate_CUSTOM
+- Studio litmus v=144
+Changed files: new_ver/js/testWooWorkflowClone.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/html/testWooAiStudio.js, docs/plan/3차_plan.md, docs/report/upgrade_plan/08_[완료]_구차수_3a_PoC_Template.md, docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/log/log.md
+
+176. 2026-08-11 PoC-T3b PASS — WKF102/op-id=23000 · CreateInstanceFromModel 확정
+Purpose: HUMAN UI — OP48 Targeting에 PoC-T3b WKF(WKF102) · Being edited · operation-id=23000 · LLM 그래프. Changes:
+
+- RESULT/Template/plan T3b PASS · v=144 구현 준비
+Changed files: docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/report/upgrade_plan/08_[완료]_구차수_3a_PoC_Template.md, docs/plan/3차_plan.md, docs/log/log.md
+
+175. 2026-08-11 PoC-T3b 생성 OK id=29320 · 검증 쿼리 @operation-id 수정
+Purpose: CreateInstanceFromModel 성공(29320). 검증 ExecuteQuery만 XTK-170036. Changes:
+
+- Template/RESULT에 T3b 실측 · [@operation-id] · T3b-check 스크립트
+Changed files: docs/report/upgrade_plan/08_[완료]_구차수_3a_PoC_Template.md, docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/log/log.md
+
+174. 2026-08-11 PoC-T3a FAIL — CreateWorkflowFromModelId returns 0 · T3b로 전환
+Purpose: HUMAN 실측 workflowId=0(무생성). Community soft-fail과 동일 → CreateInstanceFromModel로 전환. Changes:
+
+- Template/RESULT/plan에 T3a FAIL · T3b 스크립트 기입
+Changed files: docs/report/upgrade_plan/08_[완료]_구차수_3a_PoC_Template.md, docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/plan/3차_plan.md, docs/log/log.md
+
+173. 2026-08-11 PoC-T2 PASS — CreateOperationFromModelId+program-id · OP48/WKF101
+Purpose: HUMAN 실측 — 템플릿 10002 생성 후 program-id=29110 연결. 캠페인+WKF(customActivity) 동반. Changes:
+
+- RESULT/PoC_Template/plan에 T2 PASS · 확정 2단계 절차 기입
+Changed files: docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/report/upgrade_plan/08_[완료]_구차수_3a_PoC_Template.md, docs/plan/3차_plan.md, docs/log/log.md
+
+172. 2026-08-11 PoC-T1 — opEmptyTemplate_LLM id=10002 확정
+Purpose: HUMAN 제공 — 캠페인 템플릿 id=10002. PoC-T2 CreateOperationFromModelId에 사용. Changes:
+
+- PoC_Template / RESULT / 3차_plan에 id=10002 기입
+Changed files: docs/report/upgrade_plan/08_[완료]_구차수_3a_PoC_Template.md, docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/plan/3차_plan.md, docs/log/log.md
+
+171. 2026-08-11 PoC-T — 캠페인/WKF는 템플릿 API · 구현 보류
+Purpose: HUMAN — bare Write 캠페인은 껍데기. 새 캠페인=opEmptyTemplate_LLM, WKF추가=wfEmptyTemplate_CUSTOM(17234). 공식 Create*FromModelId 조사. 코드 미변경. Changes:
+
+- 08_[완료]_구차수_3a_PoC_Template.md · RESULT/plan 템플릿 정정 · ReportIndex
+Changed files: docs/report/upgrade_plan/08_[완료]_구차수_3a_PoC_Template.md, docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/plan/3차_plan.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+170. 2026-08-11 3차 정정 — Program→Campaign→WKF · Max15 · PoC-C PASS · v=143
+Purpose: PoC-C PASS(OP_testWooPoCC_001/20000). 계층 정정 — Campaign 생성·목록·WKF는 operation-id=캠페인. Max15. Changes:
+
+- wfClone: list/createCampaign · list/createWkf(campaign) · Max15
+- Context API listCampaigns/createCampaign · listWkfs campaign_id 필수
+- Studio UI CAMPAIGN 모드 · litmus v=143
+Changed files: new_ver/js/testWooWorkflowClone.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/input_form/testWooExtendWorkflow.xml, docs/plan/3차_plan.md, docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/log/log.md
+
+169. 2026-08-11 PoC-C 스크립트 — Program id→fullName 조회 후 Campaign Write
+Purpose: fullName 수기 입력 제거. xtk:folder @id로 @fullName 조회 후 operation Write. Changes:
+
+- 07_[완료]_구차수_3a_PoC_Campaign.md 스크립트 보완
+Changed files: docs/report/upgrade_plan/07_[완료]_구차수_3a_PoC_Campaign.md, docs/log/log.md
+
+168. 2026-08-11 계층 정정 — Program→Campaign→WKF · PoC-C · Max15
+Purpose: HUMAN 정정 — 2차 AI폴더는 Program. 그 안 Campaign(nms:operation) 생성/선택 후 WKF. v=142는 Program에 WKF를 붙인 오해 구현. Changes:
+
+- RESULT·3차_plan 계층 정정 · 캠페인당 WKF Max=15
+- PoC-C 절차 문서 신설 (캠페인 Write 가능 여부)
+Changed files: docs/plan/3차_plan.md, docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/report/upgrade_plan/07_[완료]_구차수_3a_PoC_Campaign.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+167. 2026-08-11 3차 WKF 라이프사이클 — Write클론·soft-lock·open폴백 v=142
+Purpose: PoC RESULT 반영 — 템플릿 WKF89 클론, operation-id=AI프로그램, soft-lock, xtk://open 폴백. Spawn 금지. Changes:
+
+- NEW schema testWooAiWkfLock · js testWooWorkflowClone
+- Context API listWkfs/createWkf/selectWkf/releaseLock
+- Studio UI 새 WKF 생성·잠금·열기안내 · litmus v=142 (JSSP+embed form)
+- plan: docs/plan/3차_plan.md · 템플릿 WKF89(26021) RESULT 정리(#166)
+Changed files: new_ver/schema/testWooAiWkfLock.xml, new_ver/js/testWooWorkflowClone.js, new_ver/js/testWooStudioContext.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/input_form/testWooExtendWorkflow.xml, docs/plan/3차_plan.md, docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/log/log.md
+
+166. 2026-08-11 3차 템플릿 확정 — WKF89(id=26021) · PoC RESULT 정리
+Purpose: 운영자 확정 — 클론 소스는 WKF89(26021). PoC-2의 WKF94는 검증용. Changes:
+
+- RESULT 3차 전제에 템플릿 WKF89/26021 · Option명 권장 기입
+Changed files: docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/log/log.md
+
+165. 2026-08-11 PoC-2 보완 — WKF는 program 연결 필수(folder만으론 AI UI 미표시)
+Purpose: HUMAN 실측 — 클론 WKF가 Campaign workflows(1104)에는 보이나 operation/program-id=0이라 isAi 프로그램(TEST1/2)에 안 보임. 3차 Write에 program 링크 필수. Changes:
+
+- RESULT 3차 전제에 프로그램 단위 관리·DoD 보강 기입
+Changed files: docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/report/upgrade_plan/05_[완료]_구차수_3a_PoC절차.md, docs/log/log.md
+
+164. 2026-08-11 PoC-1~3 종료 — PoC-3 스킵→soft-lock · 3차 가능
+Purpose: PoC-3 workflow @lockedBy DB확장은 필수 아님. 운영자 요청으로 미실시=FAIL(폴백). 3차 잠금은 soft-lock 테이블. Changes:
+
+- RESULT: PoC-1 FAIL · PoC-2 PASS · PoC-3 FAIL(스킵) · 3차 전제표 확정
+Changed files: docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/report/upgrade_plan/05_[완료]_구차수_3a_PoC절차.md, docs/log/log.md
+
+163. 2026-08-11 PoC-2 PASS — Write 클론 WKF_testWooPoC2_001 (state=0)
+Purpose: HUMAN 실측 — queryDef+Write로 중지 상태 WKF 복제 성공. Spawn 미사용. Changes:
+
+- RESULT·04_3a_PoC에 PoC-2 PASS 기입 (id=29140, src=26800/WKF94)
+Changed files: docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/report/upgrade_plan/05_[완료]_구차수_3a_PoC절차.md, docs/log/log.md
+
+162. 2026-08-11 PoC-1 FAIL — xtk://open 미동작 · PoC-2 진행
+Purpose: HUMAN 실측 — 외부 HTML `xtk://open` 클릭으로 Explorer WKF 미오픈. 3차는 폴백 경로 확정. Changes:
+
+- RESULT·04_3a_PoC RESULT표에 PoC-1 FAIL(pk=26800) 기입
+Changed files: docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/report/upgrade_plan/05_[완료]_구차수_3a_PoC절차.md, docs/log/log.md
+
+161. 2026-08-11 PoC-1~3 HUMAN 실측 절차 — RESULT 대기 (코드 변경 없음)
+Purpose: 3차 선행 PoC-1(open)·PoC-2(Write clone)·PoC-3(lockedBy) 콘솔 실측 가이드 배포. Agent 자체 PASS 금지. Changes:
+
+- `06_[완료]_구차수_3a_PoC_RESULT.md` 신설 — 검증 절차·기입란·회신 형식
+- `05_[완료]_구차수_3a_PoC절차.md` RESULT를 WAITING + RESULT.md 링크로 갱신
+- ReportIndex에 RESULT 파일 등록
+Changed files: docs/report/upgrade_plan/06_[완료]_구차수_3a_PoC_RESULT.md, docs/report/upgrade_plan/05_[완료]_구차수_3a_PoC절차.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+160. 2026-08-11 isAiFolder 폼 colspan=2 — Advanced colcount=2 정렬
+Purpose: Advanced parameters(colcount=2)에서 체크박스가 한 칸만 차지해 라벨 열이 비는 현상 수정. Changes:
+
+- testWooExtendFolder 내부 colspan=2 · xtk:folder ref 삽입줄에 colspan=2 명시
+Changed files: new_ver/input_form/testWooExtendFolder.xml, new_ver/input_form/testWooNmsProgramAiFolderPatch.xml, docs/log/log.md
+
+159. 2026-08-11 isAiFolder nms:program 확장 — XML-110013 unknown attribute 해소
+Purpose: Program 폴더 편집 컨텍스트가 nms:program이라 xtk:folder 확장만으로는 폼 xpath 검증 실패. Changes:
+
+- woo:program(@isAiFolder, sqlname=iIsAiFolder) 추가 · folder와 컬럼 공유
+- testWooExtendFolder entity-schema=nms:program · 패치 안내 xtk:folder 확정
+Changed files: new_ver/schema/testWooProgramExt.xml, new_ver/schema/testWooFolderExt.xml, new_ver/input_form/testWooExtendFolder.xml, new_ver/input_form/testWooNmsProgramAiFolderPatch.xml, docs/log/log.md
+
+158. 2026-08-11 isAiFolder 패치 대상 정정 — nms:program→nms:plan:lib/edition
+Purpose: 운영자 제공 nms:program XML에 Internal data가 없고 Edit이 nms:plan:lib/edition을 ref함을 반영. Changes:
+
+- 패치 안내 대상 폼을 nms:plan (lib/edition · Internal data · @fullName 다음)으로 수정
+Changed files: new_ver/input_form/testWooNmsProgramAiFolderPatch.xml, docs/log/log.md
+
+157. 2026-08-11 Folder 폼 isAiFolder UI — woo 확장폼 + nms:program ref 패치
+Purpose: Program 폴더 Properties > Advanced > Internal data 하단에 AI Studio folder 체크 UI 제공. Adobe factory 폼 extends 불가 → WF와 동일 ref 패턴. Changes:
+
+- woo:testWooExtendFolder (checkbox @isAiFolder)
+- nms:program Internal data insert 패치 안내
+Changed files: new_ver/input_form/testWooExtendFolder.xml, new_ver/input_form/testWooNmsProgramAiFolderPatch.xml, new_ver/schema/testWooFolderExt.xml, docs/log/log.md
+
+156. 2026-08-11 2차 상태머신·@isAiFolder — listAiFolders · 입력게이트 v=141
+Purpose: Studio 컨텍스트 상태머신과 AI 폴더(@isAiFolder) 선택→입력 활성까지 완성. WKF 실데이터는 3차. Changes:
+
+- schema woo:folder 확장 · StudioContext JS/JSSP · 셸 Back/Reset · v=141
+- INDEX: html은 콘솔 배포 아님 명시
+Changed files: new_ver/schema/testWooFolderExt.xml, new_ver/js/testWooStudioContext.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/input_form/testWooExtendWorkflow.xml, docs/report/upgrade_plan/00_INDEX.md, docs/plan/2차_plan.md, docs/log/log.md
+
+155. 2026-08-11 1차 진입점과셸 — Tools rights · 정보바+table2열 · 더미목록 v=140
+Purpose: PoC-0 PASS 후 Tools 진입(rights)과 IE-safe 3분할 셸 골격(데이터 더미)을 고정. Changes:
+
+- PoC-0 RESULT PASS 기입 · 분기 A(view 유지+rights)
+- Studio 셸 #twInfoBar/#twMainTable · 더미 3행 · v=140 · html 동기 · 폼 URL v 동기
+Changed files: new_ver/navtree/testWooAiNavtree.xml, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/input_form/testWooExtendWorkflow.xml, docs/report/upgrade_plan/05_[완료]_구차수_3a_PoC절차.md, docs/plan/1차_plan.md, docs/log/log.md
+
+154. 2026-08-11 INDEX §3.0 — 운영자 응답=배포·HUMAN·다음키만 · PoC-0 HUMAN 대기
+Purpose: 운영자는 코드 리뷰 없이 콘솔 배포·테스트만 수행. Agent 자체검증 후 배포목록·TG·다음 라우팅키만 전달하도록 INDEX에 고정. PoC-0은 RESULT HUMAN 대기. Changes:
+
+- INDEX §3.0 운영자 응답 계약 · §3.3/§3.4 정합
+- PoC-0: navtree Tools URL뷰 실측 가이드(TG-A) 제공 · new_ver 미변경
+Changed files: docs/report/upgrade_plan/00_INDEX.md, docs/log/log.md
+
+153. 2026-08-11 INDEX §3.5 — 배포/재배포 목록 필수 출력
+Purpose: 매 구현 Chat 종료·TG 가이드에 repo경로·콘솔위치·신규/덮어쓰기 조치 표를 의무화해 캠페인 반영 누락을 막음. Changes:
+
+- §3.5 템플릿·조치 정의·규칙 · §3.3/§8.0/별칭 `배포목록` 연결
+Changed files: docs/report/upgrade_plan/00_INDEX.md, docs/log/log.md
+
+152. 2026-08-11 INDEX §8 — 캠페인 반영·테스트 게이트 TG-A~J
+Purpose: 차수 묶음별 캠페인 반영·테스트 가능 시점과 체크리스트를 INDEX에 고정해, 구현 Chat 종료 시 Agent가 자동으로 테스트 가이드를 제공하게 함. Changes:
+
+- TG-A~J 총괄표·게이트별 배포/테스트 목록·권장 묶음(예: TG-D≈0~3)
+- 종료 프로토콜 §3.3-6 · 별칭 `테스트`/`TG-n` 라우팅
+Changed files: docs/report/upgrade_plan/00_INDEX.md, docs/log/log.md
+
+151. 2026-08-11 0차 베이스라인 안정화 — 정적 검증 PASS · HUMAN_CONSOLE 대기
+Purpose: #141 베이스라인 고정. 신규 기능 없이 회귀 스캔·litmus·종료 게이트만 수행하고 콘솔 화면 DoD는 운영자 확인으로 남김. Changes:
+
+- 선행 `git diff main -- new_ver/` EMPTY (docs/roadmap-v2)
+- 정적: 금지 API call 0 · CSS 금지 0 · FormatDate 0 · Reload colspan=3 · StudioJs↔html sync · v=139
+- plan 기록 · acc-id-tracer PASS · acc-verifier READY(화면 DoD BLOCKED)
+Changed files: docs/plan/0차_plan.md, docs/log/log.md
+
+150. 2026-08-11 INDEX 단일진입점 — 차수명만으로 라우팅·실행 프로토콜
+Purpose: 매 Chat에서 00_INDEX만 @하고 차수만 말해도 Agent가 가이드·공통문서를 찾아 진행하도록 INDEX를 라우팅 프로토콜로 확장. Changes:
+
+- 사용자입력→동작 8단계, 별칭표, 공통필수문서, 라우팅표, 시작/종료 체크리스트, 병렬·금지·착수순서
+Changed files: docs/report/upgrade_plan/00_INDEX.md, docs/log/log.md
+
+149. 2026-08-11 9차 가이드 — 미사용 코드 `_폐기` 개명·콘솔 삭제 정리
+Purpose: 고도화 마지막 차수(8차) 이후 디버깅 안정화 뒤 new_ver 미사용 자산과 Campaign 등록 객체를 깔끔히 제거하는 절차를 로드맵에 추가. Changes:
+
+- `15_구차수_9차_미사용코드폐기정리.md` — CLEAN-9-1~5, `_폐기` 파일명 규칙, 콘솔 삭제 순서, 시드 후보·폐기목록 템플릿
+- INDEX/추적표/8차 후속/ReportIndex/가드레일 연결
+Changed files: docs/report/upgrade_plan/15_구차수_9차_미사용코드폐기정리.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/14_구차수_8차_확장폼폐기.md, docs/report/11_고도화_추적표.md, docs/report/00_ReportIndex.md, .cursor/rules/00-acc-guardrails.mdc, docs/log/log.md
+
+148. 2026-08-11 로드맵 문서 P0-2·P1 수정 — PoC-0·INJ-8-2 본문승인·가드레일
+Purpose: 검수 P0-2/P1 반영. navtree view 비문서화 리스크를 PoC-0으로 막고, INJ-8-2 본문 반영을 운영자 승인으로 확정. Changes:
+
+- PoC-0 신설(1차 선행) · 1차 Step1 PASS/FAIL 분기 · 4차 navtree sysFilter 주석 DoD
+- 3차 lockedBy 파일명 고정(PASS: testWooWorkflowExt / FAIL: testWooAiWkfLock)
+- 6차 원안 본문 Write 유지(registered SQL만) · 추적표·INDEX·가드레일(tamplate/view/docs-code분리)
+Changed files: docs/report/upgrade_plan/*, docs/report/11_고도화_추적표.md, .cursor/rules/00-acc-guardrails.mdc, docs/log/log.md
+
+147. 2026-08-11 P0 브랜치 분리 — roadmap new_ver 복원 · fix/embed-layout
+Purpose: docs/roadmap-v2 커밋에 혼입된 new_ver 변경을 제거하고 문서 브랜치를 main 코드 베이스라인과 일치시킴. Changes:
+
+- 진단: html/js −2KB = #twDiag/_diag no-op·TW-BOOT 제거(b). #133 `_xhrPost` 유지(a 아님)
+- docs/roadmap-v2: new_ver 4파일을 main과 동일하게 복원 커밋
+- 레이아웃 후보만 fix/embed-layout 브랜치로 분리(0차 DoD 후 병합 검토)
+Changed files: new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
+
+146. 2026-08-11 고도화 기반 — 추적표·Rules/Skills/Agents·차수 가이드(0~8+PoC)
+Purpose: 관리자 아이디어 전수 ID화 + 커서 운용체계 + AI 실행용 차수 문서로 유실·환각 구현을 차단. new_ver 코드 변경 없음. Changes:
+
+- `docs/report/11_고도화_추적표.md` — 66 ID · 판정 · 차수 매핑 (UI-3-2=`@isAiFolder`, J-9-5-2=불가·경량언급, FLOW-5-3=Jaccard 0.9)
+- `.cursor/rules/00-acc-guardrails.mdc` + skills 5 + agents 3 (`acc-verifier`/`acc-id-tracer`/`acc-doc-writer`)
+- `docs/report/upgrade_plan/00_INDEX.md` + `01_0차`~`10_8차` + `04_3a_PoC` — Chat 첨부용 단독완결 가이드(HUMAN_CONSOLE·DoD·디버그)
+- ReportIndex 갱신 · 브랜치 `docs/roadmap-v2`
+Changed files: docs/report/11_고도화_추적표.md, docs/report/upgrade_plan/*, docs/report/00_ReportIndex.md, .cursor/rules/00-acc-guardrails.mdc, .cursor/skills/acc-*/, .cursor/agents/*, docs/log/log.md
+
+145. 2026-08-10 embed UI — 입력 2줄 · 답변 영역 확대 (v=143)
+Purpose: #144 에서 입력창을 과도하게 키운 것을 되돌리고, 생성 결과(답변) 영역에 공간을 배분 Changes:
+
+- textarea#nl: height 52px(~2줄), composer 를 hint 바로 아래로 이동
+- .answer 래퍼 min-height 280px · SQL pre max-height 240px
+- 폼/Studio ?v=143 (카드 id 동일 — JS 로직 변경 없음)
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
+
+144. 2026-08-10 Studio UI — 진단/TW-BOOT 제거 · 입력·이력 확대 (v=142)
+Purpose: 사용자용 UI 정리 — 진단 섹션·노란 TW-BOOT 제거, 자연어 입력창과 SQL 이력 세로 확대 Changes:
+
+- #twDiag / #twBoot / 노란 bgcolor 테이블 삭제 (상단 노란 깜빡임 원인)
+- embed textarea#nl height 200px(min) · body/side min-height 420px (table-cell 동시 확장)
+- urlViewer container height 560→640 · 폼/Studio ?v=142
+- _diag no-op · onerror 는 hint 배너만
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
+
+143. 2026-08-10 재오픈 흰화면 — enter 에도 _r=tick (urlViewer 캐시)
+Purpose: 동일 WF 창 닫았다 재오픈 시 Studio URL 에 _r 없어 urlViewer(IE)가 이전 문서를 재사용해 흰화면이 나던 문제 수정 Changes:
+
+- 원인: #139 가 enter 에서 _r 를 빼 동일 URL 재진입 → MSHTML 캐시. Reload 만 _r 갱신되어 그때만 정상
+- enter: ShellPick 후 twStudioUrl 에 `_r=`+tick 재설정 (선행 set 은 SOAP 실패 폴백 유지)
+- 폼 캐시 리트머스 v=141
+- Studio JSSP 변경 없음
+Changed files: new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
+
+142. 2026-08-10 embed SQL 이력 세로 채움 — table-cell 2열 · composer→main (v=140)
+Purpose: #139 float baseline 에서 SQL 이력이 콘텐츠 높이만 잡아 위·아래 공백이 생기던 문제를 해소. Changes:
+
+- embed: display:table / table-cell 2열(좌 64% / 우 36%), 행 높이 동일
+- composer 를 .main 안으로 이동(입력창이 이력 옆에 붙지 않음)
+- _showSqlSide: inline display 제거 → CSS table-cell 유지
+- 캐시 버스트 Studio/폼 ?v=140
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/input_form/testWooExtendWorkflow.xml, docs/log/log.md
 
 141. 2026-08-10 폼 그리드 좌측공백 — Reload 버튼 colspan=3
 Purpose: urlViewer 좌측 ~425px 공백 원인 확정(폼 그리드) · CSS 무수정 Changes:

@@ -5,6 +5,37 @@
 | 파일 | 용도 |
 |---|---|
 | `00_ReportIndex.md` | 리포트 폴더 인덱스 (본 문서) |
+| `11_고도화_추적표.md` | 고도화 아이디어 전수 ID(66+SF) · 판정 · 구차수·**신규 차수 재배정** — 유실 방지 소스 |
+| `upgrade_plan/00_INDEX.md` | AI 라우팅 (키 → 가이드) |
+| `upgrade_plan/[별도]_고도화_개발아이디어_관리자작성본.md` | 관리자 원문 (삭제 금지) |
+| `upgrade_plan/01_진행판.md` | **진행 단일본** — 완료/진행중/잔여 한눈에 |
+| `upgrade_plan/02_`~`15_구차수_*` | 구 0~9차 (**SUPERSEDED BY 19/20/21** · `[완료]`=02~11 가이드 폐쇄) |
+| `upgrade_plan/05_`~`08_구차수_3a_*` | PoC-0/1~3·C·T 절차·RESULT |
+| `upgrade_plan/16_고도화_추적표_포인터.md` | → `11_고도화_추적표.md` |
+| `upgrade_plan/17_[완료]_PoC-M_매칭의미론.md` | #145 조사 |
+| `upgrade_plan/18_[완료]_PoC-S_SQLFirst타당성.md` | #145R 조사 |
+| `upgrade_plan/19_SQLFirst_여정정본.md` | ST0~ST6 정본 |
+| `upgrade_plan/20_전환_자산판정표.md` | 자산 판정 |
+| `upgrade_plan/21_SQLFirst_R차수_실행가이드.md` | R0~R8 실행 |
+| `upgrade_plan/22_매칭오탐_사고기록.md` | #152 P0 |
+| `upgrade_plan/23_SQLFirst_AI명령문.md` | Chat 복붙 명령 |
+| `upgrade_plan/24_[완료]_PoC-V_값인식매칭.md` | #153 조사 |
+| `upgrade_plan/25_[완료]_임베딩경로_실태점검.md` | #155 |
+| `upgrade_plan/26_Match_C1C6_HUMAN검증.md` | #154 DoD HUMAN |
+| `upgrade_plan/27_스펙드리프트.md` | D-1~ |
+| `upgrade_plan/28_배포정합_진단.md` | #160/#161 JSSP↔JSlib 배포 대조·HUMAN 체크리스트 |
+| `upgrade_plan/30_Foundry_슬롯삼킴_P0.md` | #164 P0 — Foundry 슬롯 삼킴(색인 오염·AND 게이트·큐 이어달리기) |
+| `upgrade_plan/31_Foundry_원자화_파라미터화.md` | #167 — frag=축1=컬럼1 · {{param}}·param_domain 값사전 · 재사용 |
+| `upgrade_plan/32_필드도메인_자동판정_168A.md` | #168-A — schema-agnostic classifyField·도메인 스냅샷 · #168-B 분리 |
+| `upgrade_plan/33_LibraryFirst_서가우선_169.md` | #169 — Triage 서가 우선·Toolkit invoke 캐시 · 2회차 툴0 |
+| `upgrade_plan/34_Pass0_슬롯원자분할_170.md` | #170 — Pass0 축1슬롯1 · **[x]** #174 흡수 닫힘 |
+| `upgrade_plan/35_Generate_값바인딩_168B.md` | #168-B — plan.params ← param_domain · **[x]** #174 흡수 닫힘 |
+| `upgrade_plan/36_FragContract_공유계약.md` | #172 — Slot↔Index↔Match↔Bind 공유 계약 · **[x]** #174 흡수 닫힘 |
+| `upgrade_plan/37_ENPivot_CanonicalLayer_174.md` | #174 — EN-Pivot 추출/매칭 · **[x]** V6 · 재개 닫힘 |
+| `upgrade_plan/38_값확장_GroupExpansion_175.md` | #175 — 상위어 다대일 · **[~]** G1/G2/G4/G5/G6 PASS · 5단계 |
+| `upgrade_plan/39_상용화_여정갭.md` | 추출≠제품 · C-1~C-7 · UX-ST1 / UX-ST0 / R6 |
+| `upgrade_plan/40_프롬프트검증_ClarifyChips_176.md` | **#176 P0** — 모호 NL을 입력창 위 칩으로 보강 · C1~C3 repo · C4 HUMAN |
+| `upgrade_plan/41_완성로드맵.md` | **남은 일 순서 정본** — 다음 AI 시작 · `[S]` 목록 · 파도 1~3 |
 | `10_Fragment_생애주기_설계.md` | Fragment 승인 모델 게이트→라벨 전환 설계 — 현행 enum 매핑 · 빈도 기반 검수 · 야간 게이트 재실행 · 킬스위치는 revoked 재사용 |
 | `09_SQL생성추가_디버깅3.md` | F-0~F-5 반영 검증 후 잔여 C-1·E-1·E-2·A-1 — sanitize/compress 순서·phase 예산 누수·tokenBudget·자격 검증·스모크 9c |
 | `08_SQL생성추가_디버깅2.md` | Foundry 생성 단계 근원 진단 F-0~F-5 — 출력 계약 부재·루프 종료 불일치·자가진단 알고리즘·dryRunSlot 계측기 |

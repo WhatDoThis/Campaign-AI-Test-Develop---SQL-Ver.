@@ -1,0 +1,280 @@
+<%
+response.setContentType("application/json;charset=utf-8");
+/*
+ * testWooAiStudioContext.jssp (Studio 컨텍스트 API)
+ * ==================================================
+ * Program→Campaign→WKF 계층 탐색·생성·soft-lock.
+ * Shell 모드 상태머신과 embed WKF 선택이 공통 소비한다.
+ *
+ * [Main Functions]
+ * ===========
+ * - listAiFolders — @isAiFolder Program 목록
+ * - listCampaigns / createCampaign — Program 하위 Campaign
+ * - listWkfs / createWkf — Campaign 하위 WKF(Max 15, sqlCount=반영 SQL 건수)
+ * - listRegisteredSql — 최근 반영 SQL + WKF/Program 점프 메타(분기 B)
+ * - selectWkf / releaseLock — soft-lock 획득·해제(CSRF)
+ * - libVersions — 로드된 testWoo.* 모듈 __v JSON (expectedByMod: foundry=170 llm=187 enPivot=178 fragContract=186 env=160 cfg=160 common=160 feasibility=164 toolkit=164 gates=163 compiler=166 repo=163 workflowUi=162 fragments=166)
+ *
+ * [Dependencies]
+ * =========
+ * - woo:testWooCommon.js, testWooStudioContext.js, testWooWorkflowClone.js, testWooRepository.js
+ * - right testWooAiSqlGenerate · schema nms:program, nms:operation, xtk:workflow
+ * - right testWooAiSqlGenerate · schema nms:program, nms:operation, xtk:workflow
+ * - libVersions — 진단용으로 pipeline/Foundry JS 추가 loadLibrary
+ */
+try {
+  TW_RESPONSE = response;
+  TW_REQUEST = request;
+  TW_DOCUMENT = document;
+  loadLibrary("woo:testWooCommon.js");
+  requireRight("testWooAiSqlGenerate");
+  loadLibrary("woo:testWooStudioContext.js");
+  loadLibrary("woo:testWooWorkflowClone.js");
+  twRequireLib("woo:testWooStudioContext.js", (typeof testWoo !== "undefined") && testWoo.studioContext);
+  twRequireLib("woo:testWooWorkflowClone.js", (typeof testWoo !== "undefined") && testWoo.wfClone);
+
+  var p = readPayload();
+  var action = String(
+    p.action || TW_REQUEST.getParameter("action") || ""
+  ).toLowerCase();
+
+  if (action === "libversions") {
+    loadLibrary("woo:testWooConfig.js");
+    loadLibrary("woo:testWooEnv.js");
+    loadLibrary("woo:testWooFragContract.js");
+    loadLibrary("woo:testWooFragments.js");
+    loadLibrary("woo:testWooEnPivot.js");
+    loadLibrary("woo:testWooLlm.js");
+    loadLibrary("woo:testWooCompiler.js");
+    loadLibrary("woo:testWooGates.js");
+    loadLibrary("woo:testWooRepository.js");
+    loadLibrary("woo:testWooLifecycle.js");
+    loadLibrary("woo:testWooEmbedding.js");
+    loadLibrary("woo:testWooFoundry.js");
+    loadLibrary("woo:testWooMatch.js");
+    loadLibrary("woo:testWooProbe.js");
+    loadLibrary("woo:testWooDedup.js");
+    loadLibrary("woo:testWooToolkit.js");
+    loadLibrary("woo:testWooFeasibility.js");
+    loadLibrary("woo:testWooWorkflowUi.js");
+    // 모듈별 기대 __v. 기본 159. heal 경로만 올림(전체 강제 재배포 방지).
+    var expectedByMod = {
+      llm: "187", toolkit: "164", enPivot: "178",
+      fragContract: "186", fragments: "166", compiler: "166",
+      foundry: "170", dedup: "160", feasibility: "164", gates: "163",
+      env: "160", cfg: "160", common: "160",
+      repo: "163", workflowUi: "162"
+    };
+    var expectedDefault = "159";
+    function _twLibV(mod) {
+      try {
+        if (typeof testWoo === "undefined" || !testWoo[mod]) return null;
+        return testWoo[mod].__v != null ? String(testWoo[mod].__v) : null;
+      } catch (eV) {
+        return null;
+      }
+    }
+    var libs = {
+      common: _twLibV("common"),
+      env: _twLibV("env"),
+      cfg: _twLibV("cfg"),
+      fragContract: _twLibV("fragContract"),
+      fragments: _twLibV("fragments"),
+      llm: _twLibV("llm"),
+      enPivot: _twLibV("enPivot"),
+      compiler: _twLibV("compiler"),
+      gates: _twLibV("gates"),
+      repo: _twLibV("repo"),
+      lifecycle: _twLibV("lifecycle"),
+      embedding: _twLibV("embedding"),
+      foundry: _twLibV("foundry"),
+      match: _twLibV("match"),
+      probe: _twLibV("probe"),
+      dedup: _twLibV("dedup"),
+      toolkit: _twLibV("toolkit"),
+      feasibility: _twLibV("feasibility"),
+      studioContext: _twLibV("studioContext"),
+      wfClone: _twLibV("wfClone"),
+      workflowUi: _twLibV("workflowUi")
+    };
+    var mismatch = [];
+    for (var lk in libs) {
+      if (!libs.hasOwnProperty(lk)) continue;
+      var want = expectedByMod[lk] != null ? expectedByMod[lk] : expectedDefault;
+      if (libs[lk] == null || libs[lk] !== want) mismatch.push(lk);
+    }
+    jsonOut({
+      ok: true,
+      expected: expectedDefault,
+      expectedByMod: expectedByMod,
+      libs: libs,
+      mismatch: mismatch,
+      allMatch: mismatch.length === 0
+    });
+  } else if (action === "listaifolders") {
+    var lim = p.limit != null ? p.limit : 200;
+    var items = testWoo.studioContext.listAiFolders(lim);
+    jsonOut({ ok: true, items: items, count: items.length });
+  } else if (action === "listcampaigns") {
+    var progId = String(p.program_id || p.folder_id || "");
+    var limC = p.limit != null ? p.limit : 200;
+    var campRes = testWoo.wfClone.listCampaignsByProgram(progId, limC);
+    jsonOut({
+      ok: true,
+      items: campRes.items,
+      count: campRes.items.length,
+      program: campRes.program,
+      wkfMax: campRes.wkfMax
+    });
+  } else if (action === "createcampaign") {
+    requireStudioCsrf(p);
+    var progIdC = String(p.program_id || p.folder_id || "");
+    var camp = testWoo.wfClone.createCampaign(progIdC, p.label);
+    jsonOut({ ok: true, campaign: camp });
+  } else if (action === "listwkfs") {
+    var cidL = String(p.campaign_id || p.operation_id || "");
+    if (!cidL) {
+      throw new Error("campaign_id required (not program_id)");
+    }
+    var limW = p.limit != null ? p.limit : 200;
+    var wkfRes = testWoo.wfClone.listWkfsByCampaign(cidL, limW);
+    loadLibrary("woo:testWooRepository.js");
+    twRequireLib(
+      "woo:testWooRepository.js",
+      (typeof testWoo !== "undefined") && testWoo.repo
+    );
+    var itemsW = wkfRes.items || [];
+    for (var iw = 0; iw < itemsW.length; iw++) {
+      var cntW = 0;
+      try {
+        var rowsW = testWoo.repo.listAiSqlByWorkflow(itemsW[iw].name, 200);
+        if (rowsW) {
+          for (var ir = 0; ir < rowsW.length; ir++) {
+            if (String(rowsW[ir].status || "") === "registered") cntW++;
+          }
+        }
+      } catch (eCnt) {
+        cntW = 0;
+      }
+      itemsW[iw].sqlCount = cntW;
+    }
+    jsonOut({
+      ok: true,
+      items: itemsW,
+      count: wkfRes.items.length,
+      wkfCount: wkfRes.wkfCount,
+      wkfMax: wkfRes.wkfMax,
+      canCreateWkf: wkfRes.canCreateWkf,
+      template: testWoo.wfClone.getTemplateName(),
+      template_id: testWoo.wfClone.getWkfTemplateId(),
+      campaign_template_id: testWoo.wfClone.getCampaignTemplateId(),
+      open_mode: "fallback"
+    });
+  } else if (action === "listregisteredsql") {
+    loadLibrary("woo:testWooRepository.js");
+    twRequireLib(
+      "woo:testWooRepository.js",
+      (typeof testWoo !== "undefined") && testWoo.repo
+    );
+    var limR = p.limit != null ? p.limit : 10;
+    var recent = testWoo.repo.listRecentAiSql(limR);
+    var names = [];
+    for (var ri = 0; ri < recent.length; ri++) {
+      if (recent[ri].workflow_name) names.push(recent[ri].workflow_name);
+    }
+    var metaMap = {};
+    try {
+      metaMap = testWoo.wfClone.resolveWorkflowsByName(names);
+    } catch (eMeta) {
+      metaMap = {};
+    }
+    var itemsR = [];
+    for (var rj = 0; rj < recent.length; rj++) {
+      var rec = recent[rj];
+      var meta = metaMap[rec.workflow_name] || {};
+      itemsR.push({
+        id: rec.id,
+        title: rec.title,
+        nl_request: rec.nl_request,
+        status: rec.status,
+        used_fragments: rec.used_fragments || "[]",
+        param_key: rec.param_key || "",
+        workflow_name: rec.workflow_name,
+        creation_date: rec.creation_date,
+        workflow_id: meta.id || "",
+        workflow_label: meta.label || rec.workflow_name || "",
+        campaign_id: meta.campaign_id || "",
+        campaign_name: meta.campaign_name || "",
+        campaign_label: meta.campaign_label || "",
+        program_id: meta.program_id || "",
+        program_name: meta.program_name || "",
+        program_label: meta.program_label || ""
+      });
+    }
+    jsonOut({ ok: true, items: itemsR, count: itemsR.length });
+  } else if (action === "createwkf") {
+    requireStudioCsrf(p);
+    var cidC = String(p.campaign_id || p.operation_id || "");
+    if (!cidC) {
+      throw new Error("campaign_id required (not program_id)");
+    }
+    var created = testWoo.wfClone.createWkfFromTemplate(cidC, p.label);
+    jsonOut({
+      ok: true,
+      workflow: created,
+      open_mode: "fallback",
+      open_hint:
+        "Explorer\uC5D0\uC11C \uD574\uB2F9 WKF\uB97C \uC5F4\uC5B4 \uC8FC\uC138\uC694 (name=" +
+        created.name +
+        ", id=" +
+        created.id +
+        ")"
+    });
+  } else if (action === "selectwkf") {
+    requireStudioCsrf(p);
+    var widS = String(p.workflow_id || "");
+    var wnameS = String(p.workflow_name || "");
+    var lock = null;
+    var lockWarn = "";
+    try {
+      lock = testWoo.wfClone.acquireLock(widS, wnameS);
+    } catch (eLock) {
+      // 타 유저 점유만 하드 실패. 스키마/일시 Write 오류는 선택은 허용(SQL 목록 진입).
+      if (eLock && eLock.code === "LOCKED") throw eLock;
+      lockWarn = String(
+        eLock && eLock.message != null ? eLock.message : eLock
+      );
+      try {
+        logWarning("[testWooAiStudioContext.selectWkf] lock soft-fail: " + lockWarn);
+      } catch (eLw) {}
+    }
+    jsonOut({
+      ok: true,
+      workflow_id: widS,
+      workflow_name: wnameS,
+      lock: lock,
+      lock_warning: lockWarn,
+      open_mode: "fallback",
+      open_hint:
+        "Explorer\uC5D0\uC11C \uD574\uB2F9 WKF\uB97C \uC5F4\uC5B4 \uC8FC\uC138\uC694 (name=" +
+        wnameS +
+        ", id=" +
+        widS +
+        ")"
+    });
+  } else if (action === "releaselock") {
+    requireStudioCsrf(p);
+    var widR = String(p.workflow_id || "");
+    testWoo.wfClone.releaseLock(widR);
+    jsonOut({ ok: true, released: true, workflow_id: widR });
+  } else {
+    throw new Error(
+      "unknown action: " +
+        action +
+        " (libVersions|listAiFolders|listCampaigns|createCampaign|listWkfs|listRegisteredSql|createWkf|selectWkf|releaseLock)"
+    );
+  }
+} catch (e) {
+  handleApiError(e);
+}
+%>

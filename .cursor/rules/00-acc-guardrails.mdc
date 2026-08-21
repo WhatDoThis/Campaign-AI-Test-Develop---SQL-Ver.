@@ -1,0 +1,24 @@
+---
+description: ACC v7 absolute bans for Campaign AI Studio (Test Woo). Fail closed.
+alwaysApply: true
+---
+
+# ACC Guardrails (절대 금지)
+
+- Browser/JSSP client: `fetch`, `Promise`, `.finally`, `classList`, `forEach`, `alert`, `confirm`
+- ES6: `let`, `const`, arrow `=>`, template literals, `Array.map/filter/find/includes`
+- CSS: `flex`, `grid`, `vh`, CSS variables (`var(--*)`), `calc()`
+- API: `xtk:workflow#Spawn` (starts WF — never for create/clone)
+- XTK: `FormatDate`, `GetDate` in form scripts (XTK-170016)
+- Log: do not invent/skip/reorder `docs/log/log.md` numbers
+- Baseline: do not revert #133 / #135 / #137 / #141
+- Template file: `old_ver/workflow/tamplate.xml` (typo is the real name — do not "fix" to template.xml)
+- Retire unused `new_ver` assets only in phase 9: rename with `_폐기` then delete in Campaign console (never console-orphan)
+- Navtree `<command>` `view`/`viewType`: undocumented — do not rely on them until PoC-0 PASS
+- Commit: never mix docs/.cursor commits with `new_ver/` code commits
+- Commit: do not mix form XML + JSSP layout changes in one commit without deploy note
+- Deploy order: schema → js library → form/navtree → JSSP
+- Cache litmus: Studio URL must show `v=<n>`; missing `v=` = stale client
+- TBD design items: never implement with a silent default — stop and ask the user (`07_5차` name vs key_column → #152 match false-positive incident)
+- Match/similarity UI copy: never assert “포함/일치” without showing compared values (name-only sets are forbidden for user-facing match claims)
+- Option `testWooAiMatchEnabled`: default OFF until value-aware match (#154) passes C1–C6; AI must not flip ON without user approval

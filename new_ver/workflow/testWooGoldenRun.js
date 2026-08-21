@@ -2,7 +2,9 @@
  * testWooGoldenRun.js — WKF_testWooGolden 붙여넣기용
  */
 loadLibrary("woo:testWooConfig.js");
+loadLibrary("woo:testWooFragContract.js");
 loadLibrary("woo:testWooFragments.js");
+loadLibrary("woo:testWooEnPivot.js");
 loadLibrary("woo:testWooLlm.js");
 loadLibrary("woo:testWooCompiler.js");
 loadLibrary("woo:testWooGates.js");
