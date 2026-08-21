@@ -1,6 +1,8 @@
 # Log
 
 ## Log Index
+318. 2026-08-21 파도1 HUMAN — #308 PASS · #175-5 FAIL (cands=0)
+317. 2026-08-21 42 잔재대장 — R8 사전조사 문서 (grep 증거)
 316. 2026-08-21 llm 187 — _negKey Rhino 구문 오류 수정
 315. 2026-08-21 #175 회귀 — region M3 axis·cands=0 rescue (v=186)
 314. 2026-08-21 Phase Gate — 기존 구현 회귀 검증으로 정정
@@ -319,6 +321,23 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+318. 2026-08-21 파도1 HUMAN — #308 PASS · #175-5 FAIL (cands=0)
+Purpose: 파도1 HUMAN 2문장 운영자 회신 기록. AI 자체 PASS 금지 — 파도1 **미완료**.
+Changes:
+- `#308` `7월 미납자 남성` **PASS** — `2026-07`·`iUnpaid IN (1)`·`sGender IN ('M')` INTERSECT 3축 · debug `decide stage=pass1 matched=3` · Foundry 미진입 · llm=187 fragContract=186
+- `#175-5` `전라도에 사는 남성` **FAIL** — `unmatched empty «전라도» cands=0` · `rescue` 트레이스 없음 → `woo__customer__region` 축 카드 미탐색 추정 · Foundry `no_value/high` (전남·전북 DB probe는 정상)
+- `#176 C4-B` **SKIP** — 3접두 샘플 축 없음
+Next: ACC Console에서 `woo__customer__region` active fragment 존재·param_domain enum 확인 → 없으면 복구 후 재HUMAN
+Changed files: docs/log/log.md, docs/report/upgrade_plan/01_진행판.md
+
+317. 2026-08-21 42 잔재대장 — R8 사전조사 문서 (grep 증거)
+Purpose: 파도1 HUMAN 중 코드 변경 없이 Studio/JSSP 잔재를 grep 증거로 분류(S-1/R8/유지).
+Changes:
+- `42_잔재대장_R8사전조사.md` 신규 (표 12행)
+- `00_INDEX` · `01` 카탈로그 42번 1행씩
+Verification: new_ver/** 변경 0
+Changed files: docs/report/upgrade_plan/42_잔재대장_R8사전조사.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
 
 316. 2026-08-21 llm 187 — _negKey Rhino 구문 오류 수정
 Purpose: Generate `[Generate] missing ) in parenthetical` — _tryMatchOrExpand 삽입 시 _negKey 함수 헤더가 깨진 Rhino parse error.
