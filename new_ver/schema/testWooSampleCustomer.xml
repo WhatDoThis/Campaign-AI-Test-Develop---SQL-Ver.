@@ -17,8 +17,8 @@ woo:testWooSampleCustomer (Test Woo 샘플 고객)
 [Dependencies]
 =========
 - Adobe Campaign xtk:srcSchema (mappingType=sql)
-- 연계: woo:testWooSampleSubscription (@customer_id)
-- 시드: new_ver/workflow/testWooSampleSeed.js (WF JavaScript code activity)
+- 연계: woo:testWooSampleSubscription · testWooSampleDevice · testWooSampleBill · testWooSampleApp (@customer_id)
+- 시드: new_ver/workflow/testWooSampleSeed.js · testWooSampleSeed2.js
 -->
 <srcSchema _cs="Test Woo Sample Customer (woo)" mappingType="sql" name="testWooSampleCustomer" namespace="woo"
            label="Test Woo Sample Customer" labelSingular="Test Woo Sample Customer" xtkschema="xtk:srcSchema">

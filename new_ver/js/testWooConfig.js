@@ -1,7 +1,7 @@
 /*
  * testWooConfig.js (런타임 설정 병합)
  * ==================================================
- * litmus 동기 __v=159 (#160 배포정합).
+ * litmus 동기 __v=160 (debug.enabled 패스스루).
  * XtkOption 시크릿 3개와 testWooEnv 상수를 합쳐 파이프라인 cfg 객체 반환.
  * LLM·Foundry·Match 모듈이 공통으로 getConfig() 호출.
  * #168-A: triage.domainProbeRowLimit·domainTtlDays 패스스루(snapshotCap=valueProbeLimitMax).
@@ -95,10 +95,13 @@ testWoo.cfg = (function () {
         domainTtlDays: E.triage.domainTtlDays
       },
       toolkit: E.toolkit,
-      guard: G
+      guard: G,
+      debug: {
+        enabled: !!(E.debug && E.debug.enabled)
+      }
     };
   }
 
   return { getConfig: getConfig };
 })();
-testWoo.cfg.__v = "159";
+testWoo.cfg.__v = "160";

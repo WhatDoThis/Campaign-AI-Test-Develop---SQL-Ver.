@@ -1,6 +1,6 @@
 <%/*
  * testWooAiStudioJs.jssp (Studio 클라이언트 JS 서빙)
- * new_ver/html/testWooAiStudio.js 와 동기 유지 · v=181 · 새 SQL 쓰기 · 해시 중복 방지.
+ * new_ver/html/testWooAiStudio.js 와 동기 유지 · v=185 · #nlHints 보강칩.
  */
 response.setContentType("text/javascript;charset=utf-8");
 try {
@@ -16,6 +16,7 @@ try {
  * [Main Functions]
  * ===========
  * - generate / validate / register — ST0대상만들기 → ST1 목록(임시=이어서) → ST3~ST5 후 WKF면 R6 커밋
+ * - renderNlHints / applyNlPatch — #nlHints 클릭=표면만 보강 후 Generate 재호출
  * - loadAiFolders·selectFolder·loadCampaigns·createCampaign·loadWkfs·createWkf·selectWkf — ST3~ST5
  * - _jumpExistingSql — 분기 B 기존 SQL → Program/Campaign/WKF 점프 후 그 WKF SQL 이력
  * - _similarRegistered — param_key(값 없는 조건축) 비교. NL/조사 토큰 없음
@@ -24,7 +25,8 @@ try {
  * - loadSqlList — injected_at(없으면 creation_date) 최대 행을 반영됨으로 표시. 클릭 후 버튼=덮어쓰기
  * - _appendNewSqlRow — 임시 조건 [새 SQL 쓰기]. 넣기=신규 행, 같은 SQL 해시는 행 재사용
  * - putDraft / _cacheListDrafts — R2 미반영 SQL 캐시(twStudioCache)
- * - renderChips / _chipDisplay — 칩·해석 한 줄은 params 값 우선(U4)
+ * - renderChips / _chipDisplay — 칩은 params 값. `_group`이면 별칭 → 값. 미확인은 [맞음]
+ * - _loadRecentNl / _pushRecentNl / _renderRecentNl — 로그인별 최근 NL 질문(답변 없음)
  *
  * [Dependencies]
  * =========
@@ -39,7 +41,7 @@ try {
  * - intent create/reuse UI 폐기 — 분기는 목록 데이터(R4+)
  * - ST0 최초 진입 시 NL 즉시 활성(폴더 선지정 게이트 없음)
  * - Draft는 saveAiSql/DB 금지 — Register 성공 시만 DB
- * - Served /woo/testWooAiStudioJs.jssp?v=181 · 새 SQL 쓰기 · 스키마 반영이면 [WKF로 이동]
+ * - Served /woo/testWooAiStudioJs.jssp?v=185 · debug 트레이스 · 스키마 반영이면 [WKF로 이동]
  * - Foundry done 자동 재생성은 after_foundry(재큐잉 금지)
  */
 (function () {
@@ -330,7 +332,8 @@ try {
     cacheId: null,
     queuePoll: null,
     foundryDoneQid: null,
-    commitOk: false
+    commitOk: false,
+    clarifyRound: 0
   };
   var _delPending = { id: null, timer: null, btn: null };
   /* SQL-First: phase=ST0~ST6 · listMode=SQL|FOLDER|CAMPAIGN|WKF|WKFSQL */
@@ -410,10 +413,21 @@ try {
         (ss < 10 ? "0" : "") + ss;
       line.appendChild(document.createTextNode(ts + " " + String(msg)));
       el.appendChild(line);
-      if (el.childNodes.length > 200) {
+      if (el.childNodes.length > 400) {
         el.removeChild(el.firstChild);
       }
     } catch (eD) {}
+  }
+
+  function _diagServerTrace(res) {
+    if (!res) return;
+    var tr = res.debugTrace;
+    if ((!tr || !tr.length) && res.queue && res.queue.debugTrace)
+      tr = res.queue.debugTrace;
+    if (!tr || !tr.length) return;
+    if (res.debugOn) _diag("--- server debug ---");
+    var i;
+    for (i = 0; i < tr.length; i++) _diag(tr[i]);
   }
 
   function _installOnError() {
@@ -643,15 +657,31 @@ try {
   function pollQueue(queueId, reviewUrl) {
     var attempts = 0;
     var maxAttempts = QUEUE_POLL_MAX;
+    var dumpedDbg = false;
     if (state.queuePoll) clearInterval(state.queuePoll);
     state.queuePoll = setInterval(function () {
       attempts++;
       post("testWooAiQueueStatus.jssp", { queueId: queueId }, function (st) {
         if (!st.ok || !st.queue) return;
+        if (!dumpedDbg && st.debugTrace && st.debugTrace.length) {
+          dumpedDbg = true;
+          _diagServerTrace(st);
+        }
         var qs = st.queue.status;
         _renderQueueHint(qs, queueId, reviewUrl, st.queue.lastError);
         if (st.queue.slotResults && st.queue.slotResults.length)
           renderSlotResults(st.queue.slotResults, st.queue.partialPreview);
+        if (st.promptHints && st.promptHints.length) renderNlHints(st.promptHints);
+        else {
+          var _qi, _qs;
+          for (_qi = 0; st.queue.slotResults && _qi < st.queue.slotResults.length; _qi++) {
+            _qs = st.queue.slotResults[_qi] || {};
+            if (_qs.promptHints && _qs.promptHints.length) {
+              renderNlHints(_qs.promptHints);
+              break;
+            }
+          }
+        }
         if (qs === "awaiting_approval" || qs === "infeasible" || qs === "partially_infeasible" ||
             qs === "done" || qs === "failed" || qs === "needs_human_design" || qs === "throttled") {
           clearInterval(state.queuePoll);
@@ -704,23 +734,6 @@ try {
           esc(JSON.stringify(s.evidence, null, 2)) + "</pre>";
         el.appendChild(det);
       }
-      if (s.alternatives && s.alternatives.length) {
-        var chips = document.createElement("div");
-        chips.className = "alt-chips";
-        for (var ai = 0; ai < s.alternatives.length; ai++) {
-          (function (a) {
-            var c = document.createElement("span");
-            c.className = "alt-chip";
-            c.textContent = a.label || a.detail || a.type;
-            c.onclick = function () {
-              if (a.detail) $("nl").value = a.detail;
-              else if (a.label) $("nl").value = a.label;
-            };
-            chips.appendChild(c);
-          })(s.alternatives[ai]);
-        }
-        el.appendChild(chips);
-      }
       box.appendChild(el);
     }
     if (partialPreview && partialPreview.sql) {
@@ -740,19 +753,143 @@ try {
     return (inc.length + exc.length) > 0;
   }
 
+  var _recentNl = [];
+
+  function _clipNl(s, maxLen) {
+    s = _trim(s);
+    if (s.length > maxLen) return s.substring(0, maxLen);
+    return s;
+  }
+
+  function _renderRecentNl() {
+    var box = $("twRecentList");
+    if (!box) return;
+    box.innerHTML = "";
+    if (!_recentNl.length) {
+      var em = document.createElement("div");
+      em.className = "tw-rq-empty";
+      em.appendChild(document.createTextNode(
+        "\uC544\uC9C1 \uBCF4\uB0B8 \uC9C8\uBB38\uC774 \uC5C6\uC2B5\uB2C8\uB2E4."
+      ));
+      box.appendChild(em);
+      return;
+    }
+    var i, a;
+    for (i = 0; i < _recentNl.length; i++) {
+      a = document.createElement("a");
+      a.href = "#";
+      a.className = "tw-rq";
+      a.appendChild(document.createTextNode(_recentNl[i]));
+      a.onclick = (function (idx) {
+        return function () {
+          var t = $("nl");
+          if (t) t.value = _recentNl[idx];
+          return false;
+        };
+      })(i);
+      box.appendChild(a);
+    }
+  }
+
+  function _loadRecentNl() {
+    post("testWooAiValidate.jssp", { action: "listRecentNl" }, function (res) {
+      if (res && res.ok && res.items && res.items.length)
+        _recentNl = res.items;
+      _renderRecentNl();
+    });
+  }
+
+  function _pushRecentNl(text) {
+    var q = _clipNl(text, 240);
+    if (!q) return;
+    if (_recentNl.length && _recentNl[0] === q) {
+      _renderRecentNl();
+      return;
+    }
+    var next = [q];
+    var i;
+    for (i = 0; i < _recentNl.length && next.length < 8; i++) {
+      if (_recentNl[i] !== q) next.push(_recentNl[i]);
+    }
+    _recentNl = next;
+    _renderRecentNl();
+    post("testWooAiValidate.jssp", { action: "pushRecentNl", text: q }, function () {});
+  }
+
+  function applyNlPatch(orig, surface, patch) {
+    var o = String(orig == null ? "" : orig);
+    var s = String(surface == null ? "" : surface);
+    var p = String(patch == null ? "" : patch);
+    if (!p) return o;
+    if (o.indexOf(p) >= 0) return o;
+    if (s && o.indexOf(s) >= 0) return o.replace(s, p);
+    if (!o) return p;
+    return o + " " + p;
+  }
+
+  function clearNlHints() {
+    var box = $("nlHints");
+    if (box) box.innerHTML = "";
+  }
+
+  function renderNlHints(hints) {
+    var box = $("nlHints");
+    if (!box) return;
+    box.innerHTML = "";
+    var list = hints || [];
+    if (!list.length) return;
+    var hi, item, oi, opts, hint, chip;
+    for (hi = 0; hi < list.length; hi++) {
+      item = list[hi] || {};
+      opts = item.options || [];
+      for (oi = 0; oi < opts.length; oi++) {
+        hint = item;
+        chip = document.createElement("span");
+        chip.className = "alt-chip";
+        chip.textContent = opts[oi].label || opts[oi].patch || "";
+        chip.onclick = (function (h, opt) {
+          return function () {
+            var ta = $("nl");
+            if (!ta) return;
+            ta.value = applyNlPatch(ta.value, h.surface || "", opt.patch || opt.label || "");
+            state.clarifyRound = (Number(state.clarifyRound) || 0) + 1;
+            generate({ fromHint: true, clarifyPick: {
+              slotId: h.slotId || "",
+              surface: h.surface || "",
+              patch: opt.patch || opt.label || "",
+              value: opt.value,
+              union: !!opt.union,
+              param: opt.param || ""
+            } });
+          };
+        })(hint, opts[oi]);
+        box.appendChild(chip);
+      }
+    }
+  }
+
   function generate(opt) {
     var afterFoundry = !!(opt && opt.afterFoundry);
+    var fromHint = !!(opt && opt.fromHint);
+    if (!fromHint) {
+      state.clarifyRound = 0;
+      clearNlHints();
+    }
     var nl = _trim($("nl").value);
     if (!nl) return;
+    _pushRecentNl(nl);
     state.nl = nl; clearErr(); setBusy(true);
     _diag("generate start phase=" + ctx.phase + " afterFoundry=" + (afterFoundry ? "1" : "0"));
     var genPayload = {
       nl_request: nl,
-      workflow_name: _activeWorkflowName()
+      workflow_name: _activeWorkflowName(),
+      clarify_round: Number(state.clarifyRound) || 0
     };
     if (afterFoundry) genPayload.after_foundry = true;
+    if (fromHint && opt && opt.clarifyPick) genPayload.clarify_pick = opt.clarifyPick;
     post("testWooAiGenerate.jssp", genPayload, function (res) {
       try {
+        _diagServerTrace(res);
         if (res.status === "queued" && res.queueId) {
           if (afterFoundry) {
             showErr(
@@ -796,8 +933,11 @@ try {
               $("hint").textContent =
                 "\uC774 \uBD80\uBD84\uC740 \uD655\uC778\uC774 \uD544\uC694\uD569\uB2C8\uB2E4. " +
                 _ub.join(" \u00B7 ");
+              if (res.promptHints && res.promptHints.length) renderNlHints(res.promptHints);
+              else clearNlHints();
             } else if (res.retryInput) {
               $("hint").textContent = res.unmatched.join(" ");
+              clearNlHints();
             } else if (afterFoundry || res.afterFoundry) {
               $("hint").textContent =
                 "\uB77C\uC774\uBE0C\uB7EC\uB9AC\uC5D0 \uD574\uB2F9 \uCD95 fragment\uAC00 \uC5C6\uAC70\uB098 Stage A\uAC00 \uC544\uC9C1 \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. " +
@@ -819,6 +959,8 @@ try {
         state.sql = res.sql || "";
         state.summary = res.summary || "";
         state.passed = !!res.passed;
+        state.clarifyRound = 0;
+        clearNlHints();
         /* ST0 제출 성공 → ST1 · SQL 확정(passed)이면 ST2 (목록 UI는 R4) */
         if (SHELL_MODE) {
           ctx.phase = state.passed && _trim(state.sql) ? "ST2" : "ST1";
@@ -3233,8 +3375,15 @@ try {
     return bits.join(", ");
   }
 
+  var _lastChips = [];
+
   function _chipDisplay(c) {
     var val = _chipValueText(c);
+    if (c && c.groupAlias) {
+      if (val && String(c.groupAlias) !== val)
+        return String(c.groupAlias) + " \u2192 " + val;
+      return String(c.groupAlias);
+    }
     if (val) return val;
     return _trim((c && c.label) || "");
   }
@@ -3255,9 +3404,29 @@ try {
     return parts.join(" \u00B7 ");
   }
 
+  function _verifyGroupChip(c) {
+    if (!c || !c.fragment || !c.groupAlias || !c.groupParam) return;
+    post("testWooAiGenerate.jssp", {
+      action: "verifyGroup",
+      fragment: c.fragment,
+      param: c.groupParam,
+      alias: c.groupAlias
+    }, function (res) {
+      if (!res || res.ok === false) {
+        showErr(String((res && res.error) || "verifyGroup failed"));
+        return;
+      }
+      c.groupVerified = true;
+      renderChips(_lastChips);
+    }, function (e) {
+      showErr(String(e && e.message ? e.message : e));
+    });
+  }
+
   function renderChips(chips) {
     var box = $("chips"); box.innerHTML = "";
     var list = chips || [];
+    _lastChips = list;
     var line = $("chipLine");
     if (line) {
       var interp = _chipInterp(list);
@@ -3266,12 +3435,25 @@ try {
     }
     for (var i = 0; i < list.length; i++) {
       (function (c) {
-        var el = document.createElement("span"); el.className = "chip";
+        var el = document.createElement("span");
+        el.className = (c.groupAlias && c.groupVerified === false) ? "chip unverified" : "chip";
         el.innerHTML = "<span></span><button type='button' title='remove'>×</button>";
         var tag = c.role === "exclude" ? "\uC81C\uC678" : "\uD3EC\uD568";
         el.firstChild.textContent = tag + " " + _chipDisplay(c);
         var btn = el.getElementsByTagName("button")[0];
         if (btn) btn.onclick = function () { removeChip(c); };
+        if (c.groupAlias && c.groupVerified === false) {
+          var okb = document.createElement("button");
+          okb.type = "button";
+          okb.className = "chip-ok";
+          okb.title = "\uC774 \uBB36\uC74C\uC774 \uB9DE\uC2B5\uB2C8\uB2E4";
+          okb.innerHTML = "\uB9DE\uC74C";
+          okb.onclick = function (ev) {
+            if (ev && ev.stopPropagation) ev.stopPropagation();
+            _verifyGroupChip(c);
+          };
+          el.appendChild(okb);
+        }
         box.appendChild(el);
       })(list[i]);
     }
@@ -3475,6 +3657,7 @@ try {
       var btnGen = $("btnGen");
       var btnReg = $("btnReg");
       var nl = $("nl");
+      _loadRecentNl();
       if (btnGen) btnGen.onclick = function () { generate(); };
       if (btnReg) btnReg.onclick = function () { register(); };
       if (nl) {

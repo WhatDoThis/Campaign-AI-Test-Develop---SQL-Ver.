@@ -4,8 +4,14 @@
  * Stage A / libraryLookup / Foundry publish / Dedup / Compiler가
  * 각자 복제하던 축·색인·커버·샘플바인딩을 한곳에서 제공한다.
  * 같은 tags/name 축 frag는 값 사전 공백이어도 재사용하고, 별칭은 검증 후 merge한다.
- * NL 매칭은 M1 원문⊂문장 → M2 en[] → M3 concept. {db,en} 바인딩은 db만. litmus __v=175.
- * N대는 _bucket/ageMin·ageMax 축에서 번역 전에 {ageMin:N,ageMax:N+10}으로 묶는다.
+ * NL 매칭은 M1 원문⊂문장 → M2 en[] → M3 concept. {db,en} 바인딩은 db만. litmus __v=185.
+ * 모호 슬롯은 promptHints(합집합+멤버 ≤5). 클릭은 NL 보강. 감사시각은 슬롯당 GROUP BY 1회.
+ * 닫힌 enum이 있으면 후보=enum만. 별칭 db가 enum에 없으면 별칭 키(라이브 값)를 씀.
+ * N대는 번역 전 {ageMin:N,ageMax:N+10}. N대~M대는 {ageMin:N,ageMax:M+10}.
+ * N월은 도메인 YYYY-MM 중 그 월만 고른다. 연도 질문이 아니라 카탈로그 값.
+ * leftover는 및/and 슬롯의 다른 지정어만. 이미 매칭된 값(7월/10대)은 Foundry로 보내지 않는다.
+ * leftover는 컬럼 identity·번역 토큰만 본다. 색인(sample/synonyms)에 섞인 다른 필터는 커버로 치지 않는다.
+ * 한 슬롯에 서로 다른 축 카탈로그 값(또는 N월 형태)이 있으면 자른다. 원문(KO)만 본다. 도메인 예시 없음.
  *
  * [Main Functions]
  * ===========
@@ -13,23 +19,27 @@
  * - buildIndexFields — publish용 synonyms·sample_questions. `_group` 별칭 포함
  * - matchProfile / likeFieldExprs / scoreWeights / coverFieldNames — Match 프로필
  * - keywordsFromSlot — Stage A 토큰(+축 태그). 조사 어간 없음
- * - collectLexicon / splitByLexicon / mergeLexiconSlots — 카탈로그 값⊂NL 분할. `_group` 별칭 포함. 겹치면 EnPivot 필드 복사. LLM 스팬이 더 길면 덮지 않음
+ * - collectLexicon / splitByLexicon / mergeLexiconSlots / splitCompoundSlots — 카탈로그 값⊂NL 분할. identityOnly면 synonyms 제외. 한 슬롯 다축이면 자름. LLM 스팬이 더 길면 덮지 않음
  * - stemToken / isNoiseResidue — no-op (5단계: KO 사전 삭제)
- * - normalizeParamDomain / domainMatchSlot / entryDb — 도메인 정규화·값 매칭·{db,en} 원본. `_group` 별칭→members[]. 토큰 경계. N대는 _bucket 키·유도가 enum 접두보다 앞
+ * - normalizeParamDomain / domainMatchSlot / yearMonthHits / entryDb — 값 매칭. N월→YYYY-MM. N대는 _bucket. `_group` 별칭→members[]
  * - matchEnPivotSlot / conceptOf / kindCompatible — M1→M2G(`_group`)→M2→M3 매칭. N대는 EN 다히트 전에 묶음
  * - isNegative / markNegative / inHealCooldown / stampHeal — _negative·heal 쿨다운
  * - validateBind / attachAlias / mergeParamDomainJson — 바인딩 검증(배열은 원소별 enum)·별칭 보완(문장·공백 별칭 거부)·도메인 merge(`_group` 보존, nlMap 키 삭제 금지)
  * - sampleBindSql — {{param}} 검증/Dedup용 샘플 치환(유일 구현). 배열은 'a','b'
  * - promoteEqPlaceholderToIn — `col = {{p}}` → `col IN ({{p}})` (>= <= != 유지)
- * - coversSlot / libraryHitPredicate — 재사용·서가 히트(축 identity, 값 미등재≠신규)
+ * - coversSlot / libraryHitPredicate / slotCoverParts / splitCoordSlots / splitCompoundSlots — 재사용·및/and·다축 분할. leftover는 identity
  * - resolveNlParams — NL→params (Compiler bind 공유). `_group` 히트는 members[] (후보 교집합)
  * - upsertGroup — `_group` 별칭 기록(members는 후보 교집합, nlMap 키 유지)
+ * - groupHintForParams — params 멤버 집합 ↔ `_group` 별칭 (칩 표시용. SQL 변경 없음)
+ * - displayHintForParams — nlMap 별칭(학생요금) ↔ 바인딩 db (칩 표시)
+ * - buildPromptHints / applyNlPatch — 닫힌 도메인 2+히트 → 합집합+멤버 칩. surface→patch 보강
  * - logCode / errorCodes — FRAG_CONTRACT:<code> 로그
  *
  * [Dependencies]
  * =========
  * - testWoo.cfg — search.maxTokens·MAX_TOKEN_LEN (없으면 기본값)
- * - 호출: Fragments·Feasibility·Foundry·Dedup·Compiler (loadLibrary 선행)
+ * - testWoo.toolkit.auditMaxDates — 슬롯당 감사 GROUP BY 1회 (없으면 시계 B 스킵)
+ * - 호출: Fragments·Feasibility·Foundry·Dedup·Compiler·Generate (loadLibrary 선행)
  */
 var testWoo = testWoo || {};
 testWoo.fragContract = (function () {
@@ -77,6 +87,19 @@ testWoo.fragContract = (function () {
     other: ""
   };
 
+  // 조사·관사·접속만. 도메인 명사(월/미납/동의 종류)는 넣지 않는다.
+  var GLUE_TOK = {
+    and: 1, or: 1, but: 1, the: 1, a: 1, an: 1, to: 1, for: 1, of: 1, in: 1,
+    on: 1, at: 1, by: 1, with: 1, from: 1, as: 1, who: 1, those: 1, that: 1,
+    have: 1, has: 1, had: 1, are: 1, is: 1, was: 1, been: 1, being: 1,
+    their: 1, them: 1, they: 1, people: 1, person: 1, persons: 1,
+    receive: 1, receiving: 1, received: 1, notification: 1, notifications: 1,
+    consented: 1, consenting: 1, customer: 1, customers: 1, among: 1,
+    "한": 1, "하는": 1, "된": 1, "사람": 1, "중": 1, "및": 1, "와": 1, "과": 1,
+    "에서": 1, "으로": 1, "를": 1, "을": 1, "이": 1, "가": 1, "은": 1, "는": 1,
+    "인": 1, "자": 1, "에게": 1, "까지": 1, "고객": 1
+  };
+
   function _trim(s) {
     return String(s == null ? "" : s).replace(/^\s+|\s+$/g, "");
   }
@@ -91,12 +114,101 @@ testWoo.fragContract = (function () {
 
   function _induceNDae(text) {
     var t = _trim(String(text || ""));
-    var m = /^(\d{1,2})\uB300$/.exec(t);
+    var m = /(\d{1,2})\uB300\s*[\~\u301C\uFF5E\-]\s*(\d{1,2})\uB300/.exec(t);
+    if (!m) m = /(\d{1,2})s\s*[\~\-]\s*(\d{1,2})s/i.exec(_norm(t));
+    if (m) {
+      var a = Number(m[1]);
+      var b = Number(m[2]);
+      if (isNaN(a) || isNaN(b) || a < 1 || b < 1 || a > 90 || b > 90) return null;
+      if (a > b) {
+        var tmp = a;
+        a = b;
+        b = tmp;
+      }
+      return { ageMin: a, ageMax: b + 10 };
+    }
+    m = /^(\d{1,2})\uB300$/.exec(t);
     if (!m) m = /^(\d{1,2})s$/.exec(_norm(t));
     if (!m) return null;
     var n = Number(m[1]);
     if (isNaN(n) || n < 1 || n > 90) return null;
     return { ageMin: n, ageMax: n + 10 };
+  }
+
+  var EN_MONTH_NUM = {
+    january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
+    july: 7, august: 8, september: 9, october: 10, november: 11, december: 12
+  };
+
+  function _induceNWol(text) {
+    var t = _trim(String(text || ""));
+    if (!t) return null;
+    var ym = /^(\d{4})-(\d{2})$/.exec(t);
+    if (ym) {
+      var moY = Number(ym[2]);
+      if (isNaN(moY) || moY < 1 || moY > 12) return null;
+      return { month: moY, year: Number(ym[1]) };
+    }
+    var mw = /^(\d{1,2})\uC6D4$/.exec(t);
+    if (mw) {
+      var n = Number(mw[1]);
+      if (isNaN(n) || n < 1 || n > 12) return null;
+      return { month: n };
+    }
+    var low = t.toLowerCase();
+    if (EN_MONTH_NUM[low]) return { month: EN_MONTH_NUM[low] };
+    return null;
+  }
+
+  function _isYearMonth(s) {
+    return /^\d{4}-\d{2}$/.test(String(s || ""));
+  }
+
+  function _monthOfYearMonth(s) {
+    if (!_isYearMonth(s)) return 0;
+    return Number(String(s).substring(5, 7));
+  }
+
+  function yearMonthHits(slotText, values) {
+    var nw = _induceNWol(slotText);
+    if (!nw) return [];
+    var out = [];
+    var i, v;
+    for (i = 0; i < (values || []).length; i++) {
+      v = String(values[i] == null ? "" : values[i]);
+      if (_monthOfYearMonth(v) === nw.month) out.push(v);
+    }
+    return out;
+  }
+
+  function _yearMonthsInDomain(domain, month) {
+    var hits = [];
+    var seen = {};
+    function add(param, val) {
+      var v = String(val == null ? "" : val);
+      if (!_isYearMonth(v) || _monthOfYearMonth(v) !== month) return;
+      if (seen[v]) return;
+      seen[v] = 1;
+      hits.push({ param: param, value: v });
+    }
+    var k, spec, ei, nk, dbv;
+    if (!domain) return hits;
+    for (k in domain) {
+      if (!domain.hasOwnProperty(k) || String(k).charAt(0) === "_") continue;
+      spec = domain[k] || {};
+      if (spec.enum && typeof spec.enum.length === "number") {
+        for (ei = 0; ei < spec.enum.length; ei++) add(k, spec.enum[ei]);
+      }
+      if (spec.nlMap && typeof spec.nlMap === "object") {
+        for (nk in spec.nlMap) {
+          if (!spec.nlMap.hasOwnProperty(nk)) continue;
+          if (_isYearMonth(nk)) add(k, nk);
+          dbv = entryDb(spec.nlMap[nk]);
+          if (dbv != null && typeof dbv !== "object") add(k, dbv);
+        }
+      }
+    }
+    return hits;
   }
 
   function _domainAcceptsNDae(domain) {
@@ -358,7 +470,8 @@ testWoo.fragContract = (function () {
     return !_trim(text || "");
   }
 
-  function collectLexicon(cards) {
+  function collectLexicon(cards, opts) {
+    var identityOnly = !!(opts && opts.identityOnly);
     var out = [];
     var seen = {};
     var list = cards || [];
@@ -407,17 +520,29 @@ testWoo.fragContract = (function () {
         for (gi = 0; gi < gentry.members.length; gi++)
           add(gentry.members[gi], card);
       });
-      syn = card.synonyms;
-      if (typeof syn === "string") synParts = syn.split(/[,;]+/);
-      else if (syn && typeof syn.length === "number") synParts = syn;
-      else synParts = [];
-      for (si = 0; si < synParts.length; si++) add(synParts[si], card);
+      if (identityOnly) {
+        add(card.label, card);
+      } else {
+        syn = card.synonyms;
+        if (typeof syn === "string") synParts = syn.split(/[,;]+/);
+        else if (syn && typeof syn.length === "number") synParts = syn;
+        else synParts = [];
+        for (si = 0; si < synParts.length; si++) add(synParts[si], card);
+      }
     }
     return out;
   }
 
-  function splitByLexicon(nl, lexicon) {
-    var text = String(nl || "");
+  function _tokenAliasHitLoose(token, alias, dbHint, isGroup) {
+    if (_tokenAliasHit(token, alias, dbHint, isGroup)) return true;
+    var t = _norm(token);
+    var a = _norm(alias);
+    if (!t || !a || t.indexOf(a) !== 0) return false;
+    return _isGlueTok(t.substring(a.length));
+  }
+
+  function _lexHitsInText(text, lexicon, loose) {
+    text = String(text || "");
     if (!text || !lexicon || !lexicon.length) return [];
     var entries = [];
     var ei;
@@ -451,7 +576,10 @@ testWoo.fragContract = (function () {
           while (tokEnd < text.length && _isWordChar(text.charAt(tokEnd))) tokEnd++;
           var token = text.substring(tokStart, tokEnd);
           var hint = _lexHint(entries[ei].card, k);
-          if (!_tokenAliasHit(token, k, hint.db, hint.group)) {
+          var okHit = loose ?
+            _tokenAliasHitLoose(token, k, hint.db, hint.group) :
+            _tokenAliasHit(token, k, hint.db, hint.group);
+          if (!okHit) {
             pos = at + 1;
             continue;
           }
@@ -467,6 +595,76 @@ testWoo.fragContract = (function () {
         pos = at + 1;
       }
     }
+    return hits;
+  }
+
+  var EN_MONTH = {
+    january: 1, february: 1, march: 1, april: 1, june: 1,
+    july: 1, august: 1, september: 1, october: 1, november: 1, december: 1,
+    may: 1
+  };
+
+  function _shapeHitsInText(text) {
+    var s = String(text || "");
+    var hits = [];
+    var pos = 0;
+    var at, ds, n, prev;
+    while (pos < s.length) {
+      at = s.indexOf("\uC6D4", pos);
+      if (at < 0) break;
+      ds = at - 1;
+      if (ds >= 0 && /[0-9]/.test(s.charAt(ds))) {
+        if (ds > 0 && /[0-9]/.test(s.charAt(ds - 1))) ds = ds - 1;
+        n = Number(s.substring(ds, at));
+        prev = ds > 0 ? s.charAt(ds - 1) : "";
+        if (!isNaN(n) && n >= 1 && n <= 12 && (ds === 0 || !_isWordChar(prev))) {
+          hits.push({
+            start: ds,
+            key: s.substring(ds, at + 1),
+            name: "",
+            axis: "_shape_month",
+            card: null
+          });
+        }
+      }
+      pos = at + 1;
+    }
+    var parts = s.split(/[^0-9a-zA-Z가-힣]+/);
+    var pi, part, pl, idx, cursor;
+    cursor = 0;
+    for (pi = 0; pi < parts.length; pi++) {
+      part = parts[pi];
+      if (!part) continue;
+      idx = s.indexOf(part, cursor);
+      if (idx < 0) idx = s.toLowerCase().indexOf(part.toLowerCase(), cursor);
+      if (idx < 0) continue;
+      cursor = idx + part.length;
+      pl = part.toLowerCase();
+      if (EN_MONTH[pl] && (pl.length >= 4 || pl === "may")) {
+        hits.push({
+          start: idx,
+          key: part,
+          name: "",
+          axis: "_shape_month",
+          card: null
+        });
+      }
+      if (/^\d{4}-\d{2}$/.test(part)) {
+        hits.push({
+          start: idx,
+          key: part,
+          name: "",
+          axis: "_shape_month",
+          card: null
+        });
+      }
+    }
+    return hits;
+  }
+
+  function splitByLexicon(nl, lexicon) {
+    var text = String(nl || "");
+    var hits = _lexHitsInText(text, lexicon, false);
     hits.sort(function (a, b) { return a.start - b.start; });
     var slots = [];
     var seen = {};
@@ -517,6 +715,131 @@ testWoo.fragContract = (function () {
       if (!covered) out.push(s);
     }
     return out;
+  }
+
+  function _axisKey(h) {
+    return String((h && h.axis) || "") + "|" + String((h && h.name) || "");
+  }
+
+  function _pushHitUnique(arr, seen, h) {
+    if (!h || !h.key) return;
+    var id = _axisKey(h) + "|" + _norm(h.key);
+    if (seen[id]) return;
+    seen[id] = 1;
+    arr.push(h);
+  }
+
+  function _leftoverAfterHits(s, hits) {
+    var toks = _slotContentTokens({ text: String((s && (s.text || s.surface)) || "") });
+    var out = [];
+    var i, t, covered, hi;
+    for (i = 0; i < toks.length; i++) {
+      t = toks[i];
+      covered = false;
+      for (hi = 0; hi < (hits || []).length; hi++) {
+        if (_tokenAliasHitLoose(t, hits[hi].key, "", false)) {
+          covered = true;
+          break;
+        }
+      }
+      if (!covered) out.push(t);
+    }
+    return out.length ? out.join(" ") : "";
+  }
+
+  function _contentKey(s) {
+    var toks = _slotContentTokens({ text: String((s && (s.text || s.surface)) || "") });
+    var i, keys = [];
+    for (i = 0; i < toks.length; i++) keys.push(String(toks[i]).toLowerCase());
+    keys.sort();
+    return keys.join("|");
+  }
+
+  function _leftoverIsFull(s, leftover) {
+    if (!leftover) return false;
+    return _contentKey(s) === _contentKey({ text: leftover });
+  }
+
+  function _childFromHit(src, h) {
+    var kws = [h.key];
+    if (h.axis && String(h.axis).charAt(0) !== "_") kws.push(h.axis);
+    return {
+      id: "",
+      text: h.key,
+      surface: h.key,
+      hintedCategory: (src && src.hintedCategory) || "",
+      searchKeywords: kws,
+      resolvedName: h.name || "",
+      concept: null,
+      en_literal: "",
+      polarity: (src && src.polarity) || "include",
+      kind: h.axis === "_shape_month" ? "categorical" : ((src && src.kind) || "")
+    };
+  }
+
+  function _dedupSlots(slots) {
+    var out = [];
+    var seen = {};
+    var i, s, id;
+    for (i = 0; i < (slots || []).length; i++) {
+      s = slots[i];
+      if (!s) continue;
+      id = _norm(s.resolvedName || "") + "|" + _norm(s.text || s.surface || "");
+      if (seen[id]) continue;
+      seen[id] = 1;
+      out.push(s);
+    }
+    return out;
+  }
+
+  function splitCompoundSlots(slots, lexicon) {
+    var out = [];
+    var i, s, hits, seen, axes, leftover, hi, ak;
+    for (i = 0; i < (slots || []).length; i++) {
+      s = slots[i];
+      if (!s) continue;
+      var rawT = _trim(s.text || s.surface || "");
+      var ndRange = _induceNDae(rawT);
+      if (String(s.kind || "").toLowerCase() === "range" ||
+          (ndRange && /[\~\u301C\uFF5E\-]/.test(rawT))) {
+        out.push(s);
+        continue;
+      }
+      hits = [];
+      seen = {};
+      var srcKo = String(s.text || s.surface || "");
+      var raw = [];
+      var r1 = _lexHitsInText(srcKo, lexicon, true);
+      var r3 = _shapeHitsInText(srcKo);
+      var ri;
+      for (ri = 0; r1 && ri < r1.length; ri++) raw.push(r1[ri]);
+      for (ri = 0; r3 && ri < r3.length; ri++) raw.push(r3[ri]);
+      for (ri = 0; ri < raw.length; ri++) _pushHitUnique(hits, seen, raw[ri]);
+      axes = [];
+      seen = {};
+      for (hi = 0; hi < hits.length; hi++) {
+        ak = _axisKey(hits[hi]);
+        if (seen[ak]) continue;
+        seen[ak] = 1;
+        axes.push(hits[hi]);
+      }
+      leftover = _leftoverAfterHits(s, axes);
+      if (_leftoverIsFull(s, leftover)) leftover = "";
+      if (axes.length >= 2 || (axes.length === 1 && leftover)) {
+        try {
+          if (typeof twDbg === "function")
+            twDbg("splitCompound", "«" + srcKo + "» → " + axes.length +
+              "축" + (leftover ? (" leftover=" + leftover) : ""));
+        } catch (eSc) { /* skip */ }
+        for (hi = 0; hi < axes.length; hi++)
+          out.push(_childFromHit(s, axes[hi]));
+        if (leftover)
+          out.push(_coordChild(s, leftover, "", null));
+        continue;
+      }
+      out.push(s);
+    }
+    return _dedupSlots(out);
   }
 
   function _pushUniqueTok(arr, seen, raw) {
@@ -671,25 +994,226 @@ testWoo.fragContract = (function () {
     return parts.join(" ").toLowerCase().replace(/\s+/g, "");
   }
 
+  function _isGlueTok(raw) {
+    var t = String(raw || "").toLowerCase();
+    if (!t) return true;
+    return !!GLUE_TOK[t];
+  }
+
+  function _slotContentTokens(slot) {
+    var out = [];
+    var seen = {};
+    function addChunk(raw) {
+      var parts = String(raw || "").split(/[^0-9a-zA-Z가-힣]+/);
+      var i, t, key;
+      for (i = 0; i < parts.length; i++) {
+        t = _trim(parts[i]);
+        if (t.length < 2 || _isGlueTok(t)) continue;
+        key = t.toLowerCase();
+        if (seen[key]) continue;
+        seen[key] = 1;
+        out.push(t);
+      }
+    }
+    if (!slot) return out;
+    if (typeof slot === "string") {
+      addChunk(slot);
+      return out;
+    }
+    addChunk(slot.text);
+    addChunk(slot.en_literal);
+    var kws = slot.searchKeywords;
+    if (kws && _isArray(kws)) {
+      var ki;
+      for (ki = 0; ki < kws.length; ki++) addChunk(kws[ki]);
+    }
+    return out;
+  }
+
+  function _xpathLeaf(domain, card) {
+    var src = domain && domain._source;
+    var leaf = src && src.xpath ? String(src.xpath) : "";
+    leaf = leaf.replace(/^@/, "").replace(/.*\//, "");
+    if (!leaf && card && card.name) {
+      var segs = String(card.name).split("__");
+      leaf = segs.length ? segs[segs.length - 1] : "";
+    }
+    return leaf;
+  }
+
+  // 컬럼 고유 토큰. tags 축·색인 문장은 넣지 않음(오염된 synonyms가 leftover를 삼킴).
+  function _distinctiveIdentityToks(card, domain) {
+    var out = [];
+    var seen = {};
+    var axis = axisFromCard(card);
+    function add(raw) {
+      var parts = String(raw || "").toLowerCase().split(/[^0-9a-zA-Z가-힣]+/);
+      var i, t;
+      for (i = 0; i < parts.length; i++) {
+        t = parts[i];
+        if (t.length < 3 || _isGlueTok(t)) continue;
+        if (axis && t === String(axis).toLowerCase()) continue;
+        if (seen[t]) continue;
+        seen[t] = 1;
+        out.push(t);
+      }
+    }
+    add(_xpathLeaf(domain, card));
+    if (card && card.label) add(card.label);
+    if (domain && domain._source && domain._source.concept)
+      add(domain._source.concept);
+    return out;
+  }
+
+  function _hayHasTok(hayToks, blob, tok) {
+    var t = String(tok || "").toLowerCase();
+    if (!t) return false;
+    var i;
+    for (i = 0; i < hayToks.length; i++) {
+      if (String(hayToks[i] || "").toLowerCase() === t) return true;
+    }
+    return false;
+  }
+
+  function _hasCoord(slotObj) {
+    var s = String((slotObj && slotObj.text) || "") + " " +
+      String((slotObj && slotObj.en_literal) || "");
+    return /및|\band\b|[가-힣]와\s|[가-힣]과\s/.test(s);
+  }
+
+  // leftover는 및/and 가 있을 때만. 값 번역(July/teens)은 같은 필터이지 신규 축이 아님.
+  function slotCoverParts(card, slot, domainRaw) {
+    var slotObj = (slot && typeof slot === "object") ? slot :
+      { text: String(slot || ""), searchKeywords: [] };
+    var domain = normalizeParamDomain(domainRaw != null ? domainRaw :
+      (card && card.param_domain));
+    var dist = _distinctiveIdentityToks(card, domain);
+    var hay = _slotContentTokens(slotObj);
+    var blob = (String(slotObj.en_literal || "") + " " +
+      String(slotObj.text || "")).toLowerCase();
+    var identityHit = false;
+    var di;
+    for (di = 0; di < dist.length; di++) {
+      if (_hayHasTok(hay, blob, dist[di])) { identityHit = true; break; }
+    }
+    var covered = [];
+    var leftoverKo = [];
+    var leftoverEn = [];
+    var axis = axisFromCard(card);
+    var i, t, tl;
+    function _axisOrDist(tok) {
+      var x = String(tok || "").toLowerCase();
+      if (axis && x === String(axis).toLowerCase()) return true;
+      return _hayHasTok(dist, dist.join(" "), x);
+    }
+    for (i = 0; i < hay.length; i++) {
+      t = hay[i];
+      if (domainMatchSlot(domain, t)) {
+        covered.push(t);
+        continue;
+      }
+      if (_axisOrDist(t)) {
+        covered.push(t);
+        continue;
+      }
+      leftoverKo.push(t);
+    }
+    var enToks = _slotContentTokens({ text: slotObj.en_literal || "" });
+    for (i = 0; i < enToks.length; i++) {
+      t = enToks[i];
+      if (domainMatchSlot(domain, t)) {
+        covered.push(t);
+        continue;
+      }
+      if (_axisOrDist(t)) {
+        covered.push(t);
+        continue;
+      }
+      leftoverEn.push(t);
+    }
+    var leftover = [];
+    if (_hasCoord(slotObj))
+      leftover = leftoverEn.length ? leftoverEn : leftoverKo;
+    return {
+      covered: covered,
+      leftover: leftover,
+      identityHit: identityHit
+    };
+  }
+
+  function _splitCoordOnce(text, kind) {
+    var s = _trim(text);
+    if (!s) return null;
+    var m = kind === "en" ?
+      s.match(/^([\s\S]+?)\s+\band\b\s+([\s\S]+)$/i) :
+      s.match(/^([\s\S]+?)\s*(및|와|과)\s+([\s\S]+)$/);
+    if (!m) return null;
+    var left = _trim(m[1]);
+    var right = _trim(kind === "en" ? m[2] : m[3]);
+    if (!left || !right) return null;
+    var lToks = _slotContentTokens({ text: left });
+    var rToks = _slotContentTokens({ text: right });
+    if (!lToks.length || !rToks.length) return null;
+    return { left: left, right: right, lToks: lToks, rToks: rToks };
+  }
+
+  function _coordChild(src, text, enLit, spec) {
+    return {
+      id: "",
+      text: text,
+      surface: text,
+      hintedCategory: src.hintedCategory || "",
+      searchKeywords: spec ? [spec] : [],
+      resolvedName: "",
+      concept: null,
+      en_literal: enLit || "",
+      polarity: src.polarity || "include",
+      kind: src.kind || ""
+    };
+  }
+
+  // A 및 B HEAD → A HEAD + B HEAD. 범위(kind=range)는 나누지 않음.
+  function splitCoordSlots(slots) {
+    var out = [];
+    var i, s, ko, en, leftKo, rightKo, leftEn, rightEn, head;
+    for (i = 0; i < (slots || []).length; i++) {
+      s = slots[i];
+      if (!s) continue;
+      if (String(s.kind || "").toLowerCase() === "range") {
+        out.push(s);
+        continue;
+      }
+      ko = _splitCoordOnce(s.text || s.surface || "", "ko");
+      en = _splitCoordOnce(s.en_literal || "", "en");
+      if (!ko && !en) {
+        out.push(s);
+        continue;
+      }
+      leftKo = ko ? ko.left : "";
+      rightKo = ko ? ko.right : "";
+      if (ko && ko.lToks.length === 1 && ko.rToks.length >= 2) {
+        head = ko.rToks.slice(1).join(" ");
+        leftKo = ko.lToks[0] + (head ? " " + head : "");
+        rightKo = ko.right;
+      }
+      leftEn = en ? en.left : String(s.en_literal || "");
+      rightEn = en ? en.right : String(s.en_literal || "");
+      out.push(_coordChild(s, leftKo || leftEn, leftEn, ko ? ko.lToks[0] :
+        (en && en.lToks.length ? en.lToks[en.lToks.length - 1] : "")));
+      out.push(_coordChild(s, rightKo || rightEn, rightEn, ko ? ko.rToks[0] :
+        (en && en.rToks.length ? en.rToks[0] : "")));
+    }
+    for (i = 0; i < out.length; i++) out[i].id = "s" + (i + 1);
+    return out;
+  }
+
   function coversSlot(card, slot) {
     if (!card) return false;
     var slotObj = (slot && typeof slot === "object") ? slot :
       { text: String(slot || ""), searchKeywords: [] };
-    var slotText = String(slotObj.text || "");
     if (!axesCompatible(card, slotObj)) return false;
-    var need = (slotObj.searchKeywords && slotObj.searchKeywords.length) ?
-      slotObj.searchKeywords : slotText.split(/[^0-9a-zA-Z가-힣]+/);
-    var blob = _coverBlob(card);
-    var req = 0;
-    var hit = 0;
-    for (var i = 0; i < need.length; i++) {
-      var t = String(need[i] || "").toLowerCase().replace(/\s+/g, "");
-      if (t.length < 2) continue;
-      req++;
-      if (blob.indexOf(t) >= 0) hit++;
-    }
-    if (req > 0 && hit === req) return true;
-    return false;
+    var parts = slotCoverParts(card, slotObj, card.param_domain);
+    return parts.leftover.length === 0 && parts.covered.length > 0;
   }
 
   function _isEnPair(v) {
@@ -743,6 +1267,18 @@ testWoo.fragContract = (function () {
     };
   }
 
+  function _aliasParamKeyLocal(key) {
+    var k = String(key || "");
+    if (!k) return "";
+    if (k.indexOf("_") >= 0)
+      return k.replace(/_([a-zA-Z])/g, function (_, c) {
+        return String(c).toUpperCase();
+      });
+    return k.replace(/[A-Z]/g, function (c) {
+      return "_" + String(c).toLowerCase();
+    });
+  }
+
   function _paramCandidates(domain, pk) {
     var out = [];
     var seen = {};
@@ -753,17 +1289,29 @@ testWoo.fragContract = (function () {
       seen[s] = 1;
       out.push(s);
     }
-    var spec = (domain && domain[pk]) || {};
-    var ei, nk;
-    if (spec.enum && _isArray(spec.enum)) {
-      for (ei = 0; ei < spec.enum.length; ei++) add(spec.enum[ei]);
+    function addFromSpec(spec) {
+      if (!spec) return;
+      var ei, nk;
+      if (spec.enum && _isArray(spec.enum)) {
+        for (ei = 0; ei < spec.enum.length; ei++) add(spec.enum[ei]);
+      }
     }
-    if (spec.nlMap && typeof spec.nlMap === "object") {
+    function addNl(spec) {
+      if (!spec || !spec.nlMap || typeof spec.nlMap !== "object") return;
+      var nk;
       for (nk in spec.nlMap) {
         if (!spec.nlMap.hasOwnProperty(nk)) continue;
         add(entryDb(spec.nlMap[nk]));
       }
     }
+    var spec = (domain && domain[pk]) || {};
+    var alt = _aliasParamKeyLocal(pk);
+    var altSpec = (alt && alt !== pk && domain) ? domain[alt] : null;
+    addFromSpec(spec);
+    addFromSpec(altSpec);
+    if (out.length) return out;
+    addNl(spec);
+    addNl(altSpec);
     return out;
   }
 
@@ -781,7 +1329,12 @@ testWoo.fragContract = (function () {
   function _finestValue(domain, pk, alias, stored) {
     var a = alias != null ? String(alias) : "";
     if (a && _isCandDb(domain, pk, a)) return a;
-    return stored;
+    if (stored != null && stored !== "" && typeof stored !== "object" &&
+        _isCandDb(domain, pk, stored))
+      return stored;
+    var cand = _paramCandidates(domain, pk);
+    if (!cand.length) return stored;
+    return null;
   }
 
   function _filterGroupMembers(domain, pk, members) {
@@ -905,6 +1458,88 @@ testWoo.fragContract = (function () {
     return domain;
   }
 
+  function _paramBound(params, pk) {
+    if (!params || !pk) return null;
+    if (params[pk] != null && params[pk] !== "") return params[pk];
+    var want = String(pk).toLowerCase().replace(/_/g, "");
+    var k, kn;
+    for (k in params) {
+      if (!params.hasOwnProperty(k)) continue;
+      kn = String(k).toLowerCase().replace(/_/g, "");
+      if (kn === want && params[k] != null && params[k] !== "") return params[k];
+    }
+    return null;
+  }
+
+  function _sameMemberSet(a, b) {
+    var aa = _normalizeMembers(a);
+    var bb = _normalizeMembers(b);
+    if (!aa.length || aa.length !== bb.length) return false;
+    var seen = {};
+    var i;
+    for (i = 0; i < aa.length; i++) seen[String(aa[i]).toLowerCase()] = 1;
+    for (i = 0; i < bb.length; i++) {
+      if (!seen[String(bb[i]).toLowerCase()]) return false;
+    }
+    return true;
+  }
+
+  function groupHintForParams(domainRaw, params) {
+    var domain = normalizeParamDomain(domainRaw);
+    if (!domain || !domain._group || !params) return null;
+    var pk, alias, g, bound, hitUnverified = null, hitVerified = null;
+    var block, hint;
+    for (pk in domain._group) {
+      if (!domain._group.hasOwnProperty(pk)) continue;
+      bound = _paramBound(params, pk);
+      if (bound == null) continue;
+      block = domain._group[pk];
+      for (alias in block) {
+        if (!block.hasOwnProperty(alias)) continue;
+        g = block[alias];
+        if (!g || !_sameMemberSet(g.members, bound)) continue;
+        hint = {
+          param: pk,
+          alias: alias,
+          members: g.members,
+          verified: g.verified === true || g.verified === "true",
+          src: g.src || "llm"
+        };
+        if (!hint.verified) hitUnverified = hint;
+        else if (!hitVerified) hitVerified = hint;
+      }
+    }
+    return hitUnverified || hitVerified;
+  }
+
+  function displayHintForParams(domainRaw, params) {
+    var domain = normalizeParamDomain(domainRaw);
+    if (!domain || !params) return null;
+    var pk, spec, map, nk, dbv, val, hint = null;
+    for (pk in params) {
+      if (!params.hasOwnProperty(pk)) continue;
+      if (String(pk).charAt(0) === "_") continue;
+      val = params[pk];
+      if (val == null || typeof val === "object") continue;
+      spec = domain[pk] || {};
+      map = spec.nlMap;
+      if (!map || typeof map !== "object") continue;
+      if (map[String(val)]) {
+        hint = { param: pk, alias: String(val), value: String(val) };
+        continue;
+      }
+      for (nk in map) {
+        if (!map.hasOwnProperty(nk)) continue;
+        dbv = entryDb(map[nk]);
+        if (dbv != null && String(dbv) === String(val)) {
+          hint = { param: pk, alias: String(nk), value: String(val) };
+          break;
+        }
+      }
+    }
+    return hint;
+  }
+
   function domainMatchSlot(domainRaw, slotText) {
     var domain = normalizeParamDomain(domainRaw);
     if (!domain) return null;
@@ -915,6 +1550,18 @@ testWoo.fragContract = (function () {
     var nd0 = _induceNDae(text);
     if (nd0 && _domainAcceptsNDae(domain))
       return { param: "_bucket", nl: text, value: nd0 };
+    var nw0 = _induceNWol(text);
+    if (nw0) {
+      var ymHits = _yearMonthsInDomain(domain, nw0.month);
+      if (ymHits.length === 1)
+        return { param: ymHits[0].param, nl: text, value: ymHits[0].value };
+      if (ymHits.length > 1) {
+        var ymVals = [];
+        var ymi;
+        for (ymi = 0; ymi < ymHits.length; ymi++) ymVals.push(ymHits[ymi].value);
+        return { param: ymHits[0].param, nl: text, value: ymVals };
+      }
+    }
     var k;
     for (k in domain) {
       if (!domain.hasOwnProperty(k)) continue;
@@ -936,6 +1583,7 @@ testWoo.fragContract = (function () {
           if (_boundHas(text, nk, dbv, false) ||
               (dbv != null && typeof dbv !== "object" && _boundHas(text, dbv, dbv, false))) {
             bound = _finestValue(domain, k, nk, dbv != null ? dbv : map[nk]);
+            if (bound == null) continue;
             return { param: k, nl: String(nk), value: bound };
           }
         }
@@ -1192,8 +1840,8 @@ testWoo.fragContract = (function () {
     return axes.length === 1;
   }
 
-  // 서가 identity = 축 + _source + 단일 tags. 값 미등재는 heal 대상이지 신규 frag가 아님.
-  // 축 힌트 없는 슬롯은 키워드 AND 또는 도메인 값 매칭만(타축 삼킴 방지).
+  // 서가 identity = 축 + _source + 단일 tags. 값 미등재(도메인 매칭)는 heal.
+  // 색인에 없는 내용 명사가 남으면 히트 금지(같은 축 다른 컬럼 삼킴 방지).
   function libraryHitPredicate(card, slot, domainRaw) {
     if (!card) return false;
     var slotObj = (slot && typeof slot === "object") ? slot :
@@ -1203,19 +1851,9 @@ testWoo.fragContract = (function () {
     if (MATCH_PROFILE.libraryRequiresSource && (!domain || !domain._source))
       return false;
     if (!axesCompatible(card, slotObj)) return false;
-    var need = (slotObj.searchKeywords && slotObj.searchKeywords.length) ?
-      slotObj.searchKeywords : slotText.split(/[^0-9a-zA-Z가-힣]+/);
-    var blob = _coverBlob(card);
-    var req = 0;
-    var hit = 0;
-    var ti;
-    for (ti = 0; ti < need.length; ti++) {
-      var t = String(need[ti] || "").toLowerCase().replace(/\s+/g, "");
-      if (t.length < 2) continue;
-      req++;
-      if (blob.indexOf(t) >= 0) hit++;
-    }
-    if (req > 0 && hit === req) return true;
+    var parts = slotCoverParts(card, slotObj, domain);
+    if (parts.leftover.length) return false;
+    if (parts.covered.length) return true;
     var hints = axisFromSlot(slotObj);
     if (!hints.length) return !!domainMatchSlot(domain, slotText);
     if (!_isSingleAxisCached(card, domain)) return false;
@@ -1271,6 +1909,11 @@ testWoo.fragContract = (function () {
     var need = needKeys || null;
     var params = {};
     var pk;
+    var ndHay = _induceNDae(hay);
+    if (ndHay && _domainAcceptsNDae(domain)) {
+      if (!need || need.ageMin) params.ageMin = ndHay.ageMin;
+      if (!need || need.ageMax) params.ageMax = ndHay.ageMax;
+    }
 
     if (domain._bucket && domain._bucket.nlMap) {
       var bm = domain._bucket.nlMap;
@@ -1288,6 +1931,7 @@ testWoo.fragContract = (function () {
         for (pk in bestBv) {
           if (!bestBv.hasOwnProperty(pk)) continue;
           if (need && !need[pk]) continue;
+          if (params[pk] != null && params[pk] !== "") continue;
           params[pk] = bestBv[pk];
         }
       }
@@ -1560,6 +2204,496 @@ testWoo.fragContract = (function () {
     return { changed: changed, json: JSON.stringify(base), domain: base };
   }
 
+  function applyNlPatch(orig, surface, patch) {
+    var o = String(orig == null ? "" : orig);
+    var s = String(surface == null ? "" : surface);
+    var p = String(patch == null ? "" : patch);
+    if (!p) return o;
+    if (o.indexOf(p) >= 0) return o;
+    if (s && o.indexOf(s) >= 0) return o.replace(s, p);
+    if (!o) return p;
+    return o + " " + p;
+  }
+
+  function _emptyHints() {
+    var out = [];
+    out.auditSqlCount = 0;
+    return out;
+  }
+
+  function _maxClarifyRounds(opts) {
+    var n;
+    if (opts && opts.maxRounds != null) {
+      n = Number(opts.maxRounds);
+      if (!isNaN(n) && n >= 0) return n;
+    }
+    try {
+      var env = testWoo.env && testWoo.env.getEnv ? testWoo.env.getEnv() : null;
+      if (env && env.triage && env.triage.clarifyMaxRounds != null) {
+        n = Number(env.triage.clarifyMaxRounds);
+        if (!isNaN(n) && n >= 0) return n;
+      }
+    } catch (eE) { /* default */ }
+    try {
+      var cfg = testWoo.cfg && testWoo.cfg.getConfig ? testWoo.cfg.getConfig() : null;
+      if (cfg && cfg.triage && cfg.triage.clarifyMaxRounds != null) {
+        n = Number(cfg.triage.clarifyMaxRounds);
+        if (!isNaN(n) && n >= 0) return n;
+      }
+    } catch (eC) { /* default */ }
+    return 2;
+  }
+
+  function _snapshotCapOf(opts) {
+    var n;
+    if (opts && opts.snapshotCap != null) {
+      n = Number(opts.snapshotCap);
+      if (!isNaN(n) && n > 0) return n;
+    }
+    try {
+      var env = testWoo.env && testWoo.env.getEnv ? testWoo.env.getEnv() : null;
+      if (env && env.triage && env.triage.valueProbeLimitMax != null) {
+        n = Number(env.triage.valueProbeLimitMax);
+        if (!isNaN(n) && n > 0) return n;
+      }
+    } catch (eE) { /* default */ }
+    return 200;
+  }
+
+  function _closedValues(domain) {
+    var out = [];
+    var seen = {};
+    function add(v) {
+      if (v == null || typeof v === "object") return;
+      var s = String(v);
+      if (!s || seen[s]) return;
+      seen[s] = 1;
+      out.push(s);
+    }
+    var k, spec, ei, nk;
+    if (!domain) return out;
+    for (k in domain) {
+      if (!domain.hasOwnProperty(k) || String(k).charAt(0) === "_") continue;
+      spec = domain[k] || {};
+      if (spec.enum && _isArray(spec.enum)) {
+        for (ei = 0; ei < spec.enum.length; ei++) add(spec.enum[ei]);
+      }
+      if (spec.nlMap && typeof spec.nlMap === "object") {
+        for (nk in spec.nlMap) {
+          if (!spec.nlMap.hasOwnProperty(nk)) continue;
+          add(entryDb(spec.nlMap[nk]));
+        }
+      }
+    }
+    return out;
+  }
+
+  function _probeHintValues(probes) {
+    var out = [];
+    var seen = {};
+    var i, p, arr, j, v;
+    for (i = 0; i < (probes || []).length; i++) {
+      p = probes[i] || {};
+      arr = p.distinctValues || p.candidatesTop10 || [];
+      if (p.matchedValue) arr = [p.matchedValue].concat(arr);
+      for (j = 0; j < arr.length; j++) {
+        v = String(arr[j] == null ? "" : arr[j]);
+        if (!v || seen[v]) continue;
+        seen[v] = 1;
+        out.push(v);
+      }
+    }
+    return out;
+  }
+
+  function _mergeHintValues(domain, probes) {
+    var out = [];
+    var seen = {};
+    var src = _closedValues(domain);
+    var extra = _probeHintValues(probes);
+    var i, v;
+    function add(x) {
+      v = String(x == null ? "" : x);
+      if (!v || seen[v]) return;
+      seen[v] = 1;
+      out.push(v);
+    }
+    for (i = 0; i < src.length; i++) add(src[i]);
+    for (i = 0; i < extra.length; i++) add(extra[i]);
+    return out;
+  }
+
+  function _hintTokens(text) {
+    var raw = String(text || "").split(/[^0-9a-zA-Z가-힣_]+/);
+    var out = [];
+    var seen = {};
+    var i, t;
+    t = _trim(text);
+    if (t.length >= 2 && t.length <= 24) {
+      out.push(t);
+      seen[_norm(t)] = 1;
+    }
+    for (i = 0; i < raw.length; i++) {
+      t = _trim(raw[i]);
+      if (t.length < 2 || seen[_norm(t)]) continue;
+      seen[_norm(t)] = 1;
+      out.push(t);
+    }
+    return out;
+  }
+
+  function _valueMatchesToken(val, token, domain) {
+    var t = _trim(token);
+    if (!t || t.length < 2) return false;
+    var v = String(val == null ? "" : val);
+    if (!v) return false;
+    if (_norm(v).indexOf(_norm(t)) === 0) return true;
+    if (_boundHas(v, t, v, false)) return true;
+    var k, spec, dbv;
+    if (!domain) return false;
+    for (k in domain) {
+      if (!domain.hasOwnProperty(k) || String(k).charAt(0) === "_") continue;
+      spec = domain[k] || {};
+      if (spec.nlMap && spec.nlMap[t] != null) {
+        dbv = entryDb(spec.nlMap[t]);
+        if (dbv != null && String(dbv) === v) return true;
+      }
+    }
+    return false;
+  }
+
+  function _bestHintToken(text, values, domain) {
+    var toks = _hintTokens(text);
+    var best = "";
+    var bestN = 1;
+    var i, j, n, t;
+    for (i = 0; i < toks.length; i++) {
+      t = toks[i];
+      n = 0;
+      for (j = 0; j < (values || []).length; j++) {
+        if (_valueMatchesToken(values[j], t, domain)) n++;
+      }
+      if (n >= 2 && (n > bestN || (n === bestN && t.length > best.length))) {
+        bestN = n;
+        best = t;
+      }
+    }
+    return best;
+  }
+
+  function _paramOfValues(domain, values) {
+    if (!domain || !values || !values.length) return "";
+    var k, spec, ei, nk, dbv, i, want;
+    for (k in domain) {
+      if (!domain.hasOwnProperty(k) || String(k).charAt(0) === "_") continue;
+      spec = domain[k] || {};
+      for (i = 0; i < values.length; i++) {
+        want = String(values[i]);
+        if (spec.enum && _isArray(spec.enum)) {
+          for (ei = 0; ei < spec.enum.length; ei++) {
+            if (String(spec.enum[ei]) === want) return k;
+          }
+        }
+        if (spec.nlMap && typeof spec.nlMap === "object") {
+          for (nk in spec.nlMap) {
+            if (!spec.nlMap.hasOwnProperty(nk)) continue;
+            dbv = entryDb(spec.nlMap[nk]);
+            if (dbv != null && String(dbv) === want) return k;
+          }
+        }
+      }
+    }
+    return "";
+  }
+
+  function _allTimeValues(hits) {
+    var i, s;
+    if (!hits || !hits.length) return false;
+    for (i = 0; i < hits.length; i++) {
+      s = String(hits[i] || "");
+      if (!/^\d{4}-\d{2}(-\d{2}(T.*)?)?$/.test(s)) return false;
+    }
+    return true;
+  }
+
+  function _slotTier(slot, domain) {
+    var t = String((slot && slot.tier) || "").toLowerCase();
+    if (t) return t;
+    var src = domain && domain._source;
+    if (src && src.tier) return String(src.tier).toLowerCase();
+    if (testWoo.toolkit && testWoo.toolkit.classifyField && src && src.schema && src.xpath) {
+      try {
+        var cls = testWoo.toolkit.classifyField(src.schema, src.xpath);
+        if (cls && cls.tier) return String(cls.tier).toLowerCase();
+      } catch (eC) { /* unknown */ }
+    }
+    return "unknown";
+  }
+
+  function _loadAuditDates(opts, domain, hits) {
+    opts = opts || {};
+    if (opts.auditDates) return { dates: opts.auditDates, sqlCount: 0 };
+    if (typeof opts.auditFn === "function") {
+      var d = {};
+      try { d = opts.auditFn(hits, domain) || {}; } catch (eF) { d = {}; }
+      return { dates: d, sqlCount: 1 };
+    }
+    var src = domain && domain._source;
+    if (!src || !src.schema || !src.xpath) return { dates: {}, sqlCount: 0 };
+    if (!testWoo.toolkit || !testWoo.toolkit.auditMaxDates)
+      return { dates: {}, sqlCount: 0 };
+    try {
+      var r = testWoo.toolkit.auditMaxDates(src.schema, src.xpath, hits);
+      if (!r) return { dates: {}, sqlCount: 0 };
+      return { dates: r.dates || {}, sqlCount: Number(r.sqlCount) || 0 };
+    } catch (eA) {
+      return { dates: {}, sqlCount: 0 };
+    }
+  }
+
+  function _sortHintMembers(hits, dates, clockA) {
+    var copy = [];
+    var i;
+    for (i = 0; i < (hits || []).length; i++) copy.push(hits[i]);
+    if (clockA) {
+      copy.sort(function (a, b) {
+        var sa = String(a);
+        var sb = String(b);
+        if (sa === sb) return 0;
+        return sa > sb ? -1 : 1;
+      });
+      return copy;
+    }
+    if (!dates) return copy;
+    copy.sort(function (a, b) {
+      var da = dates[a] || {};
+      var db = dates[b] || {};
+      var ma = String(da.modified || "");
+      var mb = String(db.modified || "");
+      if (ma !== mb) return ma > mb ? -1 : 1;
+      var ca = String(da.created || "");
+      var cb = String(db.created || "");
+      if (ca !== cb) return ca > cb ? -1 : 1;
+      return 0;
+    });
+    return copy;
+  }
+
+  function _collectHintHits(slot, domain, values) {
+    var text = String((slot && (slot.surface || slot.slotText || slot.text)) || "");
+    var ym = yearMonthHits(text, values);
+    if (ym.length)
+      return { hits: ym, token: text, param: _paramOfValues(domain, ym), clockA: true };
+    var gBest = null;
+    if (domain) {
+      _eachGroup(domain, function (gpk, alias, gentry) {
+        if (!_boundHas(text, alias, null, true)) return;
+        var mem = _filterGroupMembers(domain, gpk, gentry.members);
+        if (mem.length < 2) return;
+        if (!gBest || String(alias).length > String(gBest.token).length)
+          gBest = { hits: mem, token: alias, param: gpk, clockA: false };
+      });
+    }
+    if (gBest) return gBest;
+    var token = _bestHintToken(text, values, domain);
+    if (!token) return { hits: [], token: "", param: "", clockA: false };
+    var hits = [];
+    var i;
+    for (i = 0; i < (values || []).length; i++) {
+      if (_valueMatchesToken(values[i], token, domain)) hits.push(values[i]);
+    }
+    return {
+      hits: hits,
+      token: token,
+      param: _paramOfValues(domain, hits),
+      clockA: _allTimeValues(hits)
+    };
+  }
+
+  function _columnHintOptions(columns) {
+    var out = [];
+    var seen = {};
+    var i, c, lab;
+    for (i = 0; i < (columns || []).length && out.length < 5; i++) {
+      c = columns[i] || {};
+      lab = String(c.label || c.columnName || c.sqlColumn || c.name || "");
+      if (!lab || seen[lab]) continue;
+      seen[lab] = 1;
+      out.push({
+        label: lab,
+        patch: lab,
+        value: String(c.sqlColumn || c.columnName || lab),
+        union: false
+      });
+    }
+    return out;
+  }
+
+  function _hintForSlot(slot, opts) {
+    var domain = normalizeParamDomain(slot && slot.domain);
+    var tier = _slotTier(slot, domain);
+    if (tier === "highcard" || tier === "high_card") tier = "highCard";
+    if (tier === "highCard" || tier === "link")
+      return { item: null, auditSqlCount: 0 };
+    var cols = (slot && slot.columns) || [];
+    var values = _mergeHintValues(domain, (slot && slot.probes) || []);
+    var packed = _collectHintHits(slot, domain, values);
+    var cap = _snapshotCapOf(opts);
+    if (packed.hits.length > cap)
+      return { item: null, auditSqlCount: 0 };
+    if (packed.hits.length >= 2) {
+      var clockA = packed.clockA || _allTimeValues(packed.hits);
+      var audit = { dates: {}, sqlCount: 0 };
+      if (!clockA) audit = _loadAuditDates(opts, domain, packed.hits);
+      var members = _sortHintMembers(packed.hits, audit.dates, clockA);
+      var token = packed.token || String((slot && slot.surface) || "");
+      var options = [];
+      options.push({
+        label: token + " 전체",
+        patch: token + " 전체",
+        value: packed.hits.slice(0),
+        union: true,
+        param: packed.param || ""
+      });
+      var mi, db;
+      for (mi = 0; mi < members.length && options.length < 5; mi++) {
+        db = String(members[mi]);
+        options.push({
+          label: db,
+          patch: db,
+          value: db,
+          union: false,
+          param: packed.param || ""
+        });
+      }
+      var hintTier = tier;
+      if (hintTier === "unknown" || hintTier === "categorical") hintTier = "enum";
+      if (hintTier !== "enum" && hintTier !== "distinct" &&
+          hintTier !== "range" && hintTier !== "boolean")
+        hintTier = "distinct";
+      return {
+        auditSqlCount: audit.sqlCount || 0,
+        item: {
+          slotId: String((slot && slot.slotId) || ""),
+          surface: token,
+          kind: "value",
+          tier: hintTier,
+          options: options
+        }
+      };
+    }
+    if (cols.length >= 2) {
+      var cOpts = _columnHintOptions(cols);
+      if (cOpts.length >= 2) {
+        return {
+          auditSqlCount: 0,
+          item: {
+            slotId: String((slot && slot.slotId) || ""),
+            surface: String((slot && (slot.surface || slot.slotText || slot.text)) || ""),
+            kind: "column",
+            tier: "distinct",
+            options: cOpts
+          }
+        };
+      }
+    }
+    return { item: null, auditSqlCount: 0 };
+  }
+
+  function buildPromptHints(input) {
+    var empty = _emptyHints();
+    input = input || {};
+    if (input.retryInput) return empty;
+    var round = Number(input.clarifyRound) || 0;
+    if (round < 0) round = 0;
+    if (round >= _maxClarifyRounds(input)) return empty;
+    var slots = input.slots || [];
+    var i, slot, hint;
+    var sqlN = 0;
+    for (i = 0; i < slots.length; i++) {
+      slot = slots[i] || {};
+      if (slot.retryInput) continue;
+      hint = _hintForSlot(slot, input);
+      if (hint && hint.auditSqlCount) sqlN += Number(hint.auditSqlCount) || 0;
+      if (hint && hint.item && hint.item.options && hint.item.options.length >= 2) {
+        var out = [hint.item];
+        out.auditSqlCount = sqlN;
+        return out;
+      }
+    }
+    empty.auditSqlCount = sqlN;
+    return empty;
+  }
+
+  function buildPromptHintsFromUnresolved(unresolved, opts) {
+    opts = opts || {};
+    var slots = [];
+    var i, u, row, domain;
+    for (i = 0; i < (unresolved || []).length; i++) {
+      u = unresolved[i] || {};
+      domain = u.domain || null;
+      if (!domain && u.fragment && testWoo.fragments && testWoo.fragments.getByName) {
+        try {
+          row = testWoo.fragments.getByName(String(u.fragment));
+          if (row) domain = row.param_domain;
+        } catch (eG) { domain = null; }
+      }
+      slots.push({
+        slotId: u.slotId || ("u" + i),
+        surface: u.surface || u.text || "",
+        reason: u.reason || "",
+        domain: domain,
+        probes: u.probes || [],
+        columns: u.columns || [],
+        retryInput: !!u.retryInput
+      });
+    }
+    return buildPromptHints({
+      slots: slots,
+      nl: opts.nl || "",
+      clarifyRound: opts.clarifyRound || 0,
+      maxRounds: opts.maxRounds,
+      auditDates: opts.auditDates,
+      snapshotCap: opts.snapshotCap
+    });
+  }
+
+  function buildPromptHintsFromSlotResults(slotResults, opts) {
+    opts = opts || {};
+    var slots = [];
+    var i, s, ev, domain, row, verdict;
+    for (i = 0; i < (slotResults || []).length; i++) {
+      s = slotResults[i] || {};
+      verdict = String(s.verdict || "").toLowerCase();
+      if (verdict === "feasible") continue;
+      ev = s.evidence || {};
+      domain = ev.domain || null;
+      if (!domain && ev.fragmentName && testWoo.fragments && testWoo.fragments.getByName) {
+        try {
+          row = testWoo.fragments.getByName(String(ev.fragmentName));
+          if (row) domain = row.param_domain;
+        } catch (eG) { domain = null; }
+      }
+      slots.push({
+        slotId: s.slotId || ("s" + i),
+        surface: s.slotText || "",
+        reason: s.verdict || "",
+        domain: domain,
+        probes: ev.valueProbes || [],
+        columns: ev.columnsConsidered || [],
+        tier: ev.tier || (ev.source && ev.source.tier) || ""
+      });
+    }
+    return buildPromptHints({
+      slots: slots,
+      nl: opts.nl || "",
+      clarifyRound: opts.clarifyRound || 0,
+      maxRounds: opts.maxRounds,
+      auditDates: opts.auditDates,
+      snapshotCap: opts.snapshotCap
+    });
+  }
+
   function scoreCard(meta, tokens, hintCat) {
     var weights = MATCH_PROFILE.scoreWeights;
     var fields = [];
@@ -1605,10 +2739,12 @@ testWoo.fragContract = (function () {
     collectLexicon: collectLexicon,
     splitByLexicon: splitByLexicon,
     mergeLexiconSlots: mergeLexiconSlots,
+    splitCompoundSlots: splitCompoundSlots,
     buildIndexFields: buildIndexFields,
     keywordsFromSlot: keywordsFromSlot,
     normalizeParamDomain: normalizeParamDomain,
     domainMatchSlot: domainMatchSlot,
+    yearMonthHits: yearMonthHits,
     matchEnPivotSlot: matchEnPivotSlot,
     conceptOf: conceptOf,
     kindCompatible: kindCompatible,
@@ -1620,13 +2756,21 @@ testWoo.fragContract = (function () {
     attachAlias: attachAlias,
     mergeParamDomainJson: mergeParamDomainJson,
     coversSlot: coversSlot,
+    slotCoverParts: slotCoverParts,
+    splitCoordSlots: splitCoordSlots,
     libraryHitPredicate: libraryHitPredicate,
     sampleBindSql: sampleBindSql,
     promoteEqPlaceholderToIn: promoteEqPlaceholderToIn,
     resolveNlParams: resolveNlParams,
     upsertGroup: upsertGroup,
+    groupHintForParams: groupHintForParams,
+    displayHintForParams: displayHintForParams,
     entryDb: entryDb,
+    applyNlPatch: applyNlPatch,
+    buildPromptHints: buildPromptHints,
+    buildPromptHintsFromUnresolved: buildPromptHintsFromUnresolved,
+    buildPromptHintsFromSlotResults: buildPromptHintsFromSlotResults,
     scoreCard: scoreCard
   };
 })();
-testWoo.fragContract.__v = "175";
+testWoo.fragContract.__v = "185";

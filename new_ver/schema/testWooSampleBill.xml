@@ -1,0 +1,39 @@
+<!--
+woo:testWooSampleBill (Test Woo 샘플 청구)
+=================================================
+E2E·납부방법/미납/청구액 fragment 검증용. 고객당 최근 청구 1건.
+
+[Main Functions]
+===========
+- 기존 customer_id 1:1
+- 납부방법 / 미납 / 청구액 (시드 닫힌 값 + 숫자)
+
+[Model: table structure]
+=======================
+- name=sqltable=testWooSampleBill
+- customer_id / bill_month / bill_amt / unpaid / pay_method
+
+[Dependencies]
+=========
+- Adobe Campaign xtk:srcSchema (mappingType=sql)
+- 연계: woo:testWooSampleCustomer (@customer_id)
+- 시드: new_ver/workflow/testWooSampleSeed2.js
+-->
+<srcSchema _cs="Test Woo Sample Bill (woo)" mappingType="sql" name="testWooSampleBill" namespace="woo"
+           label="Test Woo Sample Bill" labelSingular="Test Woo Sample Bill" xtkschema="xtk:srcSchema">
+  <element autopk="true" label="Test Woo Sample Bill" name="testWooSampleBill" sqltable="testWooSampleBill">
+    <dbindex name="idx_unpaid_pay">
+      <keyfield xpath="@unpaid"/>
+      <keyfield xpath="@pay_method"/>
+    </dbindex>
+    <key name="byCustomerId">
+      <keyfield xpath="@customer_id"/>
+    </key>
+
+    <attribute label="Customer ID" length="32" name="customer_id" type="string"/>
+    <attribute label="청구월"      length="7"  name="bill_month"  type="string"/>
+    <attribute label="납입금"      name="bill_amt" type="long"/>
+    <attribute label="미납"        name="unpaid"   type="byte"/>
+    <attribute label="결제수단"    length="16" name="pay_method" type="string"/>
+  </element>
+</srcSchema>

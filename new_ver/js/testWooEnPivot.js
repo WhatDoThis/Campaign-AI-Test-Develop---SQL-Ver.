@@ -5,7 +5,7 @@
  * - 동일 문장 재입력만 해시 캐시(TTL 1일 · 키에 __v 포함, 배포 후 구추출 재사용 금지).
  * concept는 (schema+xpath)에 이미 있으면 LLM 제안을 덮어쓰지 않는다.
  * 컬럼 도메인 값은 1회 번역해 nlMap 키를 {db, en[]} 으로 확장한다(키 삭제 금지).
- * litmus __v=174 (NL 캐시 키에 __v · ambiguous 카드 히트 금지).
+ * litmus __v=178 (debug 트레이스. 및/and 슬롯 분할).
  *
  * [Main Functions]
  * ===========
@@ -13,7 +13,7 @@
  * - translateAndExtract — 전체 NL 1회 번역·추출 JSON
  * - scanM1 — 원문 literal ⊂ NL (매칭용. 추출 스킵에 쓰지 않음)
  * - applyConceptLock — _source.concept 불변 · 다른 이름은 aliases
- * - toPipelineSlots — EnPivot slot → Pass0 형태 {id,text,searchKeywords}
+ * - toPipelineSlots — EnPivot slot → Pass0 형태 {id,text,searchKeywords}. 및/and면 2슬롯
  * - isNonConditionSlot — concept·resolvedName·en_literal 없으면 잔여. kind만으로는 조건 아님
  * - enrichDomainEn — 컬럼 distinct/enum/_bucket 1회 EN 사전화
  * - clearNlCache / putNlCache — NL 해시 캐시 (스모크)
@@ -366,7 +366,10 @@ testWoo.enPivot = (function () {
     }
     var system = [
       "You translate Korean marketer targeting NL to English and extract atomic slots.",
-      "ONE slot = ONE condition axis. Never merge two axes.",
+      "ONE slot = ONE independent filter. Never merge two filters.",
+      "If two values can each be true or false on their own, emit two slots.",
+      "Nested phrasing does not make one slot. Do not name tables or columns.",
+      "A min+max range on the SAME measure is one slot. Different measures stay split.",
       "Translate the FULL sentence. Korean may contain typos or broken spacing;",
       "recover the intended meaning in en and en_literal (typos in the source language).",
       "Keep surface as the original typed span, including typos, so the marketer can verify.",
@@ -431,6 +434,19 @@ testWoo.enPivot = (function () {
     if (cached) {
       try { logInfo("[testWoo.enPivot] cache_hit llmCalls=0"); }
       catch (eC) { /* non-ACC */ }
+      try {
+        if (typeof twDbg === "function") {
+          twDbg("enPivot", "cache en=" + String((cached && cached.en) || "") +
+            " slots=" + ((cached && cached.slots) ? cached.slots.length : 0));
+          var ci, cs;
+          for (ci = 0; cached.slots && ci < cached.slots.length; ci++) {
+            cs = cached.slots[ci] || {};
+            twDbg("enPivot.slot", String(ci + 1) + " «" + String(cs.surface || "") +
+              "» concept=" + String(cs.concept || "") +
+              " en=" + String(cs.en_literal || ""));
+          }
+        }
+      } catch (eD) { /* skip */ }
       return cached;
     }
     var extracted = translateAndExtract(nl, cards);
@@ -461,6 +477,20 @@ testWoo.enPivot = (function () {
       logInfo("[testWoo.enPivot] skip=llm llmCalls=1 slots=" + result.slots.length +
         " en=" + result.en);
     } catch (eO) { /* non-ACC */ }
+    try {
+      if (typeof twDbg === "function") {
+        twDbg("enPivot", "llm en=" + String(result.en || "") +
+          " slots=" + result.slots.length);
+        var si, sl;
+        for (si = 0; si < result.slots.length; si++) {
+          sl = result.slots[si] || {};
+          twDbg("enPivot.slot", String(si + 1) + " «" + String(sl.surface || "") +
+            "» concept=" + String(sl.concept || "") +
+            " en=" + String(sl.en_literal || "") +
+            " kind=" + String(sl.kind || ""));
+        }
+      }
+    } catch (eD2) { /* skip */ }
     return result;
   }
 
@@ -496,6 +526,8 @@ testWoo.enPivot = (function () {
         kind: s.kind || ""
       });
     }
+    if (testWoo.fragContract && testWoo.fragContract.splitCoordSlots)
+      out = testWoo.fragContract.splitCoordSlots(out);
     return out;
   }
 
@@ -672,4 +704,4 @@ testWoo.enPivot = (function () {
     putNlCache: putNlCache
   };
 })();
-testWoo.enPivot.__v = "174";
+testWoo.enPivot.__v = "178";

@@ -1,7 +1,7 @@
 /*
  * testWooCompiler.js (CNF plan → SQL 컴파일러)
  * ==================================================
- * litmus 동기 __v=164 (paramKeyFromPlan — 값 없는 조건축 키).
+ * litmus 동기 __v=166 (bind는 live enum 우선. LLM STUDENT가 옛 별칭이면 덮음).
  * LLM이 낸 CNF plan을 fragment sql_text로 조합해 최종 audience SQL 생성.
  * summary·chips는 compile 결과에서만 만든다. Oracle은 EXCEPT→MINUS.
  * #168-B/#172: NL 바인딩은 fragContract.resolveNlParams 공유.
@@ -12,13 +12,14 @@
  * ===========
  * - compile — plan → {sql, keyColumn, summary, plan}. include 빈+exclude면 FROM universe + EXCEPT
  * - bindPlanParams — NL·도메인으로 plan item.params 채움. sql {{}} 키만 남김. snake↔camel 별칭
- * - chipsFromPlan — plan에서 UI 칩 배열 생성
+ * - chipsFromPlan — plan에서 UI 칩 배열 생성. `_group` 별칭·verified 첨부
  * - collectUsedFragments — plan에 쓰인 fragment 메타 수집
  * - paramKeyFromPlan — plan.params 키 camelCase 정렬 문자열 (값 제외)
  *
  * [Dependencies]
  * =========
- * - testWoo.fragContract.resolveNlParams — nlMap/_bucket 해석 (#172)
+ * - testWoo.fragContract.resolveNlParams — nlMap/_bucket 해석 (#172). 라이브 enum 우선
+ * - testWoo.toolkit.refreshDomain — bind 직전 DISTINCT 스냅샷 (없으면 스킵)
  * - testWoo.fragContract.promoteEqPlaceholderToIn — `=` → IN (#175-1)
  * - testWoo.fragments.getByName — fragment sql_text·param_domain 로드
  * - testWoo.gates — fragmentSqlContract·checkScopePlan(로드 시)
@@ -94,20 +95,31 @@ testWoo.compiler = (function () {
         if (alt) needLookup[alt] = 1;
       }
       var params = item.params && typeof item.params === "object" ? item.params : {};
+      var domain = f.param_domain;
+      if (testWoo.toolkit && testWoo.toolkit.refreshDomain) {
+        try {
+          var rr = testWoo.toolkit.refreshDomain(domain);
+          if (rr && rr.ok && rr.domain) {
+            domain = rr.domain;
+            f.param_domain = domain;
+          }
+        } catch (eR) { /* stale snapshot */ }
+      }
       var resolved = {};
       if (testWoo.fragContract && testWoo.fragContract.resolveNlParams)
-        resolved = testWoo.fragContract.resolveNlParams(f.param_domain, hay, needLookup) || {};
+        resolved = testWoo.fragContract.resolveNlParams(domain, hay, needLookup) || {};
       for (nk in need) {
         if (!need.hasOwnProperty(nk)) continue;
-        if (params[nk] != null && params[nk] !== "") continue;
         if (resolved[nk] != null && resolved[nk] !== "")
           params[nk] = resolved[nk];
         else {
           alt = _aliasParamKey(nk);
           if (alt && resolved[alt] != null && resolved[alt] !== "")
             params[nk] = resolved[alt];
-          else if (alt && params[alt] != null && params[alt] !== "")
-            params[nk] = params[alt];
+          else if (params[nk] == null || params[nk] === "") {
+            if (alt && params[alt] != null && params[alt] !== "")
+              params[nk] = params[alt];
+          }
         }
       }
       var kept = {};
@@ -270,6 +282,32 @@ testWoo.compiler = (function () {
   }
 
   // 2. UI chips — Generate/Validate 공통 (클라 복제 금지)
+  function _chipGroupHint(item) {
+    if (!item || !item.fragment) return null;
+    if (!testWoo.fragContract || !testWoo.fragContract.groupHintForParams) return null;
+    var f = null;
+    try { f = testWoo.fragments.getByName(item.fragment); } catch (eG) { f = null; }
+    if (!f) return null;
+    try {
+      return testWoo.fragContract.groupHintForParams(f.param_domain, item.params || {});
+    } catch (eH) {
+      return null;
+    }
+  }
+
+  function _chipValueHint(item) {
+    if (!item || !item.fragment) return null;
+    if (!testWoo.fragContract || !testWoo.fragContract.displayHintForParams) return null;
+    var f = null;
+    try { f = testWoo.fragments.getByName(item.fragment); } catch (eG) { f = null; }
+    if (!f) return null;
+    try {
+      return testWoo.fragContract.displayHintForParams(f.param_domain, item.params || {});
+    } catch (eH) {
+      return null;
+    }
+  }
+
   function chipsFromPlan(plan) {
     var chips = [];
     if (!plan) return chips;
@@ -277,6 +315,8 @@ testWoo.compiler = (function () {
     for (var i = 0; i < inc.length; i++) {
       var any = (inc[i] && inc[i].any) || [];
       for (var j = 0; j < any.length; j++) {
+        var hintI = _chipGroupHint(any[j]);
+        var labI = _chipValueHint(any[j]);
         chips.push({
           id: "i" + i + "_" + j,
           group: i,
@@ -284,12 +324,17 @@ testWoo.compiler = (function () {
           label: any[j].label || any[j].fragment,
           fragment: any[j].fragment,
           params: any[j].params || {},
-          op: any.length > 1 ? "OR" : "AND"
+          op: any.length > 1 ? "OR" : "AND",
+          groupAlias: hintI ? hintI.alias : (labI ? labI.alias : ""),
+          groupParam: hintI ? hintI.param : (labI ? labI.param : ""),
+          groupVerified: hintI ? !!hintI.verified : true
         });
       }
     }
     var ex = plan.exclude || [];
     for (var k = 0; k < ex.length; k++) {
+      var hintE = _chipGroupHint(ex[k]);
+      var labE = _chipValueHint(ex[k]);
       chips.push({
         id: "e" + k,
         group: -1,
@@ -297,7 +342,10 @@ testWoo.compiler = (function () {
         label: ex[k].label || ex[k].fragment,
         fragment: ex[k].fragment,
         params: ex[k].params || {},
-        op: "EXCEPT"
+        op: "EXCEPT",
+        groupAlias: hintE ? hintE.alias : (labE ? labE.alias : ""),
+        groupParam: hintE ? hintE.param : (labE ? labE.param : ""),
+        groupVerified: hintE ? !!hintE.verified : true
       });
     }
     return chips;
@@ -457,4 +505,4 @@ testWoo.compiler = (function () {
     paramKeyFromPlan: paramKeyFromPlan
   };
 })();
-testWoo.compiler.__v = "164";
+testWoo.compiler.__v = "166";

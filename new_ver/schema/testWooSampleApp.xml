@@ -1,0 +1,39 @@
+<!--
+woo:testWooSampleApp (Test Woo 샘플 앱채널)
+=================================================
+E2E·앱사용/푸시/유입채널 fragment 검증용. 고객당 현재 상태 1건.
+
+[Main Functions]
+===========
+- 기존 customer_id 1:1
+- 앱상태 / 푸시동의 / 채널 (시드 닫힌 값)
+
+[Model: table structure]
+=======================
+- name=sqltable=testWooSampleApp
+- customer_id / app_status / push_consent / last_login / channel
+
+[Dependencies]
+=========
+- Adobe Campaign xtk:srcSchema (mappingType=sql)
+- 연계: woo:testWooSampleCustomer (@customer_id)
+- 시드: new_ver/workflow/testWooSampleSeed2.js
+-->
+<srcSchema _cs="Test Woo Sample App (woo)" mappingType="sql" name="testWooSampleApp" namespace="woo"
+           label="Test Woo Sample App" labelSingular="Test Woo Sample App" xtkschema="xtk:srcSchema">
+  <element autopk="true" label="Test Woo Sample App" name="testWooSampleApp" sqltable="testWooSampleApp">
+    <dbindex name="idx_status_push">
+      <keyfield xpath="@app_status"/>
+      <keyfield xpath="@push_consent"/>
+    </dbindex>
+    <key name="byCustomerId">
+      <keyfield xpath="@customer_id"/>
+    </key>
+
+    <attribute label="Customer ID"   length="32" name="customer_id"   type="string"/>
+    <attribute label="App Status"    length="16" name="app_status"    type="string"/>
+    <attribute label="Push Consent" name="push_consent" type="byte"/>
+    <attribute label="Last Login"   name="last_login"   type="date"/>
+    <attribute label="Channel"      length="16" name="channel" type="string"/>
+  </element>
+</srcSchema>

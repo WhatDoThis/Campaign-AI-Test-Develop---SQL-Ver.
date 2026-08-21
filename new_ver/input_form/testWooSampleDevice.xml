@@ -1,0 +1,15 @@
+<!--
+woo:testWooSampleDevice (Test Woo Sample Device Form)
+form name = 스키마 name. 고객당 단말 1건.
+-->
+<form _cs="Test Woo Sample Device" entity-schema="woo:testWooSampleDevice" img="xtk:form.png"
+      label="Test Woo Sample Device" name="testWooSampleDevice" namespace="woo" type="notebook"
+      xtkschema="xtk:form">
+  <container label="Device">
+    <input xpath="@customer_id"/>
+    <input xpath="@os"/>
+    <input xpath="@maker"/>
+    <input xpath="@network_gen"/>
+    <input xpath="@start_date"/>
+  </container>
+</form>

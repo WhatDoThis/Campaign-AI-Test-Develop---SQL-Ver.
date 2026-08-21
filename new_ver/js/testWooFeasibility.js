@@ -1,7 +1,7 @@
 /*
  * testWooFeasibility.js (슬롯 실현가능성 Triage)
  * ==================================================
- * litmus 동기 __v=161 (#174-5: 프롬프트 도시명 리터럴 제거).
+ * litmus 동기 __v=164 (N월은 YYYY-MM 카탈로그로 확정. 연도 질문 없음).
  * Foundry SQL 생성 전 슬롯별 feasible 여부 판정.
  * #169: Triage 진입 전 Stage A 라이브러리 조회(서가 우선). 미스만 스키마 탐색.
  * 축·커버·도메인 매칭은 testWoo.fragContract.libraryHitPredicate에 위임.
@@ -91,8 +91,10 @@ testWoo.feasibility = (function () {
       "Use tools (list_schemas, describe_schema, search_columns, probe_values) for evidence.",
       "Fragment library was already checked before you ran — if you are called, library missed.",
       _envBlock(),
-      "search_columns matches column NAMES/LABELS only — never data values. " +
+      "search_columns matches column NAMES/LABELS and schema name/label — never data values. " +
         "Searching a city name like Seoul returns 0 matches even when a region column exists.",
+      "If list_schemas or search_columns points to a schema whose name/label fits the slot, " +
+        "you MUST describe_schema that id before verdict. Do not stop at 'schema might exist'.",
       "Location/city slots: search keywords region, area, city first. " +
         "Then list_schemas → describe_schema → probe_values for the literal value. " +
         "Do NOT conclude no_column from value-keyword searches alone.",
@@ -152,11 +154,55 @@ testWoo.feasibility = (function () {
   function _valueInText(slotText, values) {
     var text = String(slotText || "");
     var list = values || [];
+    if (testWoo.fragContract && testWoo.fragContract.yearMonthHits) {
+      var ym = testWoo.fragContract.yearMonthHits(text, list) || [];
+      if (ym.length) return ym[0];
+    }
     for (var i = 0; i < list.length; i++) {
       var v = String(list[i]);
       if (v && text.indexOf(v) >= 0) return v;
     }
     return "";
+  }
+
+  function _probeValueList(probes) {
+    var out = [];
+    var seen = {};
+    var i, p, arr, j, v;
+    for (i = 0; i < (probes || []).length; i++) {
+      p = probes[i] || {};
+      arr = p.distinctValues || p.candidatesTop10 || [];
+      if (p.matchedValue) arr = [p.matchedValue].concat(arr);
+      for (j = 0; j < arr.length; j++) {
+        v = String(arr[j] == null ? "" : arr[j]);
+        if (!v || seen[v]) continue;
+        seen[v] = 1;
+        out.push(v);
+      }
+    }
+    return out;
+  }
+
+  function _promoteNWolYearMonth(result, slotText) {
+    if (!result || result.canProceed) return result;
+    var v = String(result.verdict || "");
+    if (v !== "ambiguous" && v !== "value_not_found") return result;
+    if (!testWoo.fragContract || !testWoo.fragContract.yearMonthHits) return result;
+    var vals = _probeValueList(result.evidence && result.evidence.valueProbes);
+    var hits = testWoo.fragContract.yearMonthHits(slotText, vals) || [];
+    if (!hits.length) return result;
+    result.verdict = "feasible";
+    result.confidence = "high";
+    result.narrative = "N월 → 도메인 YYYY-MM " + hits.join(",");
+    result.boundValues = hits;
+    result.canProceed = true;
+    result.clarifyQuestion = "";
+    result.alternatives = [];
+    try {
+      if (typeof twDbg === "function")
+        twDbg("triage.nwol", String(slotText) + " → " + hits.join(","));
+    } catch (eD) { /* skip */ }
+    return result;
   }
 
   // #169: Stage A + _source 유효 → 스키마 툴 0회
@@ -273,8 +319,7 @@ testWoo.feasibility = (function () {
   }
 
   function runTriageLoop(cfg, slotText, slotId, nlContext) {
-    var userBlock = "<user_request>" + String(slotText || "") + "</user_request>\nNL:\n" +
-      String(nlContext || "");
+    var userBlock = "<user_request>" + String(slotText || "") + "</user_request>";
     var messages = [
       { role: "system", content: _triageSystemPrompt() },
       { role: "user", content: userBlock }
@@ -581,7 +626,7 @@ testWoo.feasibility = (function () {
     if (testWoo.toolkit.setPhaseBudget) testWoo.toolkit.setPhaseBudget("triage");
     var phaseStart = testWoo.toolkit.markPhase ?
       testWoo.toolkit.markPhase("triage:" + slotId) : 0;
-    var raw = runTriageLoop(cfg, slotText, slotId, nlContext);
+    var raw = runTriageLoop(cfg, slotText, slotId, slotText);
     raw.slotId = raw.slotId || slotId;
     var toolLog = testWoo.toolkit.getEvidenceLogSince ?
       testWoo.toolkit.getEvidenceLogSince(phaseStart) : [];
@@ -593,6 +638,8 @@ testWoo.feasibility = (function () {
     // #169 2-2: 값 미수집 데드락 해소
     if (!result.canProceed)
       result = _forceProbeAndRejudge(result, slotText, cfg);
+    if (!result.canProceed)
+      result = _promoteNWolYearMonth(result, slotText);
 
     return result;
   }
@@ -605,4 +652,4 @@ testWoo.feasibility = (function () {
     meetsConfidence: meetsConfidence
   };
 })();
-testWoo.feasibility.__v = "161";
+testWoo.feasibility.__v = "164";

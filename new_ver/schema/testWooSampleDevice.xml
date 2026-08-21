@@ -1,0 +1,39 @@
+<!--
+woo:testWooSampleDevice (Test Woo 샘플 단말)
+=================================================
+E2E·단말 OS/제조사/세대 fragment 검증용. 고객당 현재 단말 1건.
+
+[Main Functions]
+===========
+- 기존 customer_id 1:1
+- OS / 제조사 / 네트워크 세대 (시드 닫힌 값)
+
+[Model: table structure]
+=======================
+- name=sqltable=testWooSampleDevice
+- customer_id / os / maker / network_gen / start_date
+
+[Dependencies]
+=========
+- Adobe Campaign xtk:srcSchema (mappingType=sql)
+- 연계: woo:testWooSampleCustomer (@customer_id)
+- 시드: new_ver/workflow/testWooSampleSeed2.js
+-->
+<srcSchema _cs="Test Woo Sample Device (woo)" mappingType="sql" name="testWooSampleDevice" namespace="woo"
+           label="Test Woo Sample Device" labelSingular="Test Woo Sample Device" xtkschema="xtk:srcSchema">
+  <element autopk="true" label="Test Woo Sample Device" name="testWooSampleDevice" sqltable="testWooSampleDevice">
+    <dbindex name="idx_os_net">
+      <keyfield xpath="@os"/>
+      <keyfield xpath="@network_gen"/>
+    </dbindex>
+    <key name="byCustomerId">
+      <keyfield xpath="@customer_id"/>
+    </key>
+
+    <attribute label="Customer ID"  length="32" name="customer_id"  type="string"/>
+    <attribute label="OS"           length="16" name="os"           type="string"/>
+    <attribute label="Maker"        length="16" name="maker"        type="string"/>
+    <attribute label="Network Gen"  length="8"  name="network_gen"  type="string"/>
+    <attribute label="Start Date" name="start_date" type="date"/>
+  </element>
+</srcSchema>

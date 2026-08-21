@@ -8,7 +8,7 @@
  * [Main Functions]
  * ===========
  * - 1. 라이브러리 전역 정의 확인 (testWoo.* · fragContract 포함)
- * - 1b. FragContract — 축 identity·validateBind·렉시콘 분할·`_group` 별칭·upsertGroup·별칭 토큰 경계(픽스처)
+ * - 1b. FragContract — 축 identity·validateBind·렉시콘·다축 분할·`_group`·남는 명사 미삼킴·promptHints
  * - 1h. Compiler exclude-only — FROM universe + EXCEPT (NOT IN 금지, 픽스처 테이블)
  * - 1c. normalizeAtomicSlots — EnPivot 슬롯 통과 · KO 축 분할 없음
  * - 1d. parseFragmentJson — JSON 2개 → 첫 채택 + extraSlots (V0, 비과금)
@@ -227,6 +227,66 @@ function twStepFragContract() {
       twFail("1b.fragContract", "age frag must not hit gender slot");
       return false;
     }
+    var consentDomain = {
+      consent: { required: true, type: "byte", enum: [0, 1], nlMap: { "동의": 1 } },
+      _source: { schema: "woo:testWooSampleApp", xpath: "@push_consent" }
+    };
+    var consentCard = {
+      name: "woo__app__push_consent", tags: "consent", label: "Push Consent",
+      synonyms: "푸시,push,마케팅,marketing",
+      sample_questions: ["푸시 및 마케팅 수신동의"],
+      param_domain: consentDomain, description: "", category: "foundry"
+    };
+    if (fc.libraryHitPredicate(consentCard, {
+      text: "푸시 및 마케팅 수신동의", searchKeywords: ["푸시", "마케팅"]
+    }, consentDomain)) {
+      twFail("1b.fragContract", "push frag must not swallow leftover specifier");
+      return false;
+    }
+    if (!fc.libraryHitPredicate(consentCard, {
+      text: "푸시 수신동의", searchKeywords: ["푸시"]
+    }, consentDomain)) {
+      twFail("1b.fragContract", "push frag must hit push-only slot");
+      return false;
+    }
+    if (!fc.slotCoverParts) {
+      twFail("1b.fragContract", "slotCoverParts missing");
+      return false;
+    }
+    var coverP = fc.slotCoverParts(consentCard, {
+      text: "푸시 및 마케팅 수신동의",
+      en_literal: "push and marketing consent",
+      searchKeywords: ["푸시", "마케팅"]
+    }, consentDomain);
+    var leftJ = (coverP.leftover && coverP.leftover.join(",")) || "";
+    if (leftJ.toLowerCase().indexOf("market") < 0 && leftJ.indexOf("마케팅") < 0) {
+      twFail("1b.fragContract", "slotCoverParts leftover must keep marketing, got: " +
+        leftJ);
+      return false;
+    }
+    if (!fc.splitCoordSlots) {
+      twFail("1b.fragContract", "splitCoordSlots missing");
+      return false;
+    }
+    var splitC = fc.splitCoordSlots([{
+      text: "푸시 및 마케팅 동의한 사람",
+      en_literal: "consented to push and marketing",
+      kind: "boolean"
+    }]);
+    if (!splitC || splitC.length !== 2) {
+      twFail("1b.fragContract", "splitCoordSlots expected 2, got " +
+        (splitC ? splitC.length : 0));
+      return false;
+    }
+    var ageOnly = fc.slotCoverParts(ageCard, {
+      text: "10대 고객",
+      en_literal: "teenage customers"
+    }, ageDomain);
+    if (ageOnly.leftover && ageOnly.leftover.length) {
+      twFail("1b.fragContract", "10대 leftover must be empty, got: " +
+        ageOnly.leftover.join(","));
+      return false;
+    }
     var regionCard = {
       name: "woo__customer__region", tags: "region", label: "지역",
       synonyms: "", sample_questions: [],
@@ -301,6 +361,205 @@ function twStepFragContract() {
     }
     if (!hasIncheon || !hasAge) {
       twFail("1b.fragContract", "long LLM span must not swallow lexicon 인천/10대");
+      return false;
+    }
+    if (!fc.splitCompoundSlots) {
+      twFail("1b.fragContract", "splitCompoundSlots missing");
+      return false;
+    }
+    var unpaidCard = {
+      name: "woo__bill__unpaid", tags: "unpaid", label: "미납",
+      synonyms: "마케팅 동의한,July leftover",
+      sample_questions: ["푸시 및 마케팅"],
+      param_domain: {
+        unpaid: { required: true, type: "byte", enum: ["0", "1"] },
+        _source: { schema: "woo:testWooSampleBill", xpath: "@unpaid" }
+      }
+    };
+    var idLex = fc.collectLexicon([unpaidCard, regionCard, ageCard], { identityOnly: true });
+    var synHit = false;
+    var ili;
+    for (ili = 0; ili < idLex.length; ili++) {
+      if (String(idLex[ili].key).indexOf("마케팅") >= 0) synHit = true;
+    }
+    if (synHit) {
+      twFail("1b.fragContract", "identityOnly lexicon must omit polluted synonyms");
+      return false;
+    }
+    var compound = fc.splitCompoundSlots([
+      { text: "7월 미납자", concept: "unpaid_month", en_literal: "July unpaid person", kind: "categorical" }
+    ], idLex);
+    var hasMonth = false;
+    var hasUnpaid = false;
+    var ci2;
+    for (ci2 = 0; ci2 < (compound || []).length; ci2++) {
+      if (String(compound[ci2].text) === "7월") hasMonth = true;
+      if (String(compound[ci2].text).indexOf("미납") === 0) hasUnpaid = true;
+    }
+    if (!compound || compound.length < 2 || !hasMonth || !hasUnpaid) {
+      twFail("1b.fragContract", "compound 7월+미납 must split, got " +
+        (compound ? compound.length : 0));
+      return false;
+    }
+    var twoAxis = fc.splitCompoundSlots([
+      { text: "인천 10대", kind: "categorical" }
+    ], idLex);
+    var hasReg = false;
+    var hasAge2 = false;
+    for (ci2 = 0; ci2 < (twoAxis || []).length; ci2++) {
+      if (String(twoAxis[ci2].text) === "인천") hasReg = true;
+      if (String(twoAxis[ci2].text) === "10대") hasAge2 = true;
+    }
+    if (!hasReg || !hasAge2) {
+      twFail("1b.fragContract", "compound region+age must split");
+      return false;
+    }
+    var keepRange = fc.splitCompoundSlots([
+      { text: "10대~30대", kind: "range" }
+    ], idLex);
+    if (!keepRange || keepRange.length !== 1 || String(keepRange[0].text) !== "10대~30대") {
+      twFail("1b.fragContract", "range slot must stay 1");
+      return false;
+    }
+    var pushOnly = fc.splitCompoundSlots([
+      { text: "푸시 동의한", concept: "push_consent", en_literal: "consented to push" }
+    ], idLex);
+    if (!pushOnly || pushOnly.length !== 1 || String(pushOnly[0].text) !== "푸시 동의한") {
+      twFail("1b.fragContract", "single-axis slot must not split on synonym pollution");
+      return false;
+    }
+    var pushCard = {
+      name: "woo__app__push", tags: "consent", label: "Push Consent",
+      synonyms: "",
+      param_domain: {
+        push: {
+          required: true, type: "byte",
+          nlMap: { "push": "1", "consented": "1" },
+          enum: ["0", "1"]
+        },
+        _source: { schema: "woo:testWooSampleApp", xpath: "@push_consent" }
+      }
+    };
+    var idLexPush = fc.collectLexicon([pushCard], { identityOnly: true });
+    var pushEn = fc.splitCompoundSlots([
+      { text: "푸시 동의한", en_literal: "consented to push", concept: "push_consent" }
+    ], idLexPush);
+    if (!pushEn || pushEn.length !== 1 || String(pushEn[0].text) !== "푸시 동의한") {
+      twFail("1b.fragContract", "EN catalog hit must not split a single KO slot");
+      return false;
+    }
+    if (!fc.yearMonthHits || !fc.domainMatchSlot) {
+      twFail("1b.fragContract", "yearMonthHits/domainMatchSlot missing");
+      return false;
+    }
+    var ymHit = fc.domainMatchSlot({
+      bill_month: { type: "string", enum: ["2026-07"] }
+    }, "7월");
+    if (!ymHit || String(ymHit.value) !== "2026-07") {
+      twFail("1b.fragContract", "N월 must bind YYYY-MM enum, got " +
+        (ymHit ? String(ymHit.value) : "null"));
+      return false;
+    }
+    var ymMany = fc.yearMonthHits("7월", ["2025-07", "2026-07", "2026-08"]);
+    if (!ymMany || ymMany.length !== 2) {
+      twFail("1b.fragContract", "N월 must pick all matching YYYY-MM");
+      return false;
+    }
+    if (fc.yearMonthHits("10대", ["2026-07"]).length) {
+      twFail("1b.fragContract", "N대 must not be treated as N월");
+      return false;
+    }
+    if (!fc.buildPromptHints || !fc.applyNlPatch) {
+      twFail("1b.fragContract", "buildPromptHints/applyNlPatch missing");
+      return false;
+    }
+    var hYm = fc.buildPromptHints({
+      slots: [{
+        slotId: "sYm",
+        surface: "3월",
+        domain: { bill_month: { type: "string", enum: ["2024-03", "2025-03", "2025-04"] } },
+        tier: "enum"
+      }]
+    });
+    if (!hYm || !hYm.length || !hYm[0].options || hYm[0].options.length < 3) {
+      twFail("1b.fragContract", "month 2+ hits must emit union+members");
+      return false;
+    }
+    if (hYm[0].options[0].union !== true ||
+        String(hYm[0].options[1].value) !== "2025-03" ||
+        String(hYm[0].options[2].value) !== "2024-03") {
+      twFail("1b.fragContract", "time values must sort desc after union");
+      return false;
+    }
+    var hOne = fc.buildPromptHints({
+      slots: [{
+        slotId: "sOne",
+        surface: "3월",
+        domain: { bill_month: { type: "string", enum: ["2025-03"] } },
+        tier: "enum"
+      }]
+    });
+    if (hOne && hOne.length) {
+      twFail("1b.fragContract", "single closed hit must not emit chips");
+      return false;
+    }
+    var firms = ["열린서점", "열린약국", "열린카페"];
+    var hAud = fc.buildPromptHints({
+      slots: [{
+        slotId: "sFirm",
+        surface: "열린",
+        domain: { shop: { type: "string", enum: firms } },
+        tier: "enum"
+      }],
+      auditDates: {
+        "열린서점": { modified: "2025-01" },
+        "열린약국": { modified: "2026-02" },
+        "열린카페": { modified: "2026-03" }
+      }
+    });
+    if (!hAud || !hAud.length || hAud.auditSqlCount !== 0) {
+      twFail("1b.fragContract", "injected auditDates must not run SELECT");
+      return false;
+    }
+    if (!hAud[0].options[0].union ||
+        String(hAud[0].options[1].value) !== "열린카페" ||
+        String(hAud[0].options[2].value) !== "열린약국" ||
+        String(hAud[0].options[3].value) !== "열린서점") {
+      twFail("1b.fragContract", "union first then modified desc");
+      return false;
+    }
+    var hProbe = fc.buildPromptHints({
+      slots: [{
+        slotId: "sFirm2",
+        surface: "열린",
+        domain: { shop: { type: "string", enum: firms } },
+        tier: "enum"
+      }]
+    });
+    if (!hProbe || !hProbe.length || !hProbe[0].options[0].union ||
+        String(hProbe[0].options[1].value) !== "열린서점") {
+      twFail("1b.fragContract", "no audit cols must keep enum order after union");
+      return false;
+    }
+    var hHigh = fc.buildPromptHints({
+      slots: [{
+        slotId: "sNote",
+        surface: "메모",
+        domain: { note: { type: "string", enum: ["a", "ab"] } },
+        tier: "highCard"
+      }]
+    });
+    if (hHigh && hHigh.length) {
+      twFail("1b.fragContract", "highCard must emit no chips");
+      return false;
+    }
+    var patched = fc.applyNlPatch("열린 기업 고객", "열린", "열린카페");
+    if (patched !== "열린카페 기업 고객") {
+      twFail("1b.fragContract", "applyNlPatch must replace first surface only");
+      return false;
+    }
+    if (fc.applyNlPatch("열린카페 기업 고객", "열린", "열린카페") !== "열린카페 기업 고객") {
+      twFail("1b.fragContract", "applyNlPatch no-op when patch already present");
       return false;
     }
     var incheonToks = fc.keywordsFromSlot({ text: "인천에 사는", concept: "region" });
@@ -408,6 +667,59 @@ function twStepFragContract() {
     var gScalar = fc.resolveNlParams(gDom, "서울 사는 고객", { region: 1 });
     if (!gScalar || String(gScalar.region) !== "서울") {
       twFail("1b.fragContract", "resolveNlParams scalar 서울 must stay scalar");
+      return false;
+    }
+    var liveDom = {
+      plan_code: {
+        required: true, type: "string",
+        enum: ["학생요금", "Z요금"],
+        nlMap: { "학생요금": { db: "STUDENT", en: ["student"] } }
+      }
+    };
+    var liveP = fc.resolveNlParams(liveDom, "학생요금 사용하는 고객", { plan_code: 1 });
+    if (!liveP || String(liveP.plan_code) !== "학생요금") {
+      twFail("1b.fragContract", "live enum must win over stale nlMap db STUDENT");
+      return false;
+    }
+    var codeDom = {
+      plan_code: {
+        required: true, type: "string",
+        enum: ["STUDENT", "Z_PLAN"],
+        nlMap: { "학생요금": { db: "STUDENT", en: ["student"] } }
+      }
+    };
+    var codeP = fc.resolveNlParams(codeDom, "학생요금 사용하는 고객", { plan_code: 1 });
+    if (!codeP || String(codeP.plan_code) !== "STUDENT") {
+      twFail("1b.fragContract", "nlMap db in live enum must stay STUDENT");
+      return false;
+    }
+    var aliasDom = {
+      planCode: {
+        required: true, type: "string",
+        nlMap: { "학생요금": { db: "STUDENT", en: ["student"] } }
+      },
+      plan_code: {
+        required: true, type: "string",
+        enum: ["학생요금", "Z요금"]
+      }
+    };
+    var aliasP = fc.resolveNlParams(aliasDom, "학생요금 사용하는 고객", { planCode: 1 });
+    if (!aliasP || String(aliasP.planCode) !== "학생요금") {
+      twFail("1b.fragContract", "planCode must snap to plan_code live enum");
+      return false;
+    }
+    if (!fc.groupHintForParams) {
+      twFail("1b.fragContract", "groupHintForParams missing");
+      return false;
+    }
+    var hintG = fc.groupHintForParams(gDom, { region: ["NorthA", "NorthB"] });
+    if (!hintG || String(hintG.alias) !== "북부권" || hintG.verified) {
+      twFail("1b.fragContract", "groupHintForParams must return unverified 북부권");
+      return false;
+    }
+    var hintMiss = fc.groupHintForParams(gDom, { region: "서울" });
+    if (hintMiss) {
+      twFail("1b.fragContract", "groupHintForParams must miss scalar 서울");
       return false;
     }
     var gMerged = fc.mergeParamDomainJson(gDom, JSON.stringify({
@@ -941,6 +1253,21 @@ function twStepEnMatch() {
     if (!nDae || nDae.ambiguous || !nDae.value ||
         Number(nDae.value.ageMin) !== 30 || Number(nDae.value.ageMax) !== 40) {
       twFail("1g.enMatch", "N대 30~40 expected, got " + JSON.stringify(nDae));
+      return false;
+    }
+    var nSpan = fc.matchEnPivotSlot(ageDom, {
+      text: "10대~30대", surface: "10대~30대", en_literal: "teens to 30s",
+      concept: "customer_age", kind: "range"
+    });
+    if (!nSpan || !nSpan.value ||
+        Number(nSpan.value.ageMin) !== 10 || Number(nSpan.value.ageMax) !== 40) {
+      twFail("1g.enMatch", "10대~30대 must bind 10~40, got " + JSON.stringify(nSpan));
+      return false;
+    }
+    var nRes = fc.resolveNlParams(ageDom, "10대~30대 고객", { ageMin: 1, ageMax: 1 });
+    if (!nRes || Number(nRes.ageMin) !== 10 || Number(nRes.ageMax) !== 40) {
+      twFail("1g.enMatch", "resolveNlParams 10대~30대 must be 10~40, got " +
+        JSON.stringify(nRes));
       return false;
     }
     var now = new Date().getTime();

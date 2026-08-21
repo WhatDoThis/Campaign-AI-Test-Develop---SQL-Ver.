@@ -2,7 +2,7 @@
  * testWooCommon.js (JSSP 공통 헬퍼)
  * ==================================================
  * Studio·Foundry JSSP API의 JSON 응답·요청 파싱·인증·권한 검사.
- * TW_* 바인드 후 loadLibrary로 로드한다. __v=159 (litmus 동기).
+ * TW_* 바인드 후 loadLibrary로 로드한다. __v=160 (debugTrace 부착).
  *
  * [Main Functions]
  * ===========
@@ -29,7 +29,7 @@
 
 if (typeof testWoo === "undefined") testWoo = {};
 if (!testWoo.common) testWoo.common = {};
-testWoo.common.__v = "159";
+testWoo.common.__v = "160";
 
 var TW_TITLE_MAX = 200; // woo:testWooAiSql @title length
 
@@ -69,9 +69,19 @@ function _twDoc() {
   return TW_DOCUMENT;
 }
 
+function _twAttachDbg(obj) {
+  if (!obj || !testWoo.dbg || !testWoo.dbg.take) return obj;
+  var tr = testWoo.dbg.take();
+  if (tr && tr.length) {
+    obj.debugOn = true;
+    obj.debugTrace = tr;
+  }
+  return obj;
+}
+
 function jsonOut(obj) {
   _twResp().setContentType("application/json;charset=utf-8");
-  _twDoc().write(JSON.stringify(obj));
+  _twDoc().write(JSON.stringify(_twAttachDbg(obj || {})));
 }
 
 // 1. JSON error
@@ -84,7 +94,7 @@ function errOut(msg, code, extra) {
       if (extra.hasOwnProperty(k)) body[k] = extra[k];
     }
   }
-  _twDoc().write(JSON.stringify(body));
+  _twDoc().write(JSON.stringify(_twAttachDbg(body)));
 }
 
 function _twErrId() {

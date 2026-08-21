@@ -1,7 +1,7 @@
 /*
  * testWooToolkit.js (LLM Tool 레지스트리)
  * ==================================================
- * litmus 동기 __v=161 (스키마 enum 이름 정규화 · 라벨 공백 시 probe_values).
+ * litmus 동기 __v=164 (search_columns 가 스키마 name/label 도 매칭. 감사 GROUP BY).
  * OpenRouter tools용 spec·invoke·evidenceLog.
  * Triage·Foundry가 schema 조사·probe_sql·search_columns 호출.
  * #168-A: 탐색(툴) 결과를 frag._source 로 결정화. classifyField·fingerprint·TTL.
@@ -20,6 +20,7 @@
  * - getEvidenceLog — 누적 evidence 배열
  * - getEvidenceLogSince — offset 이후 evidence
  * - classifyField — schema+xpath → tier + toolCalls (메타데이터 판정). enum 속성명은 로컬/FQN 모두 매칭
+ * - listAuditColumns / auditMaxDates — datetime 수정/생성 컬럼 + 값별 MAX GROUP BY 1회
  * - resolveDomain — 스냅샷 + _source(provenance·fingerprint)
  * - refreshDomain — 기존 domain을 _source로 재스냅샷(후속 데이터 추가 반영)
  * - pathFromGrain / findSchemaBySqlTable / resolveGrainSchema — 경로·스키마 추론
@@ -1227,6 +1228,21 @@ testWoo.toolkit = (function () {
       merged = testWoo.fragContract.mergeParamDomainJson(domain, rd.paramDomain);
     else
       merged = { changed: true, json: JSON.stringify(rd.paramDomain), domain: rd.paramDomain };
+    var live = rd.paramDomain || {};
+    var outDom = merged.domain || {};
+    var lk, lspec;
+    for (lk in live) {
+      if (!live.hasOwnProperty(lk) || String(lk).charAt(0) === "_") continue;
+      lspec = live[lk];
+      if (!lspec || !lspec.enum || !lspec.enum.length) continue;
+      if (!outDom[lk] || typeof outDom[lk] !== "object") continue;
+      outDom[lk].enum = lspec.enum.slice ? lspec.enum.slice(0) : lspec.enum;
+      merged.changed = true;
+    }
+    if (merged.changed && outDom) {
+      try { merged.json = JSON.stringify(outDom); } catch (eJ) { /* keep */ }
+      merged.domain = outDom;
+    }
     return {
       ok: true,
       changed: !!merged.changed,
@@ -1421,16 +1437,23 @@ testWoo.toolkit = (function () {
           break;
         }
         var sid = schemas[si].id;
+        var schName = String(schemas[si].name || "");
+        var schLabel = String(schemas[si].label || "");
+        var schemaHit = schName.toLowerCase().indexOf(keyword) >= 0 ||
+          schLabel.toLowerCase().indexOf(keyword) >= 0;
         try {
           var xml = _schemaXml(sid);
           loaded++;
           scanned++;
+          var xmlLab = String(xml.@label || "");
+          if (xmlLab && xmlLab.toLowerCase().indexOf(keyword) >= 0) schemaHit = true;
           for each (var a in xml..attribute) {
             if (results.length >= SEARCH_MATCH_CAP) break;
             var an = String(a.@name || "");
             var al = String(a.@label || "");
             var asql = _sqlColumnOf(a);
-            if (an.toLowerCase().indexOf(keyword) < 0 &&
+            if (!schemaHit &&
+                an.toLowerCase().indexOf(keyword) < 0 &&
                 al.toLowerCase().indexOf(keyword) < 0 &&
                 asql.toLowerCase().indexOf(keyword) < 0) continue;
             results.push({
@@ -1555,6 +1578,7 @@ testWoo.toolkit = (function () {
   register("search_columns", {
     name: "search_columns",
     description: "Search column names/labels/sqlColumn by keyword in allowed namespaces. " +
+      "Also matches schema name/label (e.g. Bill) and then returns that schema's columns. " +
       "Matches report both logical columnName and physical sqlColumn — use sqlColumn in SQL",
     parameters: {
       type: "object",
@@ -1565,6 +1589,89 @@ testWoo.toolkit = (function () {
       required: ["keyword"]
     }
   }, _toolSearchColumns);
+
+  function listAuditColumns(schemaId, xpath) {
+    var sid = _trim(schemaId || "");
+    var xp = _trim(xpath || "");
+    var out = { table: "", valueCol: "", modified: "", created: "" };
+    if (!sid) return out;
+    try {
+      out.table = _resolveSqlTable(sid);
+    } catch (eT) {
+      return out;
+    }
+    if (xp) {
+      var meta = _findAttrMeta(sid, xp);
+      if (meta && meta.ok) out.valueCol = String(meta.sqlColumn || "");
+    }
+    var xml;
+    try {
+      xml = _schemaXml(sid);
+    } catch (eX) {
+      return out;
+    }
+    for each (var a in xml..attribute) {
+      var typ = String(a.@type || "").toLowerCase();
+      if (typ !== "datetime" && typ !== "datetimenotz" && typ !== "date") continue;
+      var nm = String(a.@name || "").toLowerCase();
+      var sn = _sqlColumnOf(a);
+      if (!sn || !_validIdent(sn)) continue;
+      if (!out.modified && (nm.indexOf("modified") >= 0 || nm.indexOf("lastmodified") >= 0))
+        out.modified = sn;
+      else if (!out.created && (nm.indexOf("created") >= 0 || nm.indexOf("creation") >= 0))
+        out.created = sn;
+    }
+    return out;
+  }
+
+  function _sqlLitSafe(v) {
+    return "'" + String(v == null ? "" : v).replace(/'/g, "''") + "'";
+  }
+
+  function auditMaxDates(schemaId, xpath, values) {
+    var empty = { dates: {}, sqlCount: 0 };
+    var cols = listAuditColumns(schemaId, xpath);
+    if (!cols.table || !_validIdent(cols.table)) return empty;
+    if (!cols.valueCol || !_validIdent(cols.valueCol)) return empty;
+    if (!cols.modified && !cols.created) return empty;
+    var hits = values || [];
+    if (!hits.length) return empty;
+    var inList = [];
+    var i, v;
+    for (i = 0; i < hits.length; i++) {
+      v = String(hits[i] == null ? "" : hits[i]);
+      if (!v) continue;
+      inList.push(_sqlLitSafe(v));
+    }
+    if (!inList.length) return empty;
+    var sel = "SELECT " + cols.valueCol + " AS tw_val";
+    var fmt = "row,@tw_val:string";
+    if (cols.modified && _validIdent(cols.modified)) {
+      sel += ", MAX(" + cols.modified + ") AS tw_mod";
+      fmt += ",@tw_mod:string";
+    }
+    if (cols.created && _validIdent(cols.created)) {
+      sel += ", MAX(" + cols.created + ") AS tw_cre";
+      fmt += ",@tw_cre:string";
+    }
+    sel += " FROM " + cols.table + " WHERE " + cols.valueCol +
+      " IN (" + inList.join(",") + ") GROUP BY " + cols.valueCol;
+    var dates = {};
+    try {
+      var xml = sqlSelect(fmt, sel);
+      for each (var r in xml.row) {
+        var key = String(r.@tw_val || "");
+        if (!key) continue;
+        dates[key] = {
+          modified: cols.modified ? String(r.@tw_mod || "") : "",
+          created: cols.created ? String(r.@tw_cre || "") : ""
+        };
+      }
+    } catch (eS) {
+      return empty;
+    }
+    return { dates: dates, sqlCount: 1 };
+  }
 
   return {
     register: register,
@@ -1578,6 +1685,8 @@ testWoo.toolkit = (function () {
     getEvidenceLog: getEvidenceLog,
     getEvidenceLogSince: getEvidenceLogSince,
     classifyField: classifyField,
+    listAuditColumns: listAuditColumns,
+    auditMaxDates: auditMaxDates,
     resolveDomain: resolveDomain,
     refreshDomain: refreshDomain,
     pathFromGrain: pathFromGrain,
@@ -1589,4 +1698,4 @@ testWoo.toolkit = (function () {
     resolveGrainSchema: resolveGrainSchema
   };
 })();
-testWoo.toolkit.__v = "161";
+testWoo.toolkit.__v = "164";

@@ -34,6 +34,8 @@
 | `upgrade_plan/37_ENPivot_CanonicalLayer_174.md` | #174 — EN-Pivot 추출/매칭 · **[x]** V6 · 재개 닫힘 |
 | `upgrade_plan/38_값확장_GroupExpansion_175.md` | #175 — 상위어 다대일 · **[~]** G1/G2/G4/G5/G6 PASS · 5단계 |
 | `upgrade_plan/39_상용화_여정갭.md` | 추출≠제품 · C-1~C-7 · UX-ST1 / UX-ST0 / R6 |
+| `upgrade_plan/40_프롬프트검증_ClarifyChips_176.md` | **#176 P0** — 모호 NL을 입력창 위 칩으로 보강 · C1~C3 repo · C4 HUMAN |
+| `upgrade_plan/41_완성로드맵.md` | **남은 일 순서 정본** — 다음 AI 시작 · `[S]` 목록 · 파도 1~3 |
 | `10_Fragment_생애주기_설계.md` | Fragment 승인 모델 게이트→라벨 전환 설계 — 현행 enum 매핑 · 빈도 기반 검수 · 야간 게이트 재실행 · 킬스위치는 revoked 재사용 |
 | `09_SQL생성추가_디버깅3.md` | F-0~F-5 반영 검증 후 잔여 C-1·E-1·E-2·A-1 — sanitize/compress 순서·phase 예산 누수·tokenBudget·자격 검증·스모크 9c |
 | `08_SQL생성추가_디버깅2.md` | Foundry 생성 단계 근원 진단 F-0~F-5 — 출력 계약 부재·루프 종료 불일치·자가진단 알고리즘·dryRunSlot 계측기 |

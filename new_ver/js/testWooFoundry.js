@@ -1,7 +1,7 @@
 /*
  * testWooFoundry.js (Fragment Foundry 배치 처리)
  * ==================================================
- * litmus 동기 __v=165 (#175-1 categorical IN({{param}})).
+ * litmus 동기 __v=170 (큐 슬롯 재분할. generate는 슬롯 원문만. infeasible에 promptHints).
  * 큐 슬롯별 triage → feasible만 SQL 생성 → dedup → publish.
  * 색인·샘플바인딩·재사용 게이트는 testWoo.fragContract에 위임.
  *
@@ -650,11 +650,15 @@ testWoo.foundry = (function () {
   }
 
   // 게이트·형태 실패 시 되먹임은 role="user" (tool 메시지 대응 규약 위반 방지)
-  function generateFragmentForSlot(cfg, nlText, slotText, queueId, slotId) {
+  function generateFragmentForSlot(cfg, nlText, slotText, queueId, slotId, optsGen) {
     if (testWoo.toolkit.setPhaseBudget) testWoo.toolkit.setPhaseBudget("generate");
     if (testWoo.toolkit.markPhase) testWoo.toolkit.markPhase("generate:" + String(slotId || "?"));
-    var userBlock = "<user_request>" + String(slotText || "") + "</user_request>\nNL context:\n" +
-      String(nlText || "");
+    optsGen = optsGen || {};
+    var userBlock = "<user_request>" + String(slotText || "") + "</user_request>";
+    var lockCol = _trim(optsGen.atomicColumn || "");
+    if (lockCol)
+      userBlock += "\nATOMIC COLUMN LOCK: sql_text may filter ONLY " + lockCol +
+        ". One column. Other filters in the phrase are other slots.";
     var messages = [
       { role: "system", content: _foundrySystemPrompt() },
       { role: "user", content: userBlock }
@@ -838,6 +842,45 @@ testWoo.foundry = (function () {
       }
     }
     return out;
+  }
+
+  function _triageFilterCols(ev) {
+    var raw = (ev && ev.columnsConsidered) ? ev.columnsConsidered : [];
+    var out = [];
+    var seen = {};
+    var i, c, key;
+    for (i = 0; i < raw.length; i++) {
+      c = raw[i] || {};
+      key = _trim(c.sqlColumn || c.columnName || c.name || "");
+      if (!key || seen[key.toLowerCase()]) continue;
+      seen[key.toLowerCase()] = 1;
+      out.push({
+        sqlColumn: key,
+        name: _trim(c.name || c.columnName || ""),
+        label: _trim(c.label || "")
+      });
+    }
+    return out;
+  }
+
+  function _kidsFromCols(slot, cols) {
+    var kids = [];
+    var i, c;
+    for (i = 0; i < cols.length; i++) {
+      c = cols[i] || {};
+      kids.push({
+        id: String((slot && slot.id) || "s") + "_a" + i,
+        text: String((slot && slot.text) || ""),
+        hintedCategory: String((slot && slot.hintedCategory) || ""),
+        searchKeywords: (slot && slot.searchKeywords) ? slot.searchKeywords : [],
+        concept: slot ? slot.concept : null,
+        en_literal: String((slot && slot.en_literal) || ""),
+        kind: String((slot && slot.kind) || ""),
+        polarity: String((slot && slot.polarity) || ""),
+        atomicColumn: _trim(c.sqlColumn || "")
+      });
+    }
+    return kids;
   }
 
   function _tagAxes(tagsStr) {
@@ -1420,6 +1463,18 @@ testWoo.foundry = (function () {
           String(eN.message || eN));
       }
     }
+    if (testWoo.fragContract && testWoo.fragContract.splitCompoundSlots &&
+        testWoo.fragments && testWoo.fragments.listLexiconCards) {
+      try {
+        var cards = testWoo.fragments.listLexiconCards() || [];
+        var idLex = testWoo.fragContract.collectLexicon ?
+          testWoo.fragContract.collectLexicon(cards, { identityOnly: true }) : [];
+        out = testWoo.fragContract.splitCompoundSlots(out, idLex);
+      } catch (eC) {
+        logWarning("[testWoo.foundry._normalizeSlots] compound split failed: " +
+          String(eC.message || eC));
+      }
+    }
     return out;
   }
 
@@ -1450,8 +1505,43 @@ testWoo.foundry = (function () {
     }
   }
 
+  function _attachPromptHints(slotResults, nlText) {
+    if (!testWoo.fragContract || !testWoo.fragContract.buildPromptHintsFromSlotResults)
+      return;
+    var hints = [];
+    try {
+      hints = testWoo.fragContract.buildPromptHintsFromSlotResults(slotResults, {
+        nl: nlText || ""
+      }) || [];
+    } catch (eH) { hints = []; }
+    if (!hints.length) return;
+    var i, s;
+    for (i = 0; i < (slotResults || []).length; i++) {
+      s = slotResults[i] || {};
+      if (String(s.slotId || "") === String(hints[0].slotId || "") ||
+          String(s.slotText || "") === String(hints[0].surface || "")) {
+        slotResults[i].promptHints = hints;
+        return;
+      }
+    }
+    if (slotResults && slotResults.length)
+      slotResults[0].promptHints = hints;
+  }
+
   function _finalizeInfeasible(queueId, prevAttempt, slotResults, evidenceLog, status,
-                               partialPreview, tokensUsed) {
+                               partialPreview, tokensUsed, nlText) {
+    try {
+      _attachPromptHints(slotResults, nlText);
+    } catch (eAh) { /* keep slotResults */ }
+    try {
+      if (testWoo.dbg && testWoo.dbg.take) {
+        var fl = testWoo.dbg.take();
+        if (fl && fl.length) {
+          evidenceLog = evidenceLog || [];
+          evidenceLog.push({ reason: "debugTrace", lines: fl });
+        }
+      }
+    } catch (eFi) { /* skip */ }
     _updateQueue(queueId, {
       status: status,
       slot_results: JSON.stringify(slotResults),
@@ -1491,6 +1581,11 @@ testWoo.foundry = (function () {
 
     var allEvidence = [];
     var extraEvidence = [];
+    try {
+      if (testWoo.dbg && testWoo.dbg.reset) testWoo.dbg.reset();
+      if (typeof twDbg === "function")
+        twDbg("foundry", "queue=" + queueId + " nl=" + String(row.nl_text || ""));
+    } catch (eFd) { /* skip */ }
     var atomicSkipSlots = [];
     var slotResults = [];
     var tokensUsed = row.tokens_used || 0;
@@ -1543,6 +1638,36 @@ testWoo.foundry = (function () {
 
         // #169: 서가(_source) hit → triage/generate/툴 0회
         var libHit = _tryLibraryCacheHit(slot);
+        var leftoverToks = [];
+        if (!libHit.ok && testWoo.fragContract && testWoo.fragContract.slotCoverParts &&
+            testWoo.fragments && testWoo.fragments.searchBySlot) {
+          try {
+            var pCands = testWoo.fragments.searchBySlot(slot, 8,
+              isAutoApprove() ? ["active"] : ["active", "verified"]) || [];
+            var pci, pCard, pFull, pDom, pParts;
+            for (pci = 0; pci < pCands.length; pci++) {
+              pCard = pCands[pci];
+              pFull = null;
+              try { pFull = testWoo.fragments.getByName(pCard.name); }
+              catch (ePF) { pFull = null; }
+              if (!pFull) continue;
+              pDom = _parseDomain(pFull.param_domain);
+              if (!pDom || !pDom._source) continue;
+              pParts = testWoo.fragContract.slotCoverParts(pFull, slot, pDom);
+              if (pParts.covered.length && pParts.leftover.length) {
+                libHit = {
+                  ok: true,
+                  fragmentId: Number(pFull.id),
+                  name: String(pFull.name || ""),
+                  domain: pDom,
+                  resolvedBy: "library_cache_hit"
+                };
+                leftoverToks = pParts.leftover;
+                break;
+              }
+            }
+          } catch (ePC) { /* miss */ }
+        }
         if (libHit.ok) {
           feasibleCount++;
           slotResults.push({
@@ -1560,12 +1685,26 @@ testWoo.foundry = (function () {
           });
           logInfo("[testWoo.foundry] library_cache_hit slot=" + String(slotId) +
             " name=" + libHit.name + " id=" + libHit.fragmentId);
+          if (leftoverToks.length) {
+            pending.unshift({
+              id: String(slotId) + "_rest",
+              text: leftoverToks.join(" "),
+              searchKeywords: leftoverToks.slice(0)
+            });
+            logInfo("[testWoo.foundry] leftover after library_cache_hit slot=" +
+              String(slotId) + " rest=" + leftoverToks.join(" "));
+          }
           var reuseLib = _resolveRemainingBySearch(pending, slotResults);
           pending = reuseLib.pending;
           feasibleCount += reuseLib.resolved;
           continue;
         }
 
+        try {
+          if (typeof twDbg === "function")
+            twDbg("foundry.slot", String(slotId) + " «" + String(slotText || "") +
+              "» atomic=" + String(slot.atomicColumn || ""));
+        } catch (eFs) { /* skip */ }
         var triageResult = testWoo.feasibility.triage(
           {
             id: slotId,
@@ -1594,6 +1733,24 @@ testWoo.foundry = (function () {
           });
           logInfo("[testWoo.foundry] library_cache_hit(via triage) slot=" +
             String(slotId) + " id=" + String(triageResult.fragmentId || ""));
+          if (testWoo.fragContract && testWoo.fragContract.slotCoverParts &&
+              testWoo.fragments && testWoo.fragments.getByName &&
+              triageResult.evidence && triageResult.evidence.fragmentName) {
+            try {
+              var tFull = testWoo.fragments.getByName(triageResult.evidence.fragmentName);
+              if (tFull) {
+                var tParts = testWoo.fragContract.slotCoverParts(
+                  tFull, slot, tFull.param_domain);
+                if (tParts.leftover.length) {
+                  pending.unshift({
+                    id: String(slotId) + "_rest",
+                    text: tParts.leftover.join(" "),
+                    searchKeywords: tParts.leftover.slice(0)
+                  });
+                }
+              }
+            } catch (eTL) { /* keep hit */ }
+          }
           var reuseTr = _resolveRemainingBySearch(pending, slotResults);
           pending = reuseTr.pending;
           feasibleCount += reuseTr.resolved;
@@ -1620,6 +1777,42 @@ testWoo.foundry = (function () {
               sampleEvidence: JSON.stringify(triageResult.evidence)
             });
           }
+          continue;
+        }
+
+        var tcols = _triageFilterCols(triageResult.evidence);
+        try {
+          if (typeof twDbg === "function") {
+            var cn = [];
+            var cni;
+            for (cni = 0; cni < tcols.length; cni++)
+              cn.push(String(tcols[cni].sqlColumn || tcols[cni].name || ""));
+            twDbg("foundry.triage", String(slotId) + " verdict=" +
+              String(triageResult.verdict || "") + " cols=[" + cn.join(",") +
+              "] nlContext=slot");
+          }
+        } catch (eFt) { /* skip */ }
+        if (!slot.atomicColumn && tcols.length > 1) {
+          pending = _kidsFromCols(slot, tcols).concat(pending);
+          slotResults.push({
+            slotId: slotId,
+            slotText: slotText,
+            verdict: "feasible",
+            confidence: triageResult.confidence,
+            narrative: "\uB2E4\uCEE4\uB7FC \uC2AC\uB86F\uC744 \uC6D0\uC790 " +
+              tcols.length + "\uAC74\uC73C\uB85C \uB098\uB214",
+            evidence: triageResult.evidence,
+            alternatives: [],
+            fragmentId: null,
+            resolvedBy: "split_atomic"
+          });
+          logInfo("[testWoo.foundry] split_atomic slot=" + String(slotId) +
+            " cols=" + tcols.length);
+          try {
+            if (typeof twDbg === "function")
+              twDbg("foundry.split", String(slotId) + " «" + String(slotText || "") +
+                "» → " + tcols.length + " kids (text copied from parent)");
+          } catch (eSp) { /* skip */ }
           continue;
         }
 
@@ -1658,7 +1851,9 @@ testWoo.foundry = (function () {
           var evAll = testWoo.toolkit.getEvidenceLog();
           evOff = evAll && evAll.length ? evAll.length : 0;
         } catch (eEv) { evOff = 0; }
-        var gen = generateFragmentForSlot(cfg, row.nl_text, slotText, queueId, slotId);
+        var gen = generateFragmentForSlot(cfg, row.nl_text, slotText, queueId, slotId, {
+          atomicColumn: slot.atomicColumn || ""
+        });
         tokensUsed += Number(gen.tokensUsed) || 0;
         if (gen.extraSlots && gen.extraSlots.length)
           pending = _mergeExtraPending(pending, gen.extraSlots);
@@ -1700,6 +1895,28 @@ testWoo.foundry = (function () {
         // #167: 다축/다컬럼/값구이 name 은 publish 하지 않고 skip.
         var atomic = _assertAtomicFrag(fragDoc);
         if (!atomic.ok) {
+          var sqlCols = _sqlFilterColumns(fragDoc.sql_text);
+          if (!slot.atomicColumn && sqlCols.length > 1) {
+            var scWrap = [];
+            var sci;
+            for (sci = 0; sci < sqlCols.length; sci++)
+              scWrap.push({ sqlColumn: sqlCols[sci] });
+            pending = _kidsFromCols(slot, scWrap).concat(pending);
+            slotResults.push({
+              slotId: slotId,
+              slotText: slotText,
+              verdict: "feasible",
+              confidence: triageResult.confidence,
+              narrative: atomic.reason + " \u2192 \uC6D0\uC790 \uBD84\uD560",
+              evidence: triageResult.evidence,
+              alternatives: [],
+              fragmentId: null,
+              resolvedBy: "split_atomic"
+            });
+            logInfo("[testWoo.foundry] split_atomic after generate slot=" +
+              String(slotId) + " cols=" + sqlCols.length);
+            continue;
+          }
           extraEvidence.push({
             reason: "non_atomic_frag",
             detail: atomic.reason,
@@ -1851,6 +2068,13 @@ testWoo.foundry = (function () {
         }
       }
 
+      try {
+        if (testWoo.dbg && testWoo.dbg.take) {
+          var dlines = testWoo.dbg.take();
+          if (dlines && dlines.length)
+            extraEvidence.push({ reason: "debugTrace", lines: dlines });
+        }
+      } catch (eDx) { /* skip */ }
       allEvidence = _collectEvidence();
       for (var ee = 0; ee < extraEvidence.length; ee++) allEvidence.push(extraEvidence[ee]);
       if (atomicSkipSlots.length) {
@@ -1885,7 +2109,7 @@ testWoo.foundry = (function () {
 
       if (infeasibleCount > 0 && feasibleCount === 0) {
         _finalizeInfeasible(queueId, claim.prevAttempt, slotResults, allEvidence,
-          "infeasible", "", tokensUsed);
+          "infeasible", "", tokensUsed, row.nl_text);
         return { ok: true, status: "infeasible", slotResults: slotResults };
       }
 
@@ -1898,7 +2122,7 @@ testWoo.foundry = (function () {
         }
         var preview = _buildPartialPreview(cfg, row.plan_json, excluded);
         _finalizeInfeasible(queueId, claim.prevAttempt, slotResults, allEvidence,
-          "partially_infeasible", preview, tokensUsed);
+          "partially_infeasible", preview, tokensUsed, row.nl_text);
         return { ok: true, status: "partially_infeasible", slotResults: slotResults };
       }
 
@@ -2287,4 +2511,4 @@ testWoo.foundry = (function () {
     repairIndexPollution: repairIndexPollution
   };
 })();
-testWoo.foundry.__v = "165";
+testWoo.foundry.__v = "170";

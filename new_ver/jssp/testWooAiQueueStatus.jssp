@@ -8,7 +8,7 @@ response.setContentType("application/json;charset=utf-8");
  *
  * [Main Functions]
  * ===========
- * - getQueueStatus — queueId→status·fragmentId·message
+ * - getQueueStatus — queueId→status·fragmentId·message·promptHints
  *
  * [Dependencies]
  * =========
@@ -34,7 +34,31 @@ try {
   if (!st) {
     jsonOut({ ok: false, error: "queue not found" });
   } else {
-    jsonOut({ ok: true, queue: st });
+    var dbg = [];
+    var ev = (st && st.evidenceLog) ? st.evidenceLog : [];
+    var ei, er;
+    for (ei = 0; ei < ev.length; ei++) {
+      er = ev[ei];
+      if (er && er.reason === "debugTrace" && er.lines && er.lines.length)
+        dbg = er.lines;
+    }
+    var promptHints = [];
+    var sr = (st && st.slotResults) || [];
+    var hi, hs;
+    for (hi = 0; hi < sr.length; hi++) {
+      hs = sr[hi] || {};
+      if (hs.promptHints && hs.promptHints.length) {
+        promptHints = hs.promptHints;
+        break;
+      }
+    }
+    jsonOut({
+      ok: true,
+      queue: st,
+      promptHints: promptHints,
+      debugOn: dbg.length > 0,
+      debugTrace: dbg
+    });
   }
 } catch (e) {
   handleApiError(e);

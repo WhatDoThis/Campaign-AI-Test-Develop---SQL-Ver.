@@ -5,13 +5,16 @@ response.setContentType("application/json;charset=utf-8");
  * ==================================================
  * Pass0→StageA→Pass1로 CNF plan 생성 후 compile·gates 실행.
  * unmatched 시 Foundry 큐 또는 plan_only. retryInput·unresolved이면 큐 없이 안내.
+ * unresolved면 promptHints(≤5). clarify_pick은 이번 요청만 IN.
+ * debug.enabled면 jsonOut에 debugTrace 부착(Studio #twDiag).
  *
  * [Main Functions]
  * ===========
- * - generatePlan — nl_request→plan·matchedSlots·unmatched
+ * - generatePlan — nl_request→plan·matchedSlots·unmatched. unresolved면 promptHints
  * - compile+runAll — gates 통과 시 sql·chips·summary 반환
  * - enqueueRequest — unmatched+Foundry ON 시 unmatchedSlots(#170) 큐잉
  * - plan_only — compile·큐 없이 plan/chips만 반환
+ * - verifyGroup — `_group` 별칭 human+verified (SQL/members 변경 없음)
  *
  * [Dependencies]
  * =========
@@ -55,6 +58,30 @@ try {
   requireRight("testWooAiSqlGenerate");
 
   var p = readPayload();
+  var action = String(p.action || "").toLowerCase();
+  if (action === "verifygroup") {
+    var vg = testWoo.fragments.verifyGroupAlias(
+      p.fragment || p.fragmentName || "",
+      p.param || p.groupParam || "",
+      p.alias || p.groupAlias || ""
+    );
+    if (!vg || !vg.ok) {
+      jsonOut({
+        ok: false,
+        passed: false,
+        error: (vg && vg.reason) ? String(vg.reason) : "verifyGroup failed"
+      });
+    } else {
+      jsonOut({
+        ok: true,
+        passed: true,
+        verified: true,
+        fragment: String(p.fragment || p.fragmentName || ""),
+        param: String(p.param || p.groupParam || ""),
+        alias: String(p.alias || p.groupAlias || "")
+      });
+    }
+  } else {
   if (!p.nl_request) throw new Error("nl_request missing");
   var cfg = testWoo.cfg.getConfig();
   var planOnly = !!(
@@ -76,7 +103,18 @@ try {
     p.after_foundry === "true"
   );
 
-  var plan = testWoo.llm.generatePlan(p.nl_request);
+  try {
+    if (testWoo.dbg && testWoo.dbg.reset) testWoo.dbg.reset();
+    if (typeof twDbg === "function") twDbg("generate", String(p.nl_request || ""));
+  } catch (eDbg) { /* skip */ }
+  var clarifyRound = Number(p.clarify_round || p.clarifyRound || 0);
+  if (isNaN(clarifyRound) || clarifyRound < 0) clarifyRound = 0;
+  var genOpts = null;
+  if (p.clarify_pick && typeof p.clarify_pick === "object")
+    genOpts = { clarifyPick: p.clarify_pick };
+  var plan = genOpts ?
+    testWoo.llm.generatePlan(p.nl_request, genOpts) :
+    testWoo.llm.generatePlan(p.nl_request);
   if (!plan) throw new Error("[Generate] generatePlan returned empty");
   var unmatched = plan.unmatched || [];
   var unresolved = plan.unresolved || [];
@@ -102,6 +140,14 @@ try {
         error: unmatched.join(" ")
       });
     } else if (unresolved.length) {
+      var promptHints = [];
+      try {
+        if (testWoo.fragContract && testWoo.fragContract.buildPromptHintsFromUnresolved)
+          promptHints = testWoo.fragContract.buildPromptHintsFromUnresolved(unresolved, {
+            nl: p.nl_request,
+            clarifyRound: clarifyRound
+          }) || [];
+      } catch (eH) { promptHints = []; }
       jsonOut({
         ok: false,
         passed: false,
@@ -109,6 +155,7 @@ try {
         unmatched: unmatched,
         matchedSlots: plan.matchedSlots || [],
         plan: clientPlan,
+        promptHints: promptHints,
         error: unmatched.join(" ")
       });
     } else if (planOnly) {
@@ -187,6 +234,7 @@ try {
       results: results,
       error: passed ? null : "validation failed"
     });
+  }
   }
 } catch (e) {
   var _genMsg = (e && e.message != null) ? String(e.message) : String(e);

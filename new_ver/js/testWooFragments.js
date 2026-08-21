@@ -1,7 +1,7 @@
 /*
  * testWooFragments.js (Fragment Stage A 검색)
  * ==================================================
- * litmus 동기 __v=165 (#174-4 M3 heal 시 param_domain 저장).
+ * litmus 동기 __v=166 (#175-5 `_group` 확인).
  * 슬롯별 후보 fragment 메타 검색. sql_text 일괄 로드 금지.
  * LIKE는 재호출망. 확정은 카탈로그 값⊂슬롯 + 축 identity.
  *
@@ -15,6 +15,7 @@
  * - listLexiconCards — active 메타(sql_text 없음) 렉시콘용
  * - healDomain — 별칭·params를 param_domain에 merge하고 색인 갱신
  * - saveParamDomain — param_domain JSON만 저장(_negative·healAt)
+ * - verifyGroupAlias — `_group` 별칭을 human+verified (members 유지)
  * - listCategories — Catalog용 category 목록
  * - clearCache — getByName 캐시 비우기
  *
@@ -277,6 +278,28 @@ testWoo.fragments = (function () {
     return { ok: true, domain: domain };
   }
 
+  function verifyGroupAlias(fragName, param, alias) {
+    var name = String(fragName || "");
+    var pk = String(param || "");
+    var a = String(alias || "");
+    if (!name || !pk || !a) return { ok: false, reason: "args missing" };
+    var fc = testWoo.fragContract;
+    if (!fc || !fc.upsertGroup) return { ok: false, reason: "noapi" };
+    var f = null;
+    try { f = getByName(name); } catch (eG) { f = null; }
+    if (!f || !f.id) return { ok: false, reason: "frag missing" };
+    var domain = fc.normalizeParamDomain(f.param_domain);
+    var g = domain && domain._group && domain._group[pk] && domain._group[pk][a];
+    if (!g || !g.members || !g.members.length)
+      return { ok: false, reason: "group missing" };
+    domain = fc.upsertGroup(domain, pk, a, g.members, {
+      src: "human",
+      verified: true,
+      en: g.en
+    });
+    return saveParamDomain(f, domain);
+  }
+
   // 4. Stage A — 다슬롯
   function searchSlots(slots, topN, statuses) {
     var out = [];
@@ -505,8 +528,9 @@ testWoo.fragments = (function () {
     listLexiconCards: listLexiconCards,
     healDomain: healDomain,
     saveParamDomain: saveParamDomain,
+    verifyGroupAlias: verifyGroupAlias,
     listCategories: listCategories,
     clearCache: clearCache
   };
 })();
-testWoo.fragments.__v = "165";
+testWoo.fragments.__v = "166";

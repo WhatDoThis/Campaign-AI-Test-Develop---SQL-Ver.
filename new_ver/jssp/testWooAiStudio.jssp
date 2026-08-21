@@ -3,6 +3,7 @@
  * ==================================================
  * Cookie __sessiontoken→logonWithToken 후 HTML 셸 렌더.
  * embed/urlViewer(IE)용 table 레이아웃·Option 주입·litmus v=.
+ * #nlHints는 NL 입력창 위 보강 칩(카드 치환 칩 없음).
  *
  * [Main Functions]
  * ===========
@@ -13,14 +14,14 @@
  *
  * [Dependencies]
  * =========
- * - /woo/testWooAiStudioJs.jssp?v=181 — 클라이언트 IIFE (새 SQL 쓰기 · 해시 중복 시 행 재사용)
+ * - /woo/testWooAiStudioJs.jssp?v=185 — 클라이언트 IIFE (debug 트레이스)
  * - Option testWooAiMatchEnabled — 1/true만 ON
  * - input_form testWooExtendWorkflow — urlViewer height=630(embed 본문+70 정합)
  *
  * [Invariants]
  * ===========
  * - MSHTML: fetch/Promise/flex/CSS변수 금지 · 한글 HTML 엔티티
- * - litmus URL v=181 필수 — 새 SQL 쓰기 · 넣기=신규 · 기존 행=덮어쓰기
+ * - litmus URL v=185 필수 — 진단 debug 트레이스
  * - NL textarea·목록 고정 height(+70) — 단독 630 / embed 510
  */
 response.setContentType("text/html;charset=utf-8");
@@ -213,15 +214,23 @@ if (!_login) {
     #twBootTable,#twBoot{display:none;}
     #twBootTable.tw-boot-show,#twBoot.tw-boot-show{display:block;}
     #twBoot{padding:3px 8px;background:#fffbeb;color:#92400e;font:11px/1.35 Tahoma,sans-serif;border-bottom:1px solid #f59e0b;}
+    #twRecentNl{margin:0;padding:6px 12px 8px;border-top:1px solid #e2e8f0;background:#fff;font-size:.75rem;color:#334155;}
+    #twRecentNl .tw-rq-h{font-weight:600;margin:0 0 4px;color:#64748b;}
+    #twRecentNl a.tw-rq{display:block;padding:3px 0;color:#2563eb;cursor:pointer;text-decoration:none;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    #twRecentNl .tw-rq-empty{color:#94a3b8;}
     #twDiag{margin:0;padding:6px 12px 10px;border-top:1px solid #e2e8f0;font-size:.72rem;color:#64748b;background:#f8fafc;}
     #twDiagSum{cursor:pointer;font-weight:600;}
-    #twDiagLog{max-height:120px;overflow:auto;font-family:Consolas,monospace;white-space:pre-wrap;background:#fff;border:1px solid #e2e8f0;padding:8px;margin-top:6px;}
+    #twDiagLog{max-height:240px;overflow:auto;font-family:Consolas,monospace;white-space:pre-wrap;background:#fff;border:1px solid #e2e8f0;padding:8px;margin-top:6px;}
     .side-empty{font-size:.82rem;color:#64748b;line-height:1.45;}
     .card{border:1px solid #e2e8f0;border-radius:14px;padding:14px 16px;margin:0 0 12px 0;}
     .card h2{font-size:.85rem;margin:0 0 10px;color:#64748b;text-transform:uppercase;letter-spacing:.03em;}
     .chips{display:block;}
     .chip{display:inline-block;margin:0 6px 6px 0;background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;border-radius:999px;padding:6px 12px;font-size:.85rem;}
+    .chip.unverified{background:#fffbeb;color:#92400e;border-color:#f59e0b;}
     .chip button{border:none;background:none;color:#2563eb;cursor:pointer;font-size:1rem;line-height:1;}
+    .chip.unverified button{color:#92400e;}
+    .chip button.chip-ok{font-size:.72rem;font-weight:700;margin-left:6px;padding:0 4px;color:#047857;}
     table.funnel{width:100%;border-collapse:collapse;font-size:.88rem;}
     table.funnel td{padding:6px 4px;border-bottom:1px dashed #e2e8f0;}
     table.funnel td.num{text-align:right;font-weight:600;}
@@ -246,6 +255,7 @@ if (!_login) {
     .badge-low{border:1px dashed #b45309;}
     .alt-chips{display:block;margin-top:8px;}
     .alt-chip{display:inline-block;font-size:.78rem;padding:4px 10px;margin:0 6px 6px 0;border-radius:999px;border:1px solid #e2e8f0;cursor:pointer;background:#f8fafc;}
+    #nlHints{display:block;margin:0 0 6px 0;min-height:0;}
     body.embed{background:#fff;height:auto;overflow:auto;margin:0;padding:0;}
     body.embed .app{display:block;max-width:none;width:auto;height:auto;border:none;background:#fff;}
     body.embed .header{display:block;padding:4px 8px;border-bottom:1px solid #e2e8f0;}
@@ -273,6 +283,7 @@ if (!_login) {
     body.embed .gates{font-size:.72rem;}
     body.embed pre.code{font-size:.7rem;padding:8px;max-height:120px;}
     body.embed #cardFunnel{display:none !important;}
+    body.embed #twRecentNl{display:block;font-size:.68rem;padding:4px 8px 6px;}
     body.embed #twDiag{display:block;font-size:.68rem;padding:4px 8px 8px;}
     body.embed #twDiagLog{display:block;max-height:100px;}
     body.embed .sql-item{padding:6px 44px 6px 6px;margin-bottom:6px;font-size:.78rem;border-radius:6px;}
@@ -318,7 +329,7 @@ if (!_login) {
   <!-- 오류 시에만 표시(#136). 정상 시 숨기고 진단 패널에만 기록 -->
   <table id="twBootTable" width="100%" bgcolor="#FFFF00" border="0" cellspacing="0" cellpadding="3" class="tw-boot-show">
     <tr><td>
-      <font id="twBootFont" face="Tahoma" size="2" color="#000000">TW-BOOT v=181 | loading&#x2026;</font>
+      <font id="twBootFont" face="Tahoma" size="2" color="#000000">TW-BOOT v=185 | loading&#x2026;</font>
     </td></tr>
   </table>
   <div id="twBoot" class="tw-boot-show">Studio boot&#x2026;</div>
@@ -337,7 +348,7 @@ if (!_login) {
         r = amp < 0 ? rest : rest.substring(0, amp);
       }
     } catch (eR) {}
-    var msg = "TW-BOOT v=181 | documentMode=" + dm + " | embed=" + emb + " | match=" + (window.__TW_MATCH_ENABLED__ ? "1" : "0") + " | _r=" + (r || "-");
+    var msg = "TW-BOOT v=185 | documentMode=" + dm + " | embed=" + emb + " | match=" + (window.__TW_MATCH_ENABLED__ ? "1" : "0") + " | _r=" + (r || "-");
     var font = document.getElementById("twBootFont");
     if (font) font.innerHTML = msg;
     var el = document.getElementById("twBoot");
@@ -390,6 +401,7 @@ if (!_login) {
             <div class="banner err hidden" id="err"></div>
           </div>
           <div class="composer">
+            <div id="nlHints"></div>
             <div id="twNlHint" class="hidden">&#xC870;&#xAC74;&#xC744; &#xC785;&#xB825;&#xD55C; &#xB4A4; [&#xB300;&#xC0C1; &#xB9CC;&#xB4E4;&#xAE30;]&#xB97C; &#xB204;&#xB974;&#xC138;&#xC694;</div>
             <textarea id="nl" rows="1"></textarea>
             <div class="actions">
@@ -410,14 +422,18 @@ if (!_login) {
       </tr>
     </table>
 
+    <div id="twRecentNl">
+      <div class="tw-rq-h">&#xC774;&#xBC88; &#xC9C8;&#xBB38; (&#xB2F9;&#xC0AC;&#xC790;)</div>
+      <div id="twRecentList"><div class="tw-rq-empty">&#xC544;&#xC9C1; &#xBCF4;&#xB0B8; &#xC9C8;&#xBB38;&#xC774; &#xC5C6;&#xC2B5;&#xB2C8;&#xB2E4;.</div></div>
+    </div>
     <div id="twDiag">
       <div id="twDiagSum" style="cursor:pointer;font-weight:600;margin-bottom:4px;">&#xC9C4;&#xB2E8; (IE / urlViewer) &#x2014; &#xD074;&#xB9AD;&#xD558;&#xC5EC; &#xC811;&#xAE30;</div>
       <div id="twDiagLog" style="display:block;"></div>
     </div>
   </div>
 
-  <!-- v=181 · 새 SQL 쓰기 · 해시 중복 행 재사용 · Match OFF 유지 -->
-  <script type="text/javascript" src="/woo/testWooAiStudioJs.jssp?v=181"></script>
+  <!-- v=185 · debug 트레이스 · Match OFF 유지 -->
+  <script type="text/javascript" src="/woo/testWooAiStudioJs.jssp?v=185"></script>
 </body>
 </html>
 <%

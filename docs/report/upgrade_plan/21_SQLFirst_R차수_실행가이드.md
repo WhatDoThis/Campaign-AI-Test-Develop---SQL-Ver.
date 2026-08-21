@@ -221,12 +221,16 @@ Register/Repository/WorkflowClone 관련 커밋 revert
 
 ## R7 — 상대시점 · 복제 보조 (#151R 작업1~2)
 
+> **축소 (2026-08-14):** 추출 SQL HUMAN PASS 이후. compiler·Foundry·LLM **동결**.  
+> PoC-M: 현행 fragment는 absolute 리터럴. relative 미사용.  
+> 이 차수 = **배지 표시** + **기존 clone/createWkfFromTemplate 재사용**. compiler에 AddDays/GetDate 넣지 말 것.
+
 ### 0. 실행 프롬프트
 `#151R` 작업1~2. 용어 relative/absolute만. FormatDate 금지.
 
-S11=리터럴 → fragment 규칙 개정 시도. 스키마 확장 필요 시 설계만 문서화 후 중단.
+S11=리터럴 → **규칙 개정 시도 금지**(추출 손상). 배지만. 스키마 확장은 설계 문서만.
 
-S12 미확인 Duplicate* → `createWkfFromTemplate` 폴백.
+S12 미확인 Duplicate* → `createWkfFromTemplate` 폴백(이미 있음). 신규 Duplicate 실험 금지.
 
 ### 선행
 R6
@@ -246,7 +250,8 @@ absolute 배지 육안 · (relative 구현 시) 재실행 대상 변화 설명 �
 
 ### 0. 실행 프롬프트
 `#151R` 작업3~4.  
-`14` 폐기 항목 실제거 · 큐 잔여물 구현 또는 운영 절차 · SUPERSEDED vs 코드 대조 ·  
+`14` 폐기 항목은 **6개월+R6 안정 후**. Inject/Open/`testWooWorkflowUi` 삭제 금지.  
+큐 잔여물 구현 또는 운영 절차 · SUPERSEDED vs 코드 대조 ·  
 `/acc-id-tracer` · `/acc-verifier` · HUMAN_CONSOLE 자체 PASS 금지.
 
 ### 선행

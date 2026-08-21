@@ -1,6 +1,6 @@
 # #175 — 값 확장 (Group Expansion)
 
-> **상태:** `[~]` G1/G2/G4/G5/G6 PASS · 4단계 [x]흡수 · G3 미실시 · 다음=5단계 verified UI  
+> **상태:** `[~]` G1/G2/G4/G5/G6 PASS · 5단계 **repo v=182** · HUMAN[`H`] · G3 하지 말 것  
 > 선행: `#174-4` M1~M3 · `#174` V6 repo+HUMAN 교차(복사 배포)  
 > AI가 HUMAN을 PASS로 자체 처리하지 않음.
 
@@ -86,7 +86,9 @@ HUMAN 2026-08-14: `전체 대상` EXCEPT `IN ('서울')`. 게이트 3통과. 칩
 
 ### 5단계 — Studio `verified:false` 확인 UI
 
-승인 시 `src:"human"`, `verified:true`.
+칩에 별칭을 보여 준다 (`전라도 → 전남, 전북`). `verified:false`면 [맞음].  
+승인 시 `src:"human"`, `verified:true`. **members·sql_text·compiler 조립 변경 금지.**  
+Generate `action=verifyGroup`. LibraryManage 불필요(마케터 Generate 권한).
 
 ---
 
@@ -117,9 +119,9 @@ HUMAN 2026-08-14: `전체 대상` EXCEPT `IN ('서울')`. 게이트 3통과. 칩
 ## 6. Chat 한 줄
 
 ```
-차수: #175 5단계 verified UI
+차수: #175-5 HUMAN
 가이드: docs/report/upgrade_plan/38_값확장_GroupExpansion_175.md
-선행: 배포 추가 없음 (177/162 유지). G5 PASS
-모드: 구현 · `_group` verified:false 확인 · 승인 시 src=human
-금지: 전라도/전북/판교 하드코딩 · Match Option ON · R6 · 컴파일러 NOT IN
+선행: v=182 · compiler 165 · fragContract 176 · fragments 166
+모드: HUMAN만
+금지: 전라도/전북/판교 하드코딩 · Match Option ON · G3 · 컴파일러 NOT IN
 ```

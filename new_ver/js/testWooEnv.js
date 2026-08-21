@@ -1,7 +1,7 @@
 /*
  * testWooEnv.js (내장 튜닝·가드레일 상수)
  * ==================================================
- * litmus 동기 __v=159 (#160 배포정합).
+ * litmus 동기 __v=160 (debug.enabled — 파이프라인 트레이스).
  * Git 관리 상수. 배포 후 JS 라이브러리만 재등록하면 튜닝 반영.
  * 시크릿은 XtkOption 3개만 — 나머지는 ENV 객체.
  * #164: maxNewFragments=10 · tokenBudget=200000 · toolkit.totalCallBudget=384.
@@ -10,7 +10,7 @@
  * [Main Functions]
  * ===========
  * - getEnv — ENV 상수 객체 반환(런타임 변경 없음)
- * - ENV — guard·llm·toolkit·foundry·triage 등 내장 상수
+ * - ENV — guard·llm·toolkit·foundry·triage·debug 등 내장 상수
  *
  * [Dependencies]
  * =========
@@ -35,6 +35,15 @@ testWoo.env = (function () {
      * ------------------------------------------------------------------ */
     security: {
       allowedCidr: ""
+    },
+
+    /* ------------------------------------------------------------------
+     * debug — Studio #twDiag 파이프라인 트레이스
+     * enabled: true면 번역·슬롯 절단·매칭·Foundry 결정을 진단 패널에 남긴다.
+     *   끄려면 이 값만 false 로 바꾸고 Env.js 재등록.
+     * ------------------------------------------------------------------ */
+    debug: {
+      enabled: true
     },
 
     /* ------------------------------------------------------------------
@@ -202,4 +211,37 @@ testWoo.env = (function () {
 
   return { getEnv: getEnv, ENV: ENV };
 })();
-testWoo.env.__v = "159";
+testWoo.env.__v = "160";
+
+testWoo.dbg = (function () {
+  "use strict";
+  var buf = [];
+  var on = null;
+  function enabled() {
+    if (on != null) return on;
+    try {
+      var e = testWoo.env && testWoo.env.getEnv ? testWoo.env.getEnv() : null;
+      on = !!(e && e.debug && e.debug.enabled);
+    } catch (eD) { on = false; }
+    return on;
+  }
+  function reset() {
+    buf = [];
+    on = null;
+  }
+  function add(step, msg) {
+    if (!enabled()) return;
+    var line = String(step || "dbg") + " | " + String(msg || "");
+    if (buf.length >= 80) return;
+    buf.push(line);
+    try { logInfo("[testWoo.dbg] " + line); } catch (eL) { /* non-ACC */ }
+  }
+  function take() {
+    return buf.slice(0);
+  }
+  return { enabled: enabled, reset: reset, add: add, take: take };
+})();
+
+function twDbg(step, msg) {
+  if (testWoo.dbg && testWoo.dbg.add) testWoo.dbg.add(step, msg);
+}

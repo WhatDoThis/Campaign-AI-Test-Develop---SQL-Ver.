@@ -1,7 +1,7 @@
 /*
  * testWooLlm.js (LLM Pass0·Pass1 파이프라인)
  * ==================================================
- * litmus 동기 __v=178 (N대 heal-miss를 여러항목으로 안 씀).
+ * litmus 동기 __v=185 (분할 자식은 unmatched 유지. debug 트레이스. clarifyPick 요청단위 IN).
  * EnPivot(전체 문장 1콜, 캐시만 스킵) 후 Pass1. 추출 실패 시 재입력(Pass0 우회 금지).
  * 최종 SQL은 쓰지 않음. 동기 HttpClientRequest만 사용.
  *
@@ -10,7 +10,7 @@
  * - decomposeSlots — Pass0 NL→slots JSON(EnPivot 없을 때 폴백)
  * - normalizeAtomicSlots — EnPivot 슬롯 통과(중복·빈 텍스트만 제거)
  * - selectPlan — Pass1 후보→CNF plan JSON
- * - generatePlan — EnPivot→M1/M2/M2G/M2C/M3 매칭→Pass1. retryInput·unresolved 시 SQL 없음
+ * - generatePlan — EnPivot→M1/M2/M2G/M2C/M3 매칭→Pass1. retryInput·unresolved 시 SQL 없음. opts.clarifyPick은 이번 요청만
  * - chat — 동기 chat/completions (EnPivot translateAndExtract)
  * - parseJson — LLM 봉투→JSON 객체
  * - postChat — chat/completions 호출·오류 메타 부착
@@ -23,7 +23,7 @@
  * - testWoo.cfg.getConfig — apiKey·model·endpoint·provider
  * - testWoo.enPivot.extractSlots·toPipelineSlots — 전체 NL 번역 (load 선행)
  * - testWoo.fragments.searchSlots·listLexiconCards·healDomain·saveParamDomain
- * - testWoo.fragContract.matchEnPivotSlot·upsertGroup·validateBind — M1/M2G/M2/M2C/M3 · 바인딩
+ * - testWoo.fragContract.matchEnPivotSlot·splitCoordSlots·slotCoverParts — 매칭·및/and 분할·leftover
  * - HttpClientRequest + MemoryBuffer — serverConf urlPermission 필요
  * - Foundry `_normalizeSlots` — normalizeAtomicSlots 재사용
  *
@@ -32,17 +32,19 @@
  * - response_format json_object 미사용 — 프롬프트+_parseJson으로 JSON 강제
  * - HttpClientRequest.wait 금지 · Rhino map/forEach/filter 금지
  * - #170: 슬롯 1개 = 조건 축 1개. 쪼개기는 EnPivot extract
- * - 같은 tags/name 축 frag가 있으면 unmatched→Foundry 신규 생성 금지. 값은 heal. 별칭은 슬롯 원문만(NL 전체 금지)
+ * - 같은 tags/name 축 frag가 있으면 값 미등재만 heal. leftover는 및/and 다른 지정어만 Foundry.
  * - unresolved(value_not_in_domain|ambiguous|ambiguous_group) → Foundry 큐 금지
  * - #175-3: 상위어는 M2G/M2C 한 frag. 닫힌 후보에만 편입. 자식이 후보에 있으면 그 값을 씀. Pass1 UNION 분할 금지
  * - #175 G5: exclude만 있으면 include=[] 허용. 컴파일러가 grain universe + EXCEPT. polarity=exclude는 exclude[]로
- * - concept 없는 잔여(en_literal만 있는 glue 포함)는 unmatched/Foundry 금지. M2 히트만 조건으로 유지
+ * - 한글 없는 glue 잔여만 unmatched 금지. 분할된 한글 슬롯(7월/미납자)은 버린다
  * - normalizeAtomicSlots는 KO 지역/성별/N대 regex로 재분할하지 않음
  * - Rhino strict: function 선언은 함수 본문 최상위만. for/if 안 금지
  */
 var testWoo = testWoo || {};
 testWoo.llm = (function () {
   "use strict";
+
+  var _activeClarifyPick = null;
 
   function _trim(s) {
     return String(s == null ? "" : s).replace(/^\s+|\s+$/g, "");
@@ -690,11 +692,50 @@ testWoo.llm = (function () {
     plan.include = out;
   }
 
+  function _clarifyPickApplies(sc, pick) {
+    if (!sc || !pick) return false;
+    var t = String(sc.text || sc.surface || "");
+    var surf = String(pick.surface || "");
+    if (pick.slotId && sc.id && String(pick.slotId) === String(sc.id)) return true;
+    if (surf && t.indexOf(surf) >= 0) return true;
+    return false;
+  }
+
+  function _bindClarifyPick(sc, card, pick) {
+    var val = pick.value;
+    var union = pick.union === true || pick.union === "true";
+    if (union) {
+      if (!_isArray(val) || !val.length) return null;
+    } else if (val == null || val === "") return null;
+    var pk = String(pick.param || "");
+    if (!pk && card && testWoo.fragContract && testWoo.fragContract.normalizeParamDomain) {
+      var domain = testWoo.fragContract.normalizeParamDomain(card.param_domain);
+      pk = _pickGroupParam(domain, "");
+    }
+    if (!pk) return null;
+    return {
+      kind: "matched",
+      slot: _matchedSlot(sc, card, {
+        layer: union ? "M2G" : "M1",
+        param: pk,
+        nl: String(pick.patch || pick.surface || ""),
+        value: val,
+        group: union,
+        ambiguous: false,
+        hits: []
+      })
+    };
+  }
+
   function _resolveEnPivotSlot(sc, pack, skipPass0) {
     var fc = testWoo.fragContract;
     if (!fc || !fc.matchEnPivotSlot)
       return { kind: "empty" };
     var cards = _collectSlotCards(sc, pack);
+    if (_activeClarifyPick && _clarifyPickApplies(sc, _activeClarifyPick) && cards.length) {
+      var picked = _bindClarifyPick(sc, cards[0], _activeClarifyPick);
+      if (picked) return picked;
+    }
     var m1 = [];
     var m2g = [];
     var m2 = [];
@@ -852,7 +893,26 @@ testWoo.llm = (function () {
   }
 
   // 3. full pipeline helper
-  function generatePlan(nlRequest) {
+  function _slotBrief(s) {
+    if (!s) return "-";
+    return "«" + String(s.text || s.surface || "") + "»" +
+      (s.concept ? " concept=" + s.concept : "") +
+      (s.en_literal ? " en=" + s.en_literal : "");
+  }
+
+  function generatePlan(nlRequest, opts) {
+    _activeClarifyPick = (opts && opts.clarifyPick) ? opts.clarifyPick : null;
+    try {
+      return _generatePlanCore(nlRequest);
+    } finally {
+      _activeClarifyPick = null;
+    }
+  }
+
+  function _generatePlanCore(nlRequest) {
+    try {
+      if (typeof twDbg === "function") twDbg("nl", String(nlRequest || ""));
+    } catch (eN) { /* skip */ }
     var pack = _loadLexiconPack();
     var lexSlots = [];
     if (pack.lex && pack.lex.length && testWoo.fragContract.splitByLexicon)
@@ -902,8 +962,33 @@ testWoo.llm = (function () {
     var slots = llmSlots;
     if (testWoo.fragContract && testWoo.fragContract.mergeLexiconSlots)
       slots = testWoo.fragContract.mergeLexiconSlots(lexSlots, llmSlots);
+    try {
+      if (typeof twDbg === "function" && lexSlots.length && llmSlots.length)
+        twDbg("merge", "lex=" + lexSlots.length + " vs pivot=" + llmSlots.length +
+          " (긴 LLM span 우선 — 사전 슬롯이 삼켜질 수 있음)");
+    } catch (eMg) { /* skip */ }
     if (!slots || !slots.length) slots = lexSlots.length ? lexSlots : llmSlots;
     slots = normalizeAtomicSlots(slots);
+    var nBeforeCoord = (slots && slots.length) ? slots.length : 0;
+    if (testWoo.fragContract && testWoo.fragContract.splitCoordSlots)
+      slots = testWoo.fragContract.splitCoordSlots(slots);
+    if (testWoo.fragContract && testWoo.fragContract.splitCompoundSlots) {
+      var idLex = pack.cards && testWoo.fragContract.collectLexicon ?
+        testWoo.fragContract.collectLexicon(pack.cards, { identityOnly: true }) :
+        (pack.lex || []);
+      slots = testWoo.fragContract.splitCompoundSlots(slots, idLex);
+    }
+    try {
+      if (typeof twDbg === "function") {
+        twDbg("slots", "lex=" + lexSlots.length + " pivot=" + llmSlots.length +
+          " merged=" + nBeforeCoord + " afterCompound=" +
+          ((slots && slots.length) ? slots.length : 0) +
+          " enPivot=" + (skipReason || "off"));
+        var zi;
+        for (zi = 0; slots && zi < slots.length; zi++)
+          twDbg("slot", String(zi + 1) + " " + _slotBrief(slots[zi]));
+      }
+    } catch (eS) { /* skip */ }
     if (testWoo.enPivot && testWoo.enPivot.isNonConditionSlot) {
       var keptSlots = [];
       var gi;
@@ -925,22 +1010,99 @@ testWoo.llm = (function () {
     var emptySlots = [];
     var matchedSlots = [];
     var unresolved = [];
+    function _filterIdentityCands(cands, restSlot) {
+      var out = [];
+      var ci, card, parts;
+      if (!cands || !cands.length) return out;
+      if (!testWoo.fragContract || !testWoo.fragContract.slotCoverParts) return cands;
+      for (ci = 0; ci < cands.length; ci++) {
+        card = cands[ci];
+        parts = testWoo.fragContract.slotCoverParts(card, restSlot, card.param_domain);
+        if (parts && parts.identityHit) out.push(card);
+      }
+      return out;
+    }
+    function _enqueueLeftoverTokens(srcSlot, toks) {
+      var ti, rest, cands;
+      if (!toks || !toks.length) return;
+      for (ti = 0; ti < toks.length; ti++) {
+        if (!toks[ti] || String(toks[ti]) === String(srcSlot.text || "")) continue;
+        rest = {
+          id: String(srcSlot.id || "s") + "_rest" + ti,
+          text: String(toks[ti]),
+          hintedCategory: "",
+          searchKeywords: [String(toks[ti])],
+          resolvedName: "",
+          concept: null,
+          en_literal: String(toks[ti]),
+          polarity: srcSlot.polarity || "include",
+          candidates: []
+        };
+        if (testWoo.fragments && testWoo.fragments.searchBySlot) {
+          try { cands = testWoo.fragments.searchBySlot(rest, 8) || []; }
+          catch (eR) { cands = []; }
+          rest.candidates = _filterIdentityCands(cands, rest);
+        }
+        slotCandidates.push(rest);
+      }
+    }
+    function _afterMatch(srcSlot, card, matchedSlot) {
+      matchedSlots.push(matchedSlot);
+      if (!card || !testWoo.fragContract || !testWoo.fragContract.slotCoverParts)
+        return;
+      var parts = testWoo.fragContract.slotCoverParts(card, srcSlot, card.param_domain);
+      if (parts.leftover && parts.leftover.length) {
+        try {
+          if (typeof twDbg === "function")
+            twDbg("leftover", _slotBrief(srcSlot) + " rest=" +
+              parts.leftover.join(","));
+        } catch (eLf) { /* skip */ }
+        _enqueueLeftoverTokens(srcSlot, parts.leftover);
+      }
+    }
     for (var si = 0; si < slotCandidates.length; si++) {
       var sc = slotCandidates[si];
       var decided = _resolveEnPivotSlot(sc, pack, skipPass0);
       if (decided.kind === "matched") {
-        matchedSlots.push(decided.slot);
+        try {
+          if (typeof twDbg === "function") {
+            var mcard = decided.slot && decided.slot.candidates &&
+              decided.slot.candidates[0];
+            var lyr = decided.slot && decided.slot.match &&
+              decided.slot.match.layer;
+            twDbg("match", _slotBrief(sc) + " → " +
+              String((mcard && mcard.name) || decided.slot.resolvedName || "") +
+              " layer=" + String(lyr || ""));
+          }
+        } catch (eM) { /* skip */ }
+        _afterMatch(sc, decided.slot && decided.slot.candidates &&
+          decided.slot.candidates[0], decided.slot);
         continue;
       }
       if (decided.kind === "unresolved") {
+        try {
+          if (typeof twDbg === "function")
+            twDbg("unresolved", _slotBrief(sc) + " " +
+              String((decided.item && decided.item.reason) || ""));
+        } catch (eU) { /* skip */ }
         unresolved.push(decided.item);
         continue;
       }
-      if (decided.kind === "empty" && !sc.concept) continue;
+      if (decided.kind === "empty" && !sc.concept) {
+        if (_isNoiseResidue(sc.text)) continue;
+        if (testWoo.enPivot && testWoo.enPivot.isNonConditionSlot &&
+            testWoo.enPivot.isNonConditionSlot(sc)) continue;
+        if (!_hasHangul(sc.text) && !_hasHangul(sc.en_literal)) continue;
+      }
       if (!sc.candidates || !sc.candidates.length) {
         if (_isNoiseResidue(sc.text)) continue;
         if (testWoo.enPivot && testWoo.enPivot.isNonConditionSlot &&
             testWoo.enPivot.isNonConditionSlot(sc)) continue;
+        try {
+          if (typeof twDbg === "function")
+            twDbg("unmatched", "empty " + _slotBrief(sc) +
+              " cands=" + ((sc.candidates && sc.candidates.length) || 0));
+        } catch (eE) { /* skip */ }
         empty.push(sc.text);
         emptySlots.push({
           id: sc.id,
@@ -954,7 +1116,7 @@ testWoo.llm = (function () {
       } else {
         var expE = _tryGroupExpand(sc, sc.candidates[0], null);
         if (expE && expE.ok) {
-          matchedSlots.push(_matchedSlot(sc, expE.card, expE.match));
+          _afterMatch(sc, expE.card, _matchedSlot(sc, expE.card, expE.match));
           continue;
         }
         if (expE && expE.skip === "range") {
@@ -1001,6 +1163,11 @@ testWoo.llm = (function () {
       };
     }
     if (empty.length) {
+      try {
+        if (typeof twDbg === "function")
+          twDbg("decide", "stage=stageA_empty unmatched=" + empty.join(" | ") +
+            " matched=" + matchedSlots.length);
+      } catch (eDe) { /* skip */ }
       return {
         grainKey: "",
         include: [],
@@ -1018,6 +1185,17 @@ testWoo.llm = (function () {
     plan.nl_request = String(nlRequest || "");
     plan._meta = { slots: slots, slotCandidates: slotCandidates, stage: "pass1",
       enPivot: skipReason };
+    try {
+      if (typeof twDbg === "function") {
+        twDbg("decide", "stage=pass1 matched=" + matchedSlots.length);
+        _walkFragments(plan, function (item) {
+          if (!item || !item.fragment) return;
+          var ps = item.params ? JSON.stringify(item.params) : "";
+          if (ps.length > 80) ps = ps.substring(0, 80) + "...";
+          twDbg("plan", String(item.fragment) + (ps ? " " + ps : ""));
+        });
+      }
+    } catch (ePl) { /* skip */ }
     _applyMatchParams(plan, matchedSlots);
     if (testWoo.compiler && testWoo.compiler.bindPlanParams)
       testWoo.compiler.bindPlanParams(plan, plan.nl_request);
@@ -1026,10 +1204,44 @@ testWoo.llm = (function () {
     _repairMissingParams(plan);
     _healPlanDomains(plan);
     _dropBindableUnmatched(plan);
+    _resplitUnmatched(plan, pack);
     return plan;
   }
 
-  // 같은 축+_source frag가 plan에 있으면 값 미등재는 heal 대상 — unmatched/큐 금지.
+  function _hasHangul(s) {
+    return /[가-힣]/.test(String(s || ""));
+  }
+
+  function _resplitUnmatched(plan, pack) {
+    if (!plan || !plan.unmatched || !plan.unmatched.length) return;
+    if (!testWoo.fragContract || !testWoo.fragContract.splitCompoundSlots) return;
+    var cards = (pack && pack.cards) || [];
+    var idLex = [];
+    try {
+      idLex = testWoo.fragContract.collectLexicon(cards, { identityOnly: true }) || [];
+    } catch (eL) { idLex = []; }
+    var raw = [];
+    var i;
+    for (i = 0; i < plan.unmatched.length; i++)
+      raw.push({ text: String(plan.unmatched[i] || "") });
+    var split = testWoo.fragContract.splitCompoundSlots(raw, idLex) || [];
+    var texts = [];
+    var slots = [];
+    for (i = 0; i < split.length; i++) {
+      if (!split[i] || !split[i].text) continue;
+      texts.push(String(split[i].text));
+      slots.push(split[i]);
+    }
+    if (!texts.length) return;
+    plan.unmatched = texts;
+    plan.unmatchedSlots = slots;
+    try {
+      if (typeof twDbg === "function")
+        twDbg("unmatched.split", texts.join(" | "));
+    } catch (eD) { /* skip */ }
+  }
+
+  // 같은 축+_source frag가 plan에 있으면 도메인 값만 heal. 남는 명사는 unmatched 유지.
   function _dropBindableUnmatched(plan) {
     if (!plan || !plan.unmatched || !plan.unmatched.length) return;
     if (!testWoo.fragContract || !testWoo.fragments || !testWoo.fragments.getByName) return;
@@ -1051,7 +1263,8 @@ testWoo.llm = (function () {
         domain = testWoo.fragContract.normalizeParamDomain ?
           testWoo.fragContract.normalizeParamDomain(f.param_domain) : {};
         if (domain && domain._source &&
-            testWoo.fragContract.axesCompatible(f, { text: phrase }))
+            testWoo.fragContract.domainMatchSlot &&
+            testWoo.fragContract.domainMatchSlot(domain, phrase))
           bindable = true;
       }
       if (!bindable) kept.push(plan.unmatched[i]);
@@ -1899,4 +2112,4 @@ testWoo.llm = (function () {
     _readResponseBody: _readResponseBody
   };
 })();
-testWoo.llm.__v = "178";
+testWoo.llm.__v = "185";
