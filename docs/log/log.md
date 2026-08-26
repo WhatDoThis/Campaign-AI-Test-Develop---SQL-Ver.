@@ -1,6 +1,11 @@
 # Log
 
 ## Log Index
+366. 2026-08-26 HUMAN PASS — orphan SQL E2E Register (WKF162 ai_sql_id=41472)
+365. 2026-08-26 HUMAN PASS — push+marketing consent Register E2E (WKF162 ai_sql_id=41471)
+364. 2026-08-26 HUMAN PASS — orphan SQL draft·Program 자동 진입 (v=197)
+363. 2026-08-26 orphan SQL — draft 캐시·Program 매핑 자동 진입 (v=197)
+362. 2026-08-26 orphan SQL 재사용 — stale chips/SQL 제거·plan 재검증 (v=196)
 361. 2026-08-26 HUMAN PASS — span «2023 1~6월 가입자» inline heal E2E (fragContract 204 / llm 200)
 360. 2026-08-25 library_cache_hit span — predicate gate + Foundry/Generate inline heal (fragContract 204 / foundry 179 / llm 200)
 359. 2026-08-25 compact yms «2023 1~6월» — induce·span gate·compile (fragContract 203 / llm 199 / compiler 168)
@@ -364,6 +369,44 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+366. 2026-08-26 HUMAN PASS — orphan SQL E2E Register (WKF162 ai_sql_id=41472)
+Purpose: orphan origin(getSql→validate→putDraft→Program) → WKF Register 전 구간 HUMAN.
+Changes:
+- WKF 삭제됨 클릭 → validate 2회 · putDraft · Program→Campaign→WKF162
+- Register overwrite=0 → ai_sql_id=41472 · loadSqlList items=2 current=41472
+- orphan SQL 트랙(v=196~197) **닫힘**
+Changed files: (HUMAN only) docs/log/log.md
+
+365. 2026-08-26 HUMAN PASS — push+marketing consent Register E2E (WKF162 ai_sql_id=41471)
+Purpose: v=197 배포 후 ST0 Generate → Program→WKF → Register 회귀 — consent 2축 boolean.
+Changes:
+- NL: `푸시동의하고 마케팅동의안한 고객` → enPivot 2슬롯 · pass1 matched=2
+- plan: woo__app__pushconsent pushConsent=1 · woo__customer__marketingconsent marketingConsent=["0"]
+- Register WKF162 → ai_sql_id=41471 · loadSqlList items=1
+Changed files: (HUMAN only) docs/log/log.md
+
+364. 2026-08-26 HUMAN PASS — orphan SQL draft·Program 자동 진입 (v=197)
+Purpose: v=197 orphan 재사용 UX — WKF 삭제됨 클릭 후 draft·Program 선택 자동 진입 HUMAN.
+Changes:
+- HUMAN: 비슷한 예전 조건 → WKF 삭제됨 클릭 → chips/SQL 동기 · «이어서 할 작업» draft · Program 목록 자동 전환 · [대상 만들기] 불필요
+Changed files: (HUMAN only) docs/log/log.md
+
+363. 2026-08-26 orphan SQL — draft 캐시·Program 매핑 자동 진입 (v=197)
+Purpose: WKF 삭제됨 SQL 로드 후 chips/SQL은 준비됐는데 [대상 만들기] 재클릭 필요 — Generate 재호출 없이 draft·매핑으로 이어야 함.
+Changes:
+- _reuseOrphanSql — validate 성공 시 putDraft·ST2·_beginMapping(fromOrphan) — «이어서 할 작업» draft 클릭과 동일
+- _beginMapping — fromOrphan 배너: Program→Campaign→WKF 안내(대상 만들기 문구 제거)
+- state.cacheId 초기화 — orphan마다 새 draft 슬롯
+Changed files: new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
+
+362. 2026-08-26 orphan SQL 재사용 — stale chips/SQL 제거·plan 재검증 (v=196)
+Purpose: WKF 삭제됨 SQL 클릭 시 상단 경고는 맞으나 이전 [대상 만들기] chips·「준비됨」·SQL이 혼재.
+Changes:
+- _reuseOrphanSql — hideResultCards·hint 초기화 후 getSql → validate(plan) → chips/gates/SQL 동기
+- orphan 배너만 표시(renderSummaryHint「준비됨」 미호출) · state.passed는 validate 결과만
+- litmus v=196 — TW-BOOT·StudioJs.jssp 동기
+Changed files: new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
 
 361. 2026-08-26 HUMAN PASS — span «2023 1~6월 가입자» inline heal E2E (fragContract 204 / llm 200)
 Purpose: #359~#360 배포 후 마케터 축약 NL E2E — Foundry 큐 없이 spanHeal → pass1 → Register.

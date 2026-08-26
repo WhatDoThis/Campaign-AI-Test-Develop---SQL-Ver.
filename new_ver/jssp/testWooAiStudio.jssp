@@ -338,7 +338,7 @@ if (!_login) {
   <!-- 오류 시에만 표시(#136). 정상 시 숨기고 진단 패널에만 기록 -->
   <table id="twBootTable" width="100%" bgcolor="#FFFF00" border="0" cellspacing="0" cellpadding="3" class="tw-boot-show">
     <tr><td>
-      <font id="twBootFont" face="Tahoma" size="2" color="#000000">TW-BOOT v=192 | loading&#x2026;</font>
+      <font id="twBootFont" face="Tahoma" size="2" color="#000000">TW-BOOT v=197 | loading&#x2026;</font>
     </td></tr>
   </table>
   <div id="twBoot" class="tw-boot-show">Studio boot&#x2026;</div>
@@ -357,7 +357,7 @@ if (!_login) {
         r = amp < 0 ? rest : rest.substring(0, amp);
       }
     } catch (eR) {}
-    var msg = "TW-BOOT v=192 | documentMode=" + dm + " | embed=" + emb + " | match=" + (window.__TW_MATCH_ENABLED__ ? "1" : "0") + " | _r=" + (r || "-");
+    var msg = "TW-BOOT v=197 | documentMode=" + dm + " | embed=" + emb + " | match=" + (window.__TW_MATCH_ENABLED__ ? "1" : "0") + " | _r=" + (r || "-");
     var font = document.getElementById("twBootFont");
     if (font) font.innerHTML = msg;
     var el = document.getElementById("twBoot");
@@ -451,8 +451,8 @@ if (!_login) {
     </div>
   </div>
 
-  <!-- v=195 · orphan SQL 배지 · WKF 삭제 이력 재사용 -->
-  <script type="text/javascript" src="/woo/testWooAiStudioJs.jssp?v=195"></script>
+  <!-- v=197 · orphan SQL — draft 캐시 + Program 매핑 자동 진입 -->
+  <script type="text/javascript" src="/woo/testWooAiStudioJs.jssp?v=197"></script>
 </body>
 </html>
 <%

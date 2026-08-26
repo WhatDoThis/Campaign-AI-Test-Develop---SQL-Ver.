@@ -10,7 +10,7 @@
  * - renderNlHints / applyNlPatch — #nlHints 클릭=표면만 보강 후 Generate 재호출
  * - loadAiFolders·selectFolder·loadCampaigns·createCampaign·loadWkfs·createWkf·selectWkf — ST3~ST5
  * - _leaveWkfContext — WKF 이탈 시 commitOk·inject·aiSqlId 초기화(compose 유지)
- * - _reuseOrphanSql / _isSqlOrphan — WKF 삭제된 SQL 이력 재사용
+ * - _reuseOrphanSql / _isSqlOrphan — WKF 삭제 이력: plan 재검증·draft 캐시·Program 매핑 진입
  * - _jumpExistingSql — 분기 B 기존 SQL → Program/Campaign/WKF 점프 후 그 WKF SQL 이력
  * - _similarRegistered — param_key(값 없는 조건축) 비교. NL/조사 토큰 없음
  * - renderListPane / goBack / resetCtx — 브레드크럼은 listMode 기준(목록=타입만, 선택=타입:라벨)
@@ -34,7 +34,7 @@
  * - intent create/reuse UI 폐기 — 분기는 목록 데이터(R4+)
  * - ST0 최초 진입 시 NL 즉시 활성(폴더 선지정 게이트 없음)
  * - Draft는 saveAiSql/DB 금지 — Register 성공 시만 DB
- * - Mirror of /woo/testWooAiStudioJs.jssp?v=189 · R8 funnel dead 제거
+ * - Mirror of /woo/testWooAiStudioJs.jssp?v=197 · R8 funnel dead 제거
  * - Foundry done 자동 재생성은 after_foundry(재큐잉 금지)
  */
 (function () {
@@ -1520,9 +1520,15 @@
       _syncRegButton();
       var hintM = $("hint");
       if (hintM) {
-        hintM.className = "banner ok";
-        hintM.textContent =
-          "\uC774 \uC870\uAC74\uC744 \uC4F8 \uD504\uB85C\uADF8\uB7A8\uBD80\uD130 \uACE0\uB974\uC138\uC694. \uCEA0\uD398\uC778 \u2192 WKF \uC21C\uC785\uB2C8\uB2E4.";
+        if (opts.fromOrphan) {
+          hintM.className = "banner warn";
+          hintM.textContent =
+            "\uC774 \uC870\uAC74\uC758 WKF\uAC00 \uC0AD\uC81C\uB418\uC5C8\uC2B5\uB2C8\uB2E4. Program \u2192 Campaign \u2192 WKF \uC21C\uC73C\uB85C \uC0C8 WKF\uC5D0 \uB123\uC73C\uC138\uC694.";
+        } else {
+          hintM.className = "banner ok";
+          hintM.textContent =
+            "\uC774 \uC870\uAC74\uC744 \uC4F8 \uD504\uB85C\uADF8\uB7A8\uBD80\uD130 \uACE0\uB974\uC138\uC694. \uCEA0\uD398\uC778 \u2192 WKF \uC21C\uC785\uB2C8\uB2E4.";
+        }
       }
     });
   }
@@ -1553,12 +1559,51 @@
     if (!row || !row.id) return;
     setBusy(true);
     clearErr();
+    hideResultCards();
+    var h0 = $("hint");
+    if (h0) {
+      h0.className = "banner";
+      h0.textContent = "";
+    }
+
+    function _orphanBanner() {
+      var hOr = $("hint");
+      if (hOr) {
+        hOr.className = "banner warn";
+        hOr.textContent =
+          "\uC774 \uC870\uAC74\uC758 WKF\uAC00 \uC0AD\uC81C\uB418\uC5C8\uC2B5\uB2C8\uB2E4. [\uC774 \uC870\uAC74 \uC4F0\uAE30]\uB97C \uB204\uB974\uBA74 Program \u2192 WKF \uC120\uD0DD\uC73C\uB85C \uC774\uC5B4\uC9D1\uB2C8\uB2E4.";
+      }
+    }
+
+    function _finishOrphanUi() {
+      renderSql(state.sql);
+      _syncRegButton();
+      setInputEnabled(true);
+      _refreshOpenButtons();
+      setInfoBar(_folderInfoText());
+      loadSqlList();
+
+      if (!(state.passed && state.plan && _trim(state.sql))) {
+        _orphanBanner();
+        return;
+      }
+
+      putDraft();
+      if (SHELL_MODE) {
+        ctx.phase = "ST2";
+        renderListPane();
+        _beginMapping({ showProgramCrumb: true, fromOrphan: true });
+        return;
+      }
+      _orphanBanner();
+    }
+
     post(
       "testWooAiValidate.jssp",
       { action: "getSql", ai_sql_id: row.id },
       function (res) {
-        setBusy(false);
         if (!res || !res.ok || !res.item) {
+          setBusy(false);
           showErr(_errText(res) || "load failed");
           return;
         }
@@ -1574,25 +1619,49 @@
         state.summary = it.summary_ko || "";
         state.nl = it.nl_request || "";
         state.plan = null;
+        state.passed = false;
+        state.cacheId = null;
         try {
           if (it.plan_json) state.plan = JSON.parse(it.plan_json);
         } catch (eParse) {
           state.plan = null;
         }
-        state.passed = !!_trim(state.sql);
         try {
           if (it.nl_request) $("nl").value = it.nl_request;
         } catch (eNl) {}
-        renderSql(state.sql);
-        _syncRegButton();
-        setInputEnabled(true);
-        _refreshOpenButtons();
-        var hOr = $("hint");
-        if (hOr) {
-          hOr.className = "banner warn";
-          hOr.textContent =
-            "\uC774 \uC870\uAC74\uC758 WKF\uAC00 \uC0AD\uC81C\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uC870\uAC74\uC744 \uD655\uC778\uD55C \uB4A4 [\uB300\uC0C1 \uB9CC\uB4E4\uAE30]\uB85C \uC0C8 WKF\uC5D0 \uB123\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4.";
+
+        if (state.plan) {
+          post(
+            "testWooAiValidate.jssp",
+            { plan: state.plan, nl_request: state.nl },
+            function (v) {
+              setBusy(false);
+              if (v && v.ok) {
+                state.sql = v.sql || state.sql;
+                state.summary = v.summary || state.summary;
+                state.passed = !!v.passed;
+                if (v.chips) renderChips(v.chips);
+                else renderChips([]);
+                renderGates(v.results || []);
+              } else {
+                renderChips([]);
+                state.passed = !!_trim(state.sql);
+              }
+              _finishOrphanUi();
+            },
+            function (e) {
+              setBusy(false);
+              renderChips([]);
+              state.passed = !!_trim(state.sql);
+              _finishOrphanUi();
+              showErr(String(e && e.message ? e.message : e));
+            }
+          );
+          return;
         }
+        setBusy(false);
+        renderChips([]);
+        _finishOrphanUi();
       },
       function (e) {
         setBusy(false);
@@ -3794,7 +3863,7 @@
       _wireDiagToggle();
       try {
         var dm0 = (typeof document.documentMode !== "undefined") ? String(document.documentMode) : "n/a(non-IE)";
-          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | match=" + (MATCH_ENABLED ? "1" : "0") + " | phase=" + ctx.phase + " | v=189";
+          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | match=" + (MATCH_ENABLED ? "1" : "0") + " | phase=" + ctx.phase + " | v=197";
         var bootReached = !!(window.__TW_BOOT_MSG__);
         if (bootReached) _diag(String(window.__TW_BOOT_MSG__));
         _diag(okMsg);

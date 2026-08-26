@@ -1,6 +1,6 @@
 <%/*
  * testWooAiStudioJs.jssp (Studio 클라이언트 JS 서빙)
- * new_ver/html/testWooAiStudio.js 와 동기 유지 · v=195 · orphan SQL 배지·재사용.
+ * new_ver/html/testWooAiStudio.js 와 동기 유지 · v=197 · orphan SQL draft+Program 매핑 진입.
  */
 response.setContentType("text/javascript;charset=utf-8");
 try {
@@ -21,7 +21,7 @@ try {
  * - _showLabelModal — 캠페인/WKF 생성 라벨 입력(confirm/alert 대체)
  * - _leaveWkfContext — WKF 이탈 시 commitOk·inject·aiSqlId 초기화(compose 유지)
  * - _jumpExistingSql — 분기 B 기존 SQL → Program/Campaign/WKF 점프 후 그 WKF SQL 이력
- * - _reuseOrphanSql — WKF 삭제된 이력: compose 복원 · [대상 만들기] 안내
+ * - _reuseOrphanSql — WKF 삭제 이력: plan 재검증·draft 캐시·Program 매핑 진입
  * - _isSqlOrphan — listRegisteredSql orphan 또는 workflow_id 없음
  * - _similarRegistered — param_key(값 없는 조건축) 비교. NL/조사 토큰 없음
  * - renderListPane / goBack / resetCtx — 브레드크럼은 listMode 기준(목록=타입만, 선택=타입:라벨)
@@ -1585,9 +1585,15 @@ try {
       _syncRegButton();
       var hintM = $("hint");
       if (hintM) {
-        hintM.className = "banner ok";
-        hintM.textContent =
-          "\uC774 \uC870\uAC74\uC744 \uC4F8 \uD504\uB85C\uADF8\uB7A8\uBD80\uD130 \uACE0\uB974\uC138\uC694. \uCEA0\uD398\uC778 \u2192 WKF \uC21C\uC785\uB2C8\uB2E4.";
+        if (opts.fromOrphan) {
+          hintM.className = "banner warn";
+          hintM.textContent =
+            "\uC774 \uC870\uAC74\uC758 WKF\uAC00 \uC0AD\uC81C\uB418\uC5C8\uC2B5\uB2C8\uB2E4. Program \u2192 Campaign \u2192 WKF \uC21C\uC73C\uB85C \uC0C8 WKF\uC5D0 \uB123\uC73C\uC138\uC694.";
+        } else {
+          hintM.className = "banner ok";
+          hintM.textContent =
+            "\uC774 \uC870\uAC74\uC744 \uC4F8 \uD504\uB85C\uADF8\uB7A8\uBD80\uD130 \uACE0\uB974\uC138\uC694. \uCEA0\uD398\uC778 \u2192 WKF \uC21C\uC785\uB2C8\uB2E4.";
+        }
       }
     });
   }
@@ -1618,12 +1624,51 @@ try {
     if (!row || !row.id) return;
     setBusy(true);
     clearErr();
+    hideResultCards();
+    var h0 = $("hint");
+    if (h0) {
+      h0.className = "banner";
+      h0.textContent = "";
+    }
+
+    function _orphanBanner() {
+      var hOr = $("hint");
+      if (hOr) {
+        hOr.className = "banner warn";
+        hOr.textContent =
+          "\uC774 \uC870\uAC74\uC758 WKF\uAC00 \uC0AD\uC81C\uB418\uC5C8\uC2B5\uB2C8\uB2E4. [\uC774 \uC870\uAC74 \uC4F0\uAE30]\uB97C \uB204\uB974\uBA74 Program \u2192 WKF \uC120\uD0DD\uC73C\uB85C \uC774\uC5B4\uC9D1\uB2C8\uB2E4.";
+      }
+    }
+
+    function _finishOrphanUi() {
+      renderSql(state.sql);
+      _syncRegButton();
+      setInputEnabled(true);
+      _refreshOpenButtons();
+      setInfoBar(_folderInfoText());
+      loadSqlList();
+
+      if (!(state.passed && state.plan && _trim(state.sql))) {
+        _orphanBanner();
+        return;
+      }
+
+      putDraft();
+      if (SHELL_MODE) {
+        ctx.phase = "ST2";
+        renderListPane();
+        _beginMapping({ showProgramCrumb: true, fromOrphan: true });
+        return;
+      }
+      _orphanBanner();
+    }
+
     post(
       "testWooAiValidate.jssp",
       { action: "getSql", ai_sql_id: row.id },
       function (res) {
-        setBusy(false);
         if (!res || !res.ok || !res.item) {
+          setBusy(false);
           showErr(_errText(res) || "load failed");
           return;
         }
@@ -1639,25 +1684,49 @@ try {
         state.summary = it.summary_ko || "";
         state.nl = it.nl_request || "";
         state.plan = null;
+        state.passed = false;
+        state.cacheId = null;
         try {
           if (it.plan_json) state.plan = JSON.parse(it.plan_json);
         } catch (eParse) {
           state.plan = null;
         }
-        state.passed = !!_trim(state.sql);
         try {
           if (it.nl_request) $("nl").value = it.nl_request;
         } catch (eNl) {}
-        renderSql(state.sql);
-        _syncRegButton();
-        setInputEnabled(true);
-        _refreshOpenButtons();
-        var hOr = $("hint");
-        if (hOr) {
-          hOr.className = "banner warn";
-          hOr.textContent =
-            "\uC774 \uC870\uAC74\uC758 WKF\uAC00 \uC0AD\uC81C\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uC870\uAC74\uC744 \uD655\uC778\uD55C \uB4A4 [\uB300\uC0C1 \uB9CC\uB4E4\uAE30]\uB85C \uC0C8 WKF\uC5D0 \uB123\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4.";
+
+        if (state.plan) {
+          post(
+            "testWooAiValidate.jssp",
+            { plan: state.plan, nl_request: state.nl },
+            function (v) {
+              setBusy(false);
+              if (v && v.ok) {
+                state.sql = v.sql || state.sql;
+                state.summary = v.summary || state.summary;
+                state.passed = !!v.passed;
+                if (v.chips) renderChips(v.chips);
+                else renderChips([]);
+                renderGates(v.results || []);
+              } else {
+                renderChips([]);
+                state.passed = !!_trim(state.sql);
+              }
+              _finishOrphanUi();
+            },
+            function (e) {
+              setBusy(false);
+              renderChips([]);
+              state.passed = !!_trim(state.sql);
+              _finishOrphanUi();
+              showErr(String(e && e.message ? e.message : e));
+            }
+          );
+          return;
         }
+        setBusy(false);
+        renderChips([]);
+        _finishOrphanUi();
       },
       function (e) {
         setBusy(false);
@@ -3878,7 +3947,7 @@ try {
       _wireDiagToggle();
       try {
         var dm0 = (typeof document.documentMode !== "undefined") ? String(document.documentMode) : "n/a(non-IE)";
-          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | match=" + (MATCH_ENABLED ? "1" : "0") + " | phase=" + ctx.phase + " | v=189";
+          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | match=" + (MATCH_ENABLED ? "1" : "0") + " | phase=" + ctx.phase + " | v=197";
         var bootReached = !!(window.__TW_BOOT_MSG__);
         if (bootReached) _diag(String(window.__TW_BOOT_MSG__));
         _diag(okMsg);
