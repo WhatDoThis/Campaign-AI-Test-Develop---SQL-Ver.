@@ -4,11 +4,12 @@
  * Stage A / libraryLookup / Foundry publish / Dedup / Compiler가
  * 각자 복제하던 축·색인·커버·샘플바인딩을 한곳에서 제공한다.
  * 같은 tags/name 축 frag는 값 사전 공백이어도 재사용하고, 별칭은 검증 후 merge한다.
- * NL 매칭은 M1 원문⊂문장 → M2 en[] → M3 concept(axis 동치). {db,en} 바인딩은 db만. litmus __v=186.
+ * NL 매칭은 M1 원문⊂문장 → M2 en[] → M3 concept(axis 동치). {db,en} 바인딩은 db만. litmus __v=204.
+ * 축 정합 = 카탈로그 _source.concept·xpath·conceptAliases·tags·name (도메인명 하드코딩 없음).
  * 모호 슬롯은 promptHints(합집합+멤버 ≤5). 클릭은 NL 보강. 감사시각은 슬롯당 GROUP BY 1회.
  * 닫힌 enum이 있으면 후보=enum만. 별칭 db가 enum에 없으면 별칭 키(라이브 값)를 씀.
  * N대는 번역 전 {ageMin:N,ageMax:N+10}. N대~M대는 {ageMin:N,ageMax:M+10}.
- * N월은 도메인 YYYY-MM 중 그 월만 고른다. 연도 질문이 아니라 카탈로그 값.
+ * N월은 도메인 YYYY-MM 중 그 월만 고른다. N월~M월(연도 없음)은 ambiguous→연도 칩(#176).
  * leftover는 및/and 슬롯의 다른 지정어만. 이미 매칭된 값(7월/10대)은 Foundry로 보내지 않는다.
  * leftover는 컬럼 identity·번역 토큰만 본다. 색인(sample/synonyms)에 섞인 다른 필터는 커버로 치지 않는다.
  * 한 슬롯에 서로 다른 축 카탈로그 값(또는 N월 형태)이 있으면 자른다. 원문(KO)만 본다. 도메인 예시 없음.
@@ -24,8 +25,9 @@
  * - normalizeParamDomain / domainMatchSlot / yearMonthHits / entryDb — 값 매칭. N월→YYYY-MM. N대는 _bucket. `_group` 별칭→members[]
  * - matchEnPivotSlot / conceptOf / conceptsAxisMatch / kindCompatible — M1→M2G→M2→M3. M3는 concept axis 동치
  * - isNegative / markNegative / inHealCooldown / stampHeal — _negative·heal 쿨다운
- * - validateBind / attachAlias / mergeParamDomainJson — 바인딩 검증(배열은 원소별 enum)·별칭 보완(문장·공백 별칭 거부)·도메인 merge(`_group` 보존, nlMap 키 삭제 금지)
+ * - validateBind / attachAlias / mergeParamDomainJson / healYearMonthSpanDomain — 바인딩 검증·별칭 보완·도메인 merge·Foundry span yms nlMap+`_range` 자동 heal
  * - sampleBindSql — {{param}} 검증/Dedup용 샘플 치환(유일 구현). 배열은 'a','b'
+ * - spanRangeSqlText — _range span params + relative sql_text → absolute 날짜 SQL
  * - promoteEqPlaceholderToIn — `col = {{p}}` → `col IN ({{p}})` (>= <= != 유지)
  * - coversSlot / libraryHitPredicate / slotCoverParts / splitCoordSlots / splitCompoundSlots — 재사용·및/and·다축 분할. leftover는 identity
  * - resolveNlParams — NL→params (Compiler bind 공유). `_group` 히트는 members[] (후보 교집합)
@@ -136,9 +138,21 @@ testWoo.fragContract = (function () {
   }
 
   var EN_MONTH_NUM = {
-    january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
-    july: 7, august: 8, september: 9, october: 10, november: 11, december: 12
+    january: 1, jan: 1, february: 2, feb: 2, march: 3, mar: 3, april: 4, apr: 4,
+    may: 5, june: 6, jun: 6, july: 7, jul: 7, august: 8, aug: 8,
+    september: 9, sep: 9, sept: 9, october: 10, oct: 10, november: 11, nov: 11,
+    december: 12, dec: 12
   };
+
+  function _enMonthNum(tok) {
+    return EN_MONTH_NUM[String(tok || "").toLowerCase()] || null;
+  }
+
+  function _ymsFromParts(y, a, b) {
+    if (isNaN(y) || isNaN(a) || isNaN(b) || a < 1 || a > 12 || b < 1 || b > 12) return null;
+    if (a > b) { var tmp = a; a = b; b = tmp; }
+    return { year: y, monthMin: a, monthMax: b };
+  }
 
   function _induceNWol(text) {
     var t = _trim(String(text || ""));
@@ -211,6 +225,274 @@ testWoo.fragContract = (function () {
     return hits;
   }
 
+  function _induceMonthRange(text) {
+    var t = _trim(String(text || ""));
+    if (!t) return null;
+    var m = /(\d{1,2})\s*\uC6D4\s*[~\-–]\s*(\d{1,2})\s*\uC6D4/.exec(t);
+    if (m) {
+      var a = Number(m[1]);
+      var b = Number(m[2]);
+      if (isNaN(a) || isNaN(b) || a < 1 || a > 12 || b < 1 || b > 12) return null;
+      if (a > b) { var tmp = a; a = b; b = tmp; }
+      return { monthMin: a, monthMax: b, span: m[0] };
+    }
+    var low = t.toLowerCase();
+    var enR = /between\s+([a-z]+)\s+and\s+([a-z]+)/.exec(low);
+    if (enR && EN_MONTH_NUM[enR[1]] && EN_MONTH_NUM[enR[2]]) {
+      var ea = EN_MONTH_NUM[enR[1]];
+      var eb = EN_MONTH_NUM[enR[2]];
+      if (ea > eb) { var et = ea; ea = eb; eb = et; }
+      return { monthMin: ea, monthMax: eb, span: enR[0] };
+    }
+    return null;
+  }
+
+  function _induceYearMonthSpan(text) {
+    var t = _trim(String(text || ""));
+    if (!t) return null;
+    var patterns = [
+      /(\d{4})\s*\uB144\s*(\d{1,2})\s*\uC6D4\s*[~\-–]\s*(\d{1,2})\s*\uC6D4/,
+      /(\d{4})\s*\uB144\s*(\d{1,2})\s*[~\-–]\s*(\d{1,2})\s*\uC6D4/,
+      /(\d{4})\s+(\d{1,2})\s*[~\-–]\s*(\d{1,2})\s*\uC6D4/
+    ];
+    var i, m, yms;
+    for (i = 0; i < patterns.length; i++) {
+      m = patterns[i].exec(t);
+      if (!m) continue;
+      yms = _ymsFromParts(Number(m[1]), Number(m[2]), Number(m[3]));
+      if (yms) return yms;
+    }
+    m = /(\d{4})\s+([a-z]+)\s*[~\-–]\s*([a-z]+)/i.exec(t);
+    if (m) {
+      yms = _ymsFromParts(Number(m[1]), _enMonthNum(m[2]), _enMonthNum(m[3]));
+      if (yms) return yms;
+    }
+    m = /between\s+([a-z]+)\s+and\s+([a-z]+)\s+(\d{4})/i.exec(t);
+    if (m) {
+      yms = _ymsFromParts(Number(m[3]), _enMonthNum(m[1]), _enMonthNum(m[2]));
+      if (yms) return yms;
+    }
+    m = /([a-z]+)\s+to\s+([a-z]+)\s+(\d{4})/i.exec(t);
+    if (m) {
+      yms = _ymsFromParts(Number(m[3]), _enMonthNum(m[1]), _enMonthNum(m[2]));
+      if (yms) return yms;
+    }
+    return null;
+  }
+
+  function _looksLikeYearMonthSpan(text) {
+    var t = _trim(String(text || ""));
+    if (!t) return false;
+    if (_induceYearMonthSpan(t)) return true;
+    if (/\d{4}\s*(?:\uB144\s*)?\d{1,2}\s*[~\-–]\s*\d{1,2}\s*\uC6D4/.test(t)) return true;
+    if (/\d{4}\s+[a-z]+\s*[~\-–]\s*[a-z]+/i.test(t)) return true;
+    if (/between\s+[a-z]+\s+and\s+[a-z]+(?:\s+\d{4})?/i.test(t)) return true;
+    return false;
+  }
+
+  function _yearMonthsInRange(domain, monthMin, monthMax) {
+    var hits = [];
+    var seen = {};
+    var mo, m;
+    for (m = monthMin; m <= monthMax; m++) {
+      var part = _yearMonthsInDomain(domain, m);
+      var i;
+      for (i = 0; i < part.length; i++) {
+        var key = part[i].param + "|" + part[i].value;
+        if (seen[key]) continue;
+        seen[key] = 1;
+        hits.push(part[i]);
+      }
+    }
+    return hits;
+  }
+
+  function _yearMonthSpanSpec(domain) {
+    if (!domain) return null;
+    var rg = domain._range;
+    if (rg && rg.year && rg.monthFrom && rg.monthTo) {
+      return {
+        year: String(rg.year),
+        monthFrom: String(rg.monthFrom),
+        monthTo: String(rg.monthTo),
+        bucket: String(rg.bucket || "_bucket")
+      };
+    }
+    var yearK = "";
+    var fromK = "";
+    var toK = "";
+    var k, spec, lk, tp;
+    for (k in domain) {
+      if (!domain.hasOwnProperty(k) || k.charAt(0) === "_") continue;
+      spec = domain[k] || {};
+      lk = k.toLowerCase();
+      tp = String(spec.type || "").toLowerCase();
+      if (tp === "int" && lk.indexOf("year") >= 0) yearK = k;
+      if ((tp === "byte" || tp === "int") &&
+          (lk.indexOf("monthfrom") >= 0 || lk.indexOf("month_from") >= 0)) fromK = k;
+      if ((tp === "byte" || tp === "int") &&
+          (lk.indexOf("monthto") >= 0 || lk.indexOf("month_to") >= 0)) toK = k;
+    }
+    if (yearK && fromK && toK) {
+      return {
+        year: yearK, monthFrom: fromK, monthTo: toK, bucket: "_bucket"
+      };
+    }
+    return null;
+  }
+
+  function _domainHasYearMonthEnum(domain) {
+    return _yearMonthsInRange(domain, 1, 12).length > 0;
+  }
+
+  function _hasRelativeDaysOnly(domain) {
+    if (!domain || !domain._bucket || !domain._bucket.nlMap) return false;
+    var hasDays = false;
+    var nk, ent, pk, lk;
+    for (nk in domain._bucket.nlMap) {
+      if (!domain._bucket.nlMap.hasOwnProperty(nk)) continue;
+      ent = entryDb(domain._bucket.nlMap[nk]);
+      if (!ent || typeof ent !== "object") continue;
+      for (pk in ent) {
+        if (!ent.hasOwnProperty(pk)) continue;
+        lk = pk.toLowerCase();
+        if (lk.indexOf("days") >= 0 || lk.indexOf("within") >= 0) hasDays = true;
+      }
+    }
+    if (!hasDays) return false;
+    if (_yearMonthSpanSpec(domain)) return false;
+    return !_domainHasYearMonthEnum(domain);
+  }
+
+  function _sourceColumnName(src) {
+    if (!src) return "";
+    if (src.columnName) return String(src.columnName);
+    var xp = String(src.xpath || "");
+    if (!xp) return "";
+    if (xp.charAt(0) === "@") return xp.substring(1);
+    var at = xp.lastIndexOf("@");
+    if (at >= 0) return xp.substring(at + 1);
+    return xp;
+  }
+
+  function _mergeUniqueYears(existing, addList, maxCount) {
+    var seen = {};
+    var out = [];
+    var i, y, cap;
+    cap = maxCount != null ? Number(maxCount) : 5;
+    if (isNaN(cap) || cap < 2) cap = 5;
+    for (i = 0; i < (existing || []).length && out.length < cap; i++) {
+      y = existing[i];
+      if (seen[y]) continue;
+      seen[y] = 1;
+      out.push(y);
+    }
+    for (i = 0; i < (addList || []).length && out.length < cap; i++) {
+      y = addList[i];
+      if (seen[y]) continue;
+      seen[y] = 1;
+      out.push(y);
+    }
+    out.sort(function (a, b) { return b - a; });
+    return out;
+  }
+
+  function _calendarYearsFallback(minCount, maxCount) {
+    var need = minCount != null ? Number(minCount) : 2;
+    var cap = maxCount != null ? Number(maxCount) : 5;
+    if (isNaN(need) || need < 2) need = 2;
+    if (isNaN(cap) || cap < need) cap = need;
+    var out = [];
+    var now = new Date().getFullYear();
+    var y;
+    for (y = now; y >= now - 8 && out.length < cap; y--) out.push(y);
+    return out.length >= need ? out : [];
+  }
+
+  function _slotHintText(slot) {
+    return String((slot && (slot.surface || slot.slotText || slot.text || slot.en_literal)) || "");
+  }
+
+  function monthRangeNeedsClarify(slot, card) {
+    var text = _slotHintText(slot);
+    var mr = _induceMonthRange(text);
+    if (!mr) return false;
+    if (_induceYearMonthSpan(text)) return false;
+    var domain = normalizeParamDomain(card && card.param_domain);
+    if (!domain) return false;
+    if (_yearMonthSpanSpec(domain)) return true;
+    if (_yearMonthsInRange(domain, mr.monthMin, mr.monthMax).length >= 2) return true;
+    if (_hasRelativeDaysOnly(domain)) return true;
+    return false;
+  }
+
+  function _parseProbeYearMonth(v) {
+    var s = String(v == null ? "" : v);
+    if (!s) return null;
+    var m = /^(\d{4})[-\/](\d{1,2})/.exec(s);
+    if (!m) return null;
+    var y = Number(m[1]);
+    var mo = Number(m[2]);
+    if (isNaN(y) || isNaN(mo) || mo < 1 || mo > 12) return null;
+    return { year: y, month: mo };
+  }
+
+  function _probeYearsForMonthSpan(domain, monthMin, monthMax) {
+    var src = domain && domain._source;
+    var colName = _sourceColumnName(src);
+    if (!src || !src.schema || !colName) return [];
+    if (!testWoo.toolkit || !testWoo.toolkit.invoke) return [];
+    var years = [];
+    var seen = {};
+    var pv;
+    var lim = 200;
+    try {
+      var cfg = testWoo.cfg.getConfig();
+      if (cfg && cfg.triage && cfg.triage.valueProbeLimitMax)
+        lim = Number(cfg.triage.valueProbeLimitMax) || lim;
+    } catch (eCfg) { /* default */ }
+    try {
+      pv = testWoo.toolkit.invoke("probe_values", {
+        schemaId: String(src.schema),
+        columnName: colName,
+        limit: lim
+      });
+    } catch (eP) { return []; }
+    if (!pv || pv.error || pv.ok === false || !pv.values) return [];
+    var i, v, parsed, y, mo;
+    for (i = 0; i < pv.values.length; i++) {
+      v = String(pv.values[i] == null ? "" : pv.values[i]);
+      parsed = _parseProbeYearMonth(v);
+      if (!parsed) continue;
+      y = parsed.year;
+      mo = parsed.month;
+      if (mo < monthMin || mo > monthMax) continue;
+      if (seen[y]) continue;
+      seen[y] = 1;
+      years.push(y);
+    }
+    years.sort(function (a, b) { return b - a; });
+    return years;
+  }
+
+  function _yearsFromMonthRangeHints(domain, monthMin, monthMax) {
+    var probed = _probeYearsForMonthSpan(domain, monthMin, monthMax);
+    var ymHits = _yearMonthsInRange(domain, monthMin, monthMax);
+    var fromEnum = [];
+    var i, yv, y;
+    for (i = 0; i < ymHits.length; i++) {
+      yv = String(ymHits[i].value || "");
+      if (!_isYearMonth(yv)) continue;
+      y = Number(yv.substring(0, 4));
+      fromEnum.push(y);
+    }
+    var merged = _mergeUniqueYears(probed, fromEnum, 5);
+    if (merged.length < 5) {
+      merged = _mergeUniqueYears(merged, _calendarYearsFallback(2, 8), 5);
+    }
+    return merged;
+  }
+
   function _domainAcceptsNDae(domain) {
     if (!domain) return false;
     if (domain._bucket) return true;
@@ -250,6 +532,7 @@ testWoo.fragContract = (function () {
     if (hay == null || needle == null) return false;
     var n = String(needle);
     if (!n || n.length < 2) return false;
+    if (n.length >= 4 && _ciHas(hay, n)) return true;
     var toks = String(hay).split(/[^0-9a-zA-Z가-힣_]+/);
     var i;
     for (i = 0; i < toks.length; i++) {
@@ -362,100 +645,129 @@ testWoo.fragContract = (function () {
     return out;
   }
 
+  function _canonicalAxis(raw) {
+    return String(raw || "").toLowerCase().replace(/\s+/g, "_")
+      .replace(/[^a-z0-9_]/g, "");
+  }
+
+  function _isCompoundAxis(axis) {
+    return String(axis || "").indexOf("_") >= 0;
+  }
+
+  function _conceptFromXpath(xpath) {
+    var xp = String(xpath || "");
+    var at = xp.lastIndexOf("@");
+    if (at < 0) return "";
+    return _canonicalAxis(xp.substring(at + 1));
+  }
+
+  function _domainConceptKeys(domain) {
+    var keys = {};
+    function add(x) {
+      x = _canonicalAxis(x);
+      if (x) keys[x] = 1;
+    }
+    if (!domain) return keys;
+    var src = domain._source;
+    if (!src) return keys;
+    add(src.concept);
+    add(_conceptFromXpath(src.xpath));
+    if (_isArray(src.conceptAliases)) {
+      var ai;
+      for (ai = 0; ai < src.conceptAliases.length; ai++)
+        add(src.conceptAliases[ai]);
+    }
+    if (src.tags) {
+      var tg = _tagAxes(src.tags);
+      for (ai = 0; ai < tg.length; ai++) add(tg[ai]);
+    }
+    return keys;
+  }
+
+  function _cardConceptKeys(card) {
+    var keys = _domainConceptKeys(normalizeParamDomain(card && card.param_domain));
+    if (!card) return keys;
+    var tags = _tagAxes(card.tags);
+    var i, segs;
+    for (i = 0; i < tags.length; i++) keys[tags[i]] = 1;
+    segs = String(card.name || "").split("__");
+    if (segs.length >= 3) keys[_canonicalAxis(segs[segs.length - 1])] = 1;
+    return keys;
+  }
+
+  function _slotConceptKeys(slot) {
+    var keys = {};
+    function add(x) {
+      x = _canonicalAxis(x);
+      if (x) keys[x] = 1;
+    }
+    if (!slot || typeof slot !== "object") return keys;
+    if (slot.concept) add(slot.concept);
+    if (slot.conceptAliases && _isArray(slot.conceptAliases)) {
+      var i;
+      for (i = 0; i < slot.conceptAliases.length; i++)
+        add(slot.conceptAliases[i]);
+    }
+    var hc = String(slot.hintedCategory || "").toLowerCase();
+    if (hc && HINT_CAT_TO_AXIS[hc]) add(HINT_CAT_TO_AXIS[hc]);
+    return keys;
+  }
+
+  function _conceptKeysOverlap(slotKeys, cardKeys) {
+    var k;
+    for (k in slotKeys) {
+      if (slotKeys.hasOwnProperty(k) && cardKeys[k]) return true;
+    }
+    return false;
+  }
+
+  function _axisFromSource(domain) {
+    if (!domain || !domain._source) return "";
+    var src = domain._source;
+    if (src.concept) return _canonicalAxis(src.concept);
+    return _conceptFromXpath(src.xpath);
+  }
+
   function axisFromCard(card) {
     if (!card) return "";
+    var domain = normalizeParamDomain(card.param_domain);
+    var fromSrc = _axisFromSource(domain);
+    if (fromSrc) return fromSrc;
     var axes = _tagAxes(card.tags);
-    if (axes.length) return String(axes[0] || "").toLowerCase();
-    var name = String(card.name || "").toLowerCase();
-    var segs = name.split("__");
-    if (segs.length >= 3) return segs[segs.length - 1];
+    if (axes.length) return axes[0];
+    var segs = String(card.name || "").split("__");
+    if (segs.length >= 3) return _canonicalAxis(segs[segs.length - 1]);
     return "";
   }
 
   function axisFromSlot(slot) {
-    var text = "";
-    var hintCat = "";
-    var concept = "";
-    var kind = "";
-    if (slot && typeof slot === "object") {
-      text = String(slot.text || "");
-      hintCat = String(slot.hintedCategory || "").toLowerCase();
-      concept = String(slot.concept || "");
-      kind = String(slot.kind || "");
-    } else {
-      text = String(slot || "");
+    if (!slot || typeof slot !== "object") {
+      return [];
     }
-    var fromC = _axisFromConcept(concept, kind);
-    if (fromC) return [fromC];
-    var hints = _axisHintsFromText(text);
-    if (hints.length) return hints;
-    var mapped = HINT_CAT_TO_AXIS[hintCat];
-    if (mapped) return [mapped];
+    var keys = _slotConceptKeys(slot);
+    var out = [];
+    var k;
+    for (k in keys) {
+      if (keys.hasOwnProperty(k)) out.push(k);
+    }
+    if (out.length) return out;
+    var hc = String(slot.hintedCategory || "").toLowerCase();
+    if (hc && HINT_CAT_TO_AXIS[hc]) return [HINT_CAT_TO_AXIS[hc]];
     return [];
   }
 
-  function _axisFromConcept(concept, kind) {
-    var c = String(concept || "").toLowerCase();
-    if (!c) return "";
-    if (c.indexOf("gender") >= 0 || c.indexOf("sex") >= 0) return "gender";
-    if (c.indexOf("region") >= 0 || c.indexOf("area") >= 0 ||
-        c.indexOf("city") >= 0 || c.indexOf("province") >= 0) return "region";
-    if (c.indexOf("age") >= 0) return "age";
-    if (c.indexOf("plan") >= 0 || c.indexOf("fare") >= 0 || c.indexOf("tariff") >= 0)
-      return "plan";
-    if (c.indexOf("consent") >= 0) return "consent";
-    if (c.indexOf("join") >= 0 || c.indexOf("signup") >= 0 || c.indexOf("tenure") >= 0)
-      return "joindate";
-    if (String(kind || "").toLowerCase() === "range" && c.indexOf("date") >= 0)
-      return "joindate";
-    return "";
-  }
-
-  function _axisHintsFromText(slotText) {
-    var t = String(slotText || "");
-    var hints = [];
-    function push(a) {
-      for (var i = 0; i < hints.length; i++) if (hints[i] === a) return;
-      hints.push(a);
-    }
-    if (/\bgender\b|\bsex\b/i.test(t)) push("gender");
-    if (/\bage\b|\bagegroup\b/i.test(t)) push("age");
-    if (/\bplan\b/i.test(t)) push("plan");
-    if (/\bregion\b|\barea\b/i.test(t)) push("region");
-    if (/\bconsent\b/i.test(t)) push("consent");
-    if (/join\s*date|\bcreated\b|\bsignup\b|\btenure\b/i.test(t)) push("joindate");
-    return hints;
-  }
-
-  function _axisAliasMatch(hint, axis) {
-    if (!hint || !axis) return false;
-    if (hint === axis) return true;
-    if (hint === "plan" && axis.indexOf("plan") >= 0) return true;
-    if (hint === "consent" && (axis.indexOf("consent") >= 0 || axis.indexOf("marketing") >= 0))
-      return true;
-    if (hint === "age" && (axis === "age" || axis === "agegroup")) return true;
-    if (hint === "gender" && (axis === "gender" || axis === "sex")) return true;
-    if (hint === "region" && (axis === "region" || axis === "area")) return true;
-    if (hint === "joindate" &&
-        (axis.indexOf("join") >= 0 || axis.indexOf("signup") >= 0 ||
-         axis.indexOf("created") >= 0 || axis === "tenure"))
-      return true;
-    return false;
-  }
-
   function axesCompatible(card, slotOrText) {
-    var hints;
-    if (slotOrText && typeof slotOrText === "object")
-      hints = axisFromSlot(slotOrText);
-    else
-      hints = _axisHintsFromText(slotOrText);
-    if (!hints.length) return true;
-    var axis = axisFromCard(card);
-    if (!axis) return false;
-    for (var i = 0; i < hints.length; i++) {
-      if (_axisAliasMatch(hints[i], axis)) return true;
+    if (!card) return false;
+    var slotObj = (slotOrText && typeof slotOrText === "object") ?
+      slotOrText : { text: String(slotOrText || "") };
+    var slotKeys = _slotConceptKeys(slotObj);
+    var hasSlot = false;
+    var k;
+    for (k in slotKeys) {
+      if (slotKeys.hasOwnProperty(k)) { hasSlot = true; break; }
     }
-    return false;
+    if (!hasSlot) return true;
+    return _conceptKeysOverlap(slotKeys, _cardConceptKeys(card));
   }
 
   function stemToken(raw) {
@@ -466,8 +778,40 @@ testWoo.fragContract = (function () {
     return !_trim(raw);
   }
 
+  function _isGlueResidue(text) {
+    var t = _trim(text || "");
+    if (!t) return true;
+    if (t === "\uC911" || t === "\uACE0\uAC1D") return true;
+    if (t === "\uC0AC\uC6A9\uD558\uBA74\uC11C" || t === "\uC0AC\uC6A9\uD558\uB294") return true;
+    if (t === "\uB0A9\uBD80\uD55C" || t === "\uBBF8\uB09C") return true;
+    if (t === "\uD558\uBA74\uC11C" || t === "\uD558\uB294") return true;
+    return false;
+  }
+
   function isNoiseResidue(text) {
-    return !_trim(text || "");
+    return _isGlueResidue(text);
+  }
+
+  /* 붙어 쓴 KO 접미(사용하는·납부한 등) — 값 enum 하드코딩 없이 «LTE사용하는»→«LTE» */
+  var GLUE_SUFFIXES = [
+    "\uC0AC\uC6A9\uD558\uBA74\uC11C", "\uC0AC\uC6A9\uD558\uB294", "\uC0AC\uC6A9\uD55C",
+    "\uB0A9\uBD80\uD558\uB294", "\uB0A9\uBD80\uD55C", "\uBBF8\uB09C\uD55C",
+    "\uAC00\uC785\uD55C", "\uD574\uC9C0\uD55C", "\uD558\uBA74\uC11C", "\uD558\uB294"
+  ];
+
+  function _stripAttachedGlue(text) {
+    var s = _trim(text || "");
+    if (s.length < 3) return null;
+    var si, suf, pre;
+    for (si = 0; si < GLUE_SUFFIXES.length; si++) {
+      suf = GLUE_SUFFIXES[si];
+      if (s.length <= suf.length + 1) continue;
+      if (s.substring(s.length - suf.length) !== suf) continue;
+      pre = _trim(s.substring(0, s.length - suf.length));
+      if (pre.length < 2 || _isGlueResidue(pre)) continue;
+      return { prefix: pre, suffix: suf };
+    }
+    return null;
   }
 
   function collectLexicon(cards, opts) {
@@ -780,11 +1124,14 @@ testWoo.fragContract = (function () {
   function _dedupSlots(slots) {
     var out = [];
     var seen = {};
-    var i, s, id;
+    var i, s, id, tk;
     for (i = 0; i < (slots || []).length; i++) {
       s = slots[i];
       if (!s) continue;
-      id = _norm(s.resolvedName || "") + "|" + _norm(s.text || s.surface || "");
+      tk = _norm(s.text || s.surface || "");
+      if (s.concept) id = tk + "|c:" + _norm(s.concept);
+      else if (s.resolvedName) id = tk + "|r:" + _norm(s.resolvedName);
+      else id = tk;
       if (seen[id]) continue;
       seen[id] = 1;
       out.push(s);
@@ -818,13 +1165,24 @@ testWoo.fragContract = (function () {
       axes = [];
       seen = {};
       for (hi = 0; hi < hits.length; hi++) {
-        ak = _axisKey(hits[hi]);
+        ak = String((hits[hi] && hits[hi].axis) || "") + "|" + _norm(hits[hi].key || "");
         if (seen[ak]) continue;
         seen[ak] = 1;
         axes.push(hits[hi]);
       }
       leftover = _leftoverAfterHits(s, axes);
+      if (axes.length === 1) {
+        var srcText = _trim(s.text || s.surface || "");
+        var hk = _trim(axes[0].key || "");
+        if (hk && srcText.length > hk.length && srcText.indexOf(hk) === 0) {
+          var suf = _trim(srcText.substring(hk.length));
+          if (_isGlueResidue(suf)) suf = "";
+          if (suf && !_leftoverIsFull(s, suf)) leftover = suf;
+          else if (!suf) leftover = "";
+        }
+      }
       if (_leftoverIsFull(s, leftover)) leftover = "";
+      if (_isGlueResidue(leftover)) leftover = "";
       if (axes.length >= 2 || (axes.length === 1 && leftover)) {
         try {
           if (typeof twDbg === "function")
@@ -833,9 +1191,27 @@ testWoo.fragContract = (function () {
         } catch (eSc) { /* skip */ }
         for (hi = 0; hi < axes.length; hi++)
           out.push(_childFromHit(s, axes[hi]));
-        if (leftover)
+        if (leftover && !_isGlueResidue(leftover))
           out.push(_coordChild(s, leftover, "", null));
         continue;
+      }
+      if (axes.length === 1 && !_isGlueResidue(_trim(s.text || s.surface || ""))) {
+        out.push(_childFromHit(s, axes[0]));
+        continue;
+      }
+      if (!axes.length) {
+        var glued = _stripAttachedGlue(srcKo);
+        if (glued && glued.prefix) {
+          try {
+            if (typeof twDbg === "function")
+              twDbg("splitCompound", "«" + srcKo + "» glueStrip → «" + glued.prefix + "»");
+          } catch (eGs) { /* skip */ }
+          var gChild = _coordChild(s, glued.prefix, s.en_literal || "", null);
+          if (s.concept) gChild.concept = s.concept;
+          if (s.kind) gChild.kind = s.kind;
+          out.push(gChild);
+          continue;
+        }
       }
       out.push(s);
     }
@@ -854,6 +1230,7 @@ testWoo.fragContract = (function () {
   function buildIndexFields(opts) {
     opts = opts || {};
     var slotText = _trim(opts.slotText || "");
+    var enLiteral = _trim(opts.enLiteral || opts.en_literal || "");
     var rationale = _trim(opts.rationale || "");
     var label = _trim(opts.label || "");
     var name = _trim(opts.name || "");
@@ -861,6 +1238,7 @@ testWoo.fragContract = (function () {
 
     var samples = [];
     if (slotText) samples.push(slotText);
+    if (enLiteral) samples.push(enLiteral);
     if (rationale) samples.push(rationale);
     if (!samples.length) samples.push(label || name || "");
 
@@ -870,6 +1248,11 @@ testWoo.fragContract = (function () {
     var pi;
     for (pi = 0; pi < parts.length; pi++) _pushUniqueTok(syn, seen, parts[pi]);
     if (slotText) _pushUniqueTok(syn, seen, slotText);
+    if (enLiteral) {
+      var enParts = enLiteral.split(/[^0-9a-zA-Z가-힣]+/);
+      for (pi = 0; pi < enParts.length; pi++) _pushUniqueTok(syn, seen, enParts[pi]);
+      _pushUniqueTok(syn, seen, enLiteral);
+    }
 
     function pushNlMap(sm) {
       if (!sm || typeof sm !== "object") return;
@@ -962,6 +1345,11 @@ testWoo.fragContract = (function () {
     if (slot.text) {
       var raw = String(slot.text).split(/[^0-9a-zA-Z가-힣]+/);
       for (var j = 0; j < raw.length; j++) push(raw[j]);
+    }
+    if (slot.en_literal) {
+      var enRaw = String(slot.en_literal).split(/[^0-9a-zA-Z가-힣]+/);
+      for (var ej = 0; ej < enRaw.length; ej++) push(enRaw[ej]);
+      push(slot.en_literal);
     }
     // 값 토큰이 색인에 없어도 tags=age LIKE로 축 frag를 찾는다.
     var hints = axisFromSlot(slot);
@@ -1545,6 +1933,33 @@ testWoo.fragContract = (function () {
     if (!domain) return null;
     var text = String(slotText || "");
     if (!text) return null;
+    var yms = _induceYearMonthSpan(text);
+    var span = _yearMonthSpanSpec(domain);
+    if (yms && span) {
+      var obj = {};
+      obj[span.year] = yms.year;
+      obj[span.monthFrom] = yms.monthMin;
+      obj[span.monthTo] = yms.monthMax;
+      return { param: span.bucket, nl: text, value: obj };
+    }
+    if (yms && domain._bucket && domain._bucket.nlMap) {
+      var bmk, bmv, bsp, bobj;
+      bsp = _yearMonthSpanSpec(domain);
+      for (bmk in domain._bucket.nlMap) {
+        if (!domain._bucket.nlMap.hasOwnProperty(bmk)) continue;
+        if (!_boundHas(text, bmk, null, true)) continue;
+        bmv = entryDb(domain._bucket.nlMap[bmk]);
+        if (!bmv || typeof bmv !== "object") continue;
+        if (bsp && bmv[bsp.year] != null &&
+            bmv[bsp.monthFrom] != null && bmv[bsp.monthTo] != null) {
+          bobj = {};
+          bobj[bsp.year] = bmv[bsp.year];
+          bobj[bsp.monthFrom] = bmv[bsp.monthFrom];
+          bobj[bsp.monthTo] = bmv[bsp.monthTo];
+          return { param: bsp.bucket, nl: String(bmk), value: bobj };
+        }
+      }
+    }
     if (domain._bucket && domain._bucket.nlMap && domain._bucket.nlMap[text] != null)
       return { param: "_bucket", nl: text, value: entryDb(domain._bucket.nlMap[text]) };
     var nd0 = _induceNDae(text);
@@ -1661,13 +2076,11 @@ testWoo.fragContract = (function () {
   }
 
   function _conceptsAxisMatch(slotConcept, domainConcept, kind) {
-    var sc = String(slotConcept || "");
-    var dc = String(domainConcept || "");
-    if (!sc || !dc) return false;
-    if (sc === dc) return true;
-    var sa = _axisFromConcept(sc, kind);
-    var da = _axisFromConcept(dc, "");
-    return !!(sa && da && sa === da);
+    var slotKeys = _slotConceptKeys({ concept: slotConcept, kind: kind });
+    var domKeys = _domainConceptKeys({
+      _source: { concept: domainConcept }
+    });
+    return _conceptKeysOverlap(slotKeys, domKeys);
   }
 
   function conceptsAxisMatch(slotConcept, domainConcept, kind) {
@@ -1748,7 +2161,7 @@ testWoo.fragContract = (function () {
     });
   }
 
-  function matchEnPivotSlot(domainRaw, slot) {
+  function matchEnPivotSlot(domainRaw, slot, cardOpt) {
     var domain = normalizeParamDomain(domainRaw);
     var empty = { layer: null, param: "", nl: "", value: null, ambiguous: false, hits: [] };
     if (!domain || !slot) return empty;
@@ -1802,7 +2215,16 @@ testWoo.fragContract = (function () {
         ambiguous: true, hits: hits
       };
     var locked = conceptOf(domain);
-    if (concept && locked && _conceptsAxisMatch(concept, locked, kind) &&
+    var slotKeys = _slotConceptKeys({ concept: concept, kind: kind });
+    var domKeys = _domainConceptKeys(domain);
+    if (cardOpt) {
+      var ck = _cardConceptKeys(cardOpt);
+      var dk;
+      for (dk in ck) {
+        if (ck.hasOwnProperty(dk)) domKeys[dk] = 1;
+      }
+    }
+    if (concept && _conceptKeysOverlap(slotKeys, domKeys) &&
         kindCompatible(kind, domain))
       return {
         layer: "M3", param: "", nl: "", value: null,
@@ -1868,11 +2290,118 @@ testWoo.fragContract = (function () {
     if (!axesCompatible(card, slotObj)) return false;
     var parts = slotCoverParts(card, slotObj, domain);
     if (parts.leftover.length) return false;
+    if (_looksLikeYearMonthSpan(slotText) && !domainMatchSlot(domain, slotText))
+      return false;
     if (parts.covered.length) return true;
-    var hints = axisFromSlot(slotObj);
-    if (!hints.length) return !!domainMatchSlot(domain, slotText);
-    if (!_isSingleAxisCached(card, domain)) return false;
-    return true;
+    if (matchEnPivotSlot) {
+      var ep = matchEnPivotSlot(domain, slotObj);
+      if (ep && ep.layer && !ep.ambiguous &&
+          (ep.layer === "M1" || ep.layer === "M2" || ep.layer === "M2G"))
+        return true;
+    }
+    if (!axisFromSlot(slotObj).length) return !!domainMatchSlot(domain, slotText);
+    return false;
+  }
+
+  function _pad2(n) {
+    n = Number(n);
+    if (isNaN(n)) return "00";
+    return n < 10 ? ("0" + String(n)) : String(n);
+  }
+
+  function _inferSpanSpecFromBucket(domain) {
+    if (!domain || !domain._bucket || !domain._bucket.nlMap) return null;
+    var bk, bmv, pk, lk, yK, fK, tK;
+    for (bk in domain._bucket.nlMap) {
+      if (!domain._bucket.nlMap.hasOwnProperty(bk)) continue;
+      bmv = entryDb(domain._bucket.nlMap[bk]);
+      if (!bmv || typeof bmv !== "object") continue;
+      yK = "";
+      fK = "";
+      tK = "";
+      for (pk in bmv) {
+        if (!bmv.hasOwnProperty(pk)) continue;
+        lk = String(pk).toLowerCase();
+        if (lk.indexOf("year") >= 0 && lk.indexOf("month") < 0) yK = pk;
+        if (lk.indexOf("monthfrom") >= 0 || lk.indexOf("month_from") >= 0) fK = pk;
+        if (lk.indexOf("monthto") >= 0 || lk.indexOf("month_to") >= 0) tK = pk;
+      }
+      if (yK && fK && tK)
+        return { year: yK, monthFrom: fK, monthTo: tK, bucket: "_bucket" };
+    }
+    return null;
+  }
+
+  function _spanParamsFrom(domainRaw, paramsRaw, haystack) {
+    var domain = normalizeParamDomain(domainRaw);
+    var span = _yearMonthSpanSpec(domain);
+    if (!span) span = _inferSpanSpecFromBucket(domain);
+    var params = paramsRaw && typeof paramsRaw === "object" ? paramsRaw : {};
+    var out = {};
+    var y, mf, mt;
+    if (span) {
+      y = params[span.year];
+      mf = params[span.monthFrom];
+      mt = params[span.monthTo];
+      if (y == null || mf == null || mt == null) {
+        var fromNl = resolveNlParams(domain, haystack || "", null) || {};
+        if (y == null) y = fromNl[span.year];
+        if (mf == null) mf = fromNl[span.monthFrom];
+        if (mt == null) mt = fromNl[span.monthTo];
+      }
+    }
+    if (y == null || mf == null || mt == null) {
+      var yms = _induceYearMonthSpan(haystack || "");
+      if (!yms) return null;
+      y = yms.year;
+      mf = yms.monthMin;
+      mt = yms.monthMax;
+      if (!span) span = { year: "joinYear", monthFrom: "joinMonthFrom", monthTo: "joinMonthTo", bucket: "_bucket" };
+    }
+    if (y == null || mf == null || mt == null) return null;
+    out[span.year] = Number(y);
+    out[span.monthFrom] = Number(mf);
+    out[span.monthTo] = Number(mt);
+    if (isNaN(out[span.year]) || isNaN(out[span.monthFrom]) || isNaN(out[span.monthTo]))
+      return null;
+    out._span = span;
+    return out;
+  }
+
+  function _filterColumnFromSql(sqlText) {
+    var sql = String(sqlText || "");
+    var rel = /([A-Za-z_][A-Za-z0-9_]*)\s*>=\s*AddDays\s*\(\s*GetDate\s*\(\s*\)\s*,/i.exec(sql);
+    if (rel && rel[1]) return rel[1];
+    var abs = /([A-Za-z_][A-Za-z0-9_]*)\s*>=\s*'\d{4}-\d{2}-\d{2}'/i.exec(sql);
+    if (abs && abs[1]) return abs[1];
+    return "";
+  }
+
+  // relative {{joinDaysWithin}} 템플릿 + span params(NL induce·_bucket nlMap) → absolute calendar SQL
+  function spanRangeSqlText(sqlText, domainRaw, paramsRaw, grain, haystack) {
+    var domain = normalizeParamDomain(domainRaw);
+    var sql = String(sqlText || "");
+    if (!sql || !grain) return null;
+    if (!/\{\{joinDaysWithin\}\}/.test(sql)) return null;
+    var sp = _spanParamsFrom(domain, paramsRaw, haystack);
+    if (!sp || !sp._span) return null;
+    var span = sp._span;
+    var yNum = sp[span.year];
+    var mfNum = sp[span.monthFrom];
+    var mtNum = sp[span.monthTo];
+    if (mfNum < 1 || mfNum > 12 || mtNum < 1 || mtNum > 12) return null;
+    var fm = /\bFROM\s+([A-Za-z_][A-Za-z0-9_]*)/i.exec(sql);
+    if (!fm || !fm[1]) return null;
+    var col = _filterColumnFromSql(sql);
+    if (!col) col = _sourceColumnName(domain && domain._source);
+    if (!col) return null;
+    var start = String(yNum) + "-" + _pad2(mfNum) + "-01";
+    var endMo = mtNum + 1;
+    var endY = yNum;
+    if (endMo > 12) { endMo = 1; endY = yNum + 1; }
+    var end = String(endY) + "-" + _pad2(endMo) + "-01";
+    return "SELECT DISTINCT " + grain + " FROM " + fm[1] +
+      " WHERE " + col + " >= '" + start + "' AND " + col + " < '" + end + "'";
   }
 
   function sampleBindSql(sqlText, domainRaw) {
@@ -1928,6 +2457,14 @@ testWoo.fragContract = (function () {
     if (ndHay && _domainAcceptsNDae(domain)) {
       if (!need || need.ageMin) params.ageMin = ndHay.ageMin;
       if (!need || need.ageMax) params.ageMax = ndHay.ageMax;
+    }
+
+    var ymsHay = _induceYearMonthSpan(hay);
+    var spanHay = _yearMonthSpanSpec(domain);
+    if (ymsHay && spanHay) {
+      if (!need || need[spanHay.year]) params[spanHay.year] = ymsHay.year;
+      if (!need || need[spanHay.monthFrom]) params[spanHay.monthFrom] = ymsHay.monthMin;
+      if (!need || need[spanHay.monthTo]) params[spanHay.monthTo] = ymsHay.monthMax;
     }
 
     if (domain._bucket && domain._bucket.nlMap) {
@@ -2129,9 +2666,24 @@ testWoo.fragContract = (function () {
       specI = inc[k] || {};
       if (k === "_range" && specI && typeof specI === "object") {
         if (!base._range || typeof base._range !== "object") {
-          base._range = { min: specI.min, max: specI.max };
+          base._range = {};
           changed = true;
-          continue;
+        }
+        if (specI.year && !base._range.year) {
+          base._range.year = specI.year;
+          changed = true;
+        }
+        if (specI.monthFrom && !base._range.monthFrom) {
+          base._range.monthFrom = specI.monthFrom;
+          changed = true;
+        }
+        if (specI.monthTo && !base._range.monthTo) {
+          base._range.monthTo = specI.monthTo;
+          changed = true;
+        }
+        if (specI.bucket && !base._range.bucket) {
+          base._range.bucket = specI.bucket;
+          changed = true;
         }
         if (specI.min != null &&
             (base._range.min == null || Number(specI.min) < Number(base._range.min))) {
@@ -2219,6 +2771,130 @@ testWoo.fragContract = (function () {
     return { changed: changed, json: JSON.stringify(base), domain: base };
   }
 
+  function _formatYearMonthSpanSurface(yms) {
+    if (!yms) return "";
+    return String(yms.year) + "\uB144 " + String(yms.monthMin) +
+      "\uC6D4~" + String(yms.monthMax) + "\uC6D4";
+  }
+
+  // relative/date param shape — 컬럼명·mart 하드코딩 없음
+  function _isTemporalSpanHealable(domain) {
+    if (!domain) return false;
+    if (_hasRelativeDaysOnly(domain)) return true;
+    if (_yearMonthSpanSpec(domain)) return true;
+    var k, lk, spec, tp, src, ev;
+    for (k in domain) {
+      if (!domain.hasOwnProperty(k) || k.charAt(0) === "_") continue;
+      lk = k.toLowerCase();
+      tp = String((domain[k] || {}).type || "").toLowerCase();
+      if (lk.indexOf("dayswithin") >= 0 || lk.indexOf("days_within") >= 0) return true;
+      if (lk.indexOf("datefrom") >= 0 || lk.indexOf("date_from") >= 0 ||
+          lk.indexOf("dateto") >= 0 || lk.indexOf("date_to") >= 0 ||
+          lk.indexOf("datemin") >= 0 || lk.indexOf("datemax") >= 0) return true;
+      if (tp === "string" && lk.indexOf("date") >= 0) return true;
+    }
+    src = domain._source;
+    if (!src || typeof src !== "object") return false;
+    ev = String(src.evidence || "").toLowerCase();
+    if (src.tier === "range" && (ev.indexOf("datetime") >= 0 || ev.indexOf("date") >= 0))
+      return true;
+    return false;
+  }
+
+  // Foundry axis reuse — NL yms 미등재 시 span `_range`·`_bucket.nlMap` 자동 추가
+  function healYearMonthSpanDomain(domainRaw, slotText) {
+    var domain = normalizeParamDomain(domainRaw);
+    var text = String(slotText || "");
+    if (!text || !yearMonthSpanCatalogGap(domain, text))
+      return { domain: domain, changed: false };
+    if (!_isTemporalSpanHealable(domain))
+      return { domain: domain, changed: false };
+    var yms = _induceYearMonthSpan(text);
+    if (!yms) return { domain: domain, changed: false };
+    var changed = false;
+    var span = _yearMonthSpanSpec(domain);
+    var yearK = span ? span.year : "joinYear";
+    var fromK = span ? span.monthFrom : "joinMonthFrom";
+    var toK = span ? span.monthTo : "joinMonthTo";
+    if (!domain[yearK]) {
+      domain[yearK] = { required: true, type: "int" };
+      changed = true;
+    }
+    if (!domain[fromK]) {
+      domain[fromK] = { required: true, type: "byte" };
+      changed = true;
+    }
+    if (!domain[toK]) {
+      domain[toK] = { required: true, type: "byte" };
+      changed = true;
+    }
+    if (!domain._range || typeof domain._range !== "object") {
+      domain._range = {};
+      changed = true;
+    }
+    if (!domain._range.year) {
+      domain._range.year = yearK;
+      changed = true;
+    }
+    if (!domain._range.monthFrom) {
+      domain._range.monthFrom = fromK;
+      changed = true;
+    }
+    if (!domain._range.monthTo) {
+      domain._range.monthTo = toK;
+      changed = true;
+    }
+    if (!domain._range.bucket) {
+      domain._range.bucket = "_bucket";
+      changed = true;
+    }
+    if (!domain._bucket || typeof domain._bucket !== "object") {
+      domain._bucket = { nlMap: {} };
+      changed = true;
+    }
+    if (!domain._bucket.nlMap || typeof domain._bucket.nlMap !== "object") {
+      domain._bucket.nlMap = {};
+      changed = true;
+    }
+    var surface = _formatYearMonthSpanSurface(yms);
+    if (surface && domain._bucket.nlMap[surface] == null) {
+      var bucketVal = {};
+      bucketVal[yearK] = yms.year;
+      bucketVal[fromK] = yms.monthMin;
+      bucketVal[toK] = yms.monthMax;
+      domain._bucket.nlMap[surface] = bucketVal;
+      changed = true;
+    }
+    if (changed) domain = stampHeal(domain);
+    return { domain: domain, changed: changed, surface: surface };
+  }
+
+  function yearMonthSpanCatalogGap(domainRaw, text) {
+    var domain = normalizeParamDomain(domainRaw);
+    if (!_looksLikeYearMonthSpan(text)) return false;
+    var yms = _induceYearMonthSpan(text);
+    if (!yms) return true;
+    if (!_yearMonthSpanSpec(domain)) return true;
+    return !domainMatchSlot(domain, text);
+  }
+
+  function nlBindsYearMonthSpan(cards, text) {
+    var i, card, row, domain;
+    if (!_looksLikeYearMonthSpan(text)) return true;
+    for (i = 0; i < (cards || []).length; i++) {
+      card = cards[i] || {};
+      domain = card.param_domain;
+      if (card.name && testWoo.fragments && testWoo.fragments.getByName) {
+        try {
+          row = testWoo.fragments.getByName(String(card.name));
+          if (row && row.param_domain) domain = row.param_domain;
+        } catch (eG) { /* stale snapshot */ }
+      }
+      if (domain && domainMatchSlot(domain, text)) return true;
+    }
+    return false;
+  }
+
   function applyNlPatch(orig, surface, patch) {
     var o = String(orig == null ? "" : orig);
     var s = String(surface == null ? "" : surface);
@@ -2226,6 +2902,8 @@ testWoo.fragContract = (function () {
     if (!p) return o;
     if (o.indexOf(p) >= 0) return o;
     if (s && o.indexOf(s) >= 0) return o.replace(s, p);
+    var mr = _induceMonthRange(o);
+    if (mr && mr.span && o.indexOf(mr.span) >= 0) return o.replace(mr.span, p);
     if (!o) return p;
     return o + " " + p;
   }
@@ -2495,7 +3173,43 @@ testWoo.fragContract = (function () {
   }
 
   function _collectHintHits(slot, domain, values) {
-    var text = String((slot && (slot.surface || slot.slotText || slot.text)) || "");
+    var text = _slotHintText(slot);
+    var mr = _induceMonthRange(text);
+    if (!mr && slot && slot.en_literal && slot.en_literal !== text)
+      mr = _induceMonthRange(slot.en_literal);
+    if (mr && !_induceYearMonthSpan(text)) {
+      var years = _yearsFromMonthRangeHints(domain, mr.monthMin, mr.monthMax);
+      if (years.length >= 2) {
+        var span = _yearMonthSpanSpec(domain);
+        var yHits = [];
+        var yi, y, lbl, patch, val, pk;
+        pk = span ? span.bucket : "_bucket";
+        for (yi = 0; yi < years.length && yHits.length < 5; yi++) {
+          y = years[yi];
+          lbl = String(y) + "\uB144 " + mr.monthMin + "~" + mr.monthMax + "\uC6D4";
+          patch = String(y) + "\uB144 " + mr.monthMin + "\uC6D4~" + mr.monthMax + "\uC6D4";
+          if (span) {
+            val = {};
+            val[span.year] = y;
+            val[span.monthFrom] = mr.monthMin;
+            val[span.monthTo] = mr.monthMax;
+          } else {
+            val = patch;
+          }
+          yHits.push(val);
+        }
+        if (yHits.length >= 2) {
+          return {
+            hits: yHits,
+            token: mr.span || (mr.monthMin + "\uC6D4~" + mr.monthMax + "\uC6D4"),
+            param: pk,
+            clockA: true,
+            monthRange: mr,
+            yearLabels: years
+          };
+        }
+      }
+    }
     var ym = yearMonthHits(text, values);
     if (ym.length)
       return { hits: ym, token: text, param: _paramOfValues(domain, ym), clockA: true };
@@ -2563,34 +3277,65 @@ testWoo.fragContract = (function () {
       var members = _sortHintMembers(packed.hits, audit.dates, clockA);
       var token = packed.token || String((slot && slot.surface) || "");
       var options = [];
-      options.push({
-        label: token + " 전체",
-        patch: token + " 전체",
-        value: packed.hits.slice(0),
-        union: true,
-        param: packed.param || ""
-      });
-      var mi, db;
-      for (mi = 0; mi < members.length && options.length < 5; mi++) {
-        db = String(members[mi]);
+      if (packed.monthRange && packed.yearLabels) {
+        var mi2, y2, mr2, lbl2, patch2, val2, spanHint;
+        mr2 = packed.monthRange;
+        spanHint = _yearMonthSpanSpec(domain);
+        for (mi2 = 0; mi2 < packed.yearLabels.length && options.length < 5; mi2++) {
+          y2 = packed.yearLabels[mi2];
+          lbl2 = String(y2) + "\uB144 " + mr2.monthMin + "~" + mr2.monthMax + "\uC6D4";
+          patch2 = String(y2) + "\uB144 " + mr2.monthMin + "\uC6D4~" + mr2.monthMax + "\uC6D4";
+          val2 = members[mi2];
+          if (val2 == null || typeof val2 === "string") {
+            if (spanHint) {
+              val2 = {};
+              val2[spanHint.year] = y2;
+              val2[spanHint.monthFrom] = mr2.monthMin;
+              val2[spanHint.monthTo] = mr2.monthMax;
+            } else {
+              val2 = patch2;
+            }
+          }
+          options.push({
+            label: lbl2,
+            patch: patch2,
+            value: val2,
+            union: false,
+            param: packed.param || ""
+          });
+        }
+      } else {
         options.push({
-          label: db,
-          patch: db,
-          value: db,
-          union: false,
+          label: token + " 전체",
+          patch: token + " 전체",
+          value: packed.hits.slice(0),
+          union: true,
           param: packed.param || ""
         });
+        var mi, db;
+        for (mi = 0; mi < members.length && options.length < 5; mi++) {
+          db = String(members[mi]);
+          options.push({
+            label: db,
+            patch: db,
+            value: db,
+            union: false,
+            param: packed.param || ""
+          });
+        }
       }
       var hintTier = tier;
       if (hintTier === "unknown" || hintTier === "categorical") hintTier = "enum";
       if (hintTier !== "enum" && hintTier !== "distinct" &&
           hintTier !== "range" && hintTier !== "boolean")
         hintTier = "distinct";
+      var hintSurface = token;
+      if (packed.monthRange && packed.monthRange.span) hintSurface = packed.monthRange.span;
       return {
         auditSqlCount: audit.sqlCount || 0,
         item: {
           slotId: String((slot && slot.slotId) || ""),
-          surface: token,
+          surface: hintSurface,
           kind: "value",
           tier: hintTier,
           options: options
@@ -2653,9 +3398,18 @@ testWoo.fragContract = (function () {
           if (row) domain = row.param_domain;
         } catch (eG) { domain = null; }
       }
+      if (domain && testWoo.toolkit && testWoo.toolkit.refreshDomain) {
+        try {
+          var rr = testWoo.toolkit.refreshDomain(domain);
+          if (rr && rr.ok && rr.domain) domain = rr.domain;
+        } catch (eR) { /* skip */ }
+      }
       slots.push({
         slotId: u.slotId || ("u" + i),
         surface: u.surface || u.text || "",
+        text: u.text || u.surface || "",
+        en_literal: u.en_literal || "",
+        kind: u.kind || "",
         reason: u.reason || "",
         domain: domain,
         probes: u.probes || [],
@@ -2760,6 +3514,13 @@ testWoo.fragContract = (function () {
     normalizeParamDomain: normalizeParamDomain,
     domainMatchSlot: domainMatchSlot,
     yearMonthHits: yearMonthHits,
+    monthRangeNeedsClarify: monthRangeNeedsClarify,
+    induceMonthRange: _induceMonthRange,
+    induceYearMonthSpan: _induceYearMonthSpan,
+    looksLikeYearMonthSpan: _looksLikeYearMonthSpan,
+    yearMonthSpanSpec: _yearMonthSpanSpec,
+    yearMonthSpanCatalogGap: yearMonthSpanCatalogGap,
+    nlBindsYearMonthSpan: nlBindsYearMonthSpan,
     matchEnPivotSlot: matchEnPivotSlot,
     conceptOf: conceptOf,
     conceptsAxisMatch: conceptsAxisMatch,
@@ -2771,11 +3532,13 @@ testWoo.fragContract = (function () {
     validateBind: validateBind,
     attachAlias: attachAlias,
     mergeParamDomainJson: mergeParamDomainJson,
+    healYearMonthSpanDomain: healYearMonthSpanDomain,
     coversSlot: coversSlot,
     slotCoverParts: slotCoverParts,
     splitCoordSlots: splitCoordSlots,
     libraryHitPredicate: libraryHitPredicate,
     sampleBindSql: sampleBindSql,
+    spanRangeSqlText: spanRangeSqlText,
     promoteEqPlaceholderToIn: promoteEqPlaceholderToIn,
     resolveNlParams: resolveNlParams,
     upsertGroup: upsertGroup,
@@ -2789,4 +3552,4 @@ testWoo.fragContract = (function () {
     scoreCard: scoreCard
   };
 })();
-testWoo.fragContract.__v = "186";
+testWoo.fragContract.__v = "204";

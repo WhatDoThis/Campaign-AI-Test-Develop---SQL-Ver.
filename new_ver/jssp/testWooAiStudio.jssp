@@ -14,14 +14,14 @@
  *
  * [Dependencies]
  * =========
- * - /woo/testWooAiStudioJs.jssp?v=187 — 클라이언트 IIFE (debug 트레이스)
+ * - /woo/testWooAiStudioJs.jssp?v=193 — 클라이언트 IIFE (라벨 모달·Register nl)
  * - Option testWooAiMatchEnabled — 1/true만 ON
  * - input_form testWooExtendWorkflow — urlViewer height=630(embed 본문+70 정합)
  *
  * [Invariants]
  * ===========
  * - MSHTML: fetch/Promise/flex/CSS변수 금지 · 한글 HTML 엔티티
- * - litmus URL v=187 필수 — 진단 debug 트레이스
+ * - litmus URL v=193 필수
  * - NL textarea·목록 고정 height(+70) — 단독 630 / embed 510
  */
 response.setContentType("text/html;charset=utf-8");
@@ -194,6 +194,9 @@ if (!_login) {
     .shell-item.draft-cache:hover{border-color:#d97706;background:#fef3c7;}
     .shell-item.locked{opacity:0.55;cursor:not-allowed;background:#f8fafc;}
     .shell-item.locked:hover{border-color:#e2e8f0;background:#f8fafc;}
+    .shell-item.orphan{border-color:#fca5a5;background:#fef2f2;}
+    .shell-item.orphan:hover{border-color:#ef4444;background:#fee2e2;}
+    .badge-orphan{display:inline-block;font-size:.68rem;font-weight:700;padding:1px 6px;margin-left:6px;border-radius:6px;background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5;}
     .side{display:block;overflow:auto;padding:0;background:transparent;}
     .side.hidden{display:none;}
     .sql-item{position:relative;border:1px solid #e2e8f0;border-radius:10px;padding:10px 48px 10px 10px;margin-bottom:8px;cursor:pointer;background:#fff;font-size:.82rem;}
@@ -201,6 +204,9 @@ if (!_login) {
     .sql-item.current{border-color:#059669;background:#ecfdf5;}
     .sql-item.current:hover,.sql-item.current.active{border-color:#047857;background:#d1fae5;}
     .sql-item .badge-now{display:inline-block;font-size:.68rem;font-weight:700;padding:1px 6px;margin-left:6px;background:#d1fae5;color:#047857;border:1px solid #6ee7b7;}
+    .sql-item .badge-time,.gate .badge-time{display:inline-block;font-size:.68rem;font-weight:700;padding:1px 6px;margin-left:6px;border-radius:6px;}
+    .badge-time-abs{background:#eff6ff;color:#1d4ed8;border:1px solid #93c5fd;}
+    .badge-time-rel{background:#fef3c7;color:#92400e;border:1px solid #fcd34d;}
     .sql-item.new-sql{border-color:#f59e0b;background:#fffbeb;}
     .sql-item.new-sql:hover,.sql-item.new-sql.active{border-color:#d97706;background:#fef3c7;}
     .sql-item.locked{opacity:0.55;cursor:not-allowed;background:#f8fafc;}
@@ -231,10 +237,6 @@ if (!_login) {
     .chip button{border:none;background:none;color:#2563eb;cursor:pointer;font-size:1rem;line-height:1;}
     .chip.unverified button{color:#92400e;}
     .chip button.chip-ok{font-size:.72rem;font-weight:700;margin-left:6px;padding:0 4px;color:#047857;}
-    table.funnel{width:100%;border-collapse:collapse;font-size:.88rem;}
-    table.funnel td{padding:6px 4px;border-bottom:1px dashed #e2e8f0;}
-    table.funnel td.num{text-align:right;font-weight:600;}
-    table.funnel tr.total td{border-top:2px solid #0f172a;border-bottom:none;font-weight:700;color:#047857;}
     .gates{display:block;font-size:.85rem;}
     .gate{display:block;margin:0 0 6px 0;} .gate .g-ok{color:#047857;} .gate .g-err{color:#b91c1c;}
     pre.code{font-family:Consolas,monospace;font-size:.78rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;overflow:auto;white-space:pre-wrap;max-height:220px;color:#0f766e;}
@@ -246,6 +248,15 @@ if (!_login) {
     .btn:disabled{opacity:.5;cursor:not-allowed;} .btn-outline{background:#fff;color:#0f172a;border:1px solid #e2e8f0;}
     .actions{display:block;margin-top:6px;}
     .hidden{display:none !important;}
+    .tw-modal{position:fixed;left:0;top:0;width:100%;height:100%;z-index:9999;}
+    .tw-modal.hidden{display:none !important;}
+    .tw-modal-backdrop{position:absolute;left:0;top:0;width:100%;height:100%;background:#0f172a;opacity:0.45;}
+    .tw-modal-box{position:absolute;left:50%;top:120px;width:360px;margin-left:-180px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px 18px;box-shadow:0 8px 24px rgba(15,23,42,0.18);}
+    .tw-modal-box h3{font-size:1rem;margin:0 0 8px;color:#0f172a;}
+    .tw-modal-box p{font-size:.85rem;margin:0 0 10px;color:#64748b;line-height:1.45;}
+    .tw-modal-box input{display:block;width:100%;box-sizing:border-box;font:inherit;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;margin:0 0 12px 0;}
+    .tw-modal-actions{text-align:right;}
+    .tw-modal-actions .btn{margin-left:8px;}
     details summary{cursor:pointer;font-size:.82rem;color:#64748b;}
     .slot-card{border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:.88rem;}
     .slot-card .badge{display:inline-block;font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:999px;margin-left:6px;}
@@ -253,7 +264,6 @@ if (!_login) {
     .badge-no_value,.badge-no_column{background:#fef2f2;color:#b91c1c;}
     .badge-ambiguous,.badge-partially_infeasible{background:#fffbeb;color:#b45309;}
     .badge-low{border:1px dashed #b45309;}
-    .alt-chips{display:block;margin-top:8px;}
     .alt-chip{display:inline-block;font-size:.78rem;padding:4px 10px;margin:0 6px 6px 0;border-radius:999px;border:1px solid #e2e8f0;cursor:pointer;background:#f8fafc;}
     #nlHints{display:block;margin:0 0 6px 0;min-height:0;}
     body.embed{background:#fff;height:auto;overflow:auto;margin:0;padding:0;}
@@ -282,7 +292,6 @@ if (!_login) {
     body.embed .chip{font-size:.72rem;padding:3px 8px;}
     body.embed .gates{font-size:.72rem;}
     body.embed pre.code{font-size:.7rem;padding:8px;max-height:120px;}
-    body.embed #cardFunnel{display:none !important;}
     body.embed #twRecentNl{display:block;font-size:.68rem;padding:4px 8px 6px;}
     body.embed #twDiag{display:block;font-size:.68rem;padding:4px 8px 8px;}
     body.embed #twDiagLog{display:block;max-height:100px;}
@@ -329,7 +338,7 @@ if (!_login) {
   <!-- 오류 시에만 표시(#136). 정상 시 숨기고 진단 패널에만 기록 -->
   <table id="twBootTable" width="100%" bgcolor="#FFFF00" border="0" cellspacing="0" cellpadding="3" class="tw-boot-show">
     <tr><td>
-      <font id="twBootFont" face="Tahoma" size="2" color="#000000">TW-BOOT v=187 | loading&#x2026;</font>
+      <font id="twBootFont" face="Tahoma" size="2" color="#000000">TW-BOOT v=192 | loading&#x2026;</font>
     </td></tr>
   </table>
   <div id="twBoot" class="tw-boot-show">Studio boot&#x2026;</div>
@@ -348,7 +357,7 @@ if (!_login) {
         r = amp < 0 ? rest : rest.substring(0, amp);
       }
     } catch (eR) {}
-    var msg = "TW-BOOT v=187 | documentMode=" + dm + " | embed=" + emb + " | match=" + (window.__TW_MATCH_ENABLED__ ? "1" : "0") + " | _r=" + (r || "-");
+    var msg = "TW-BOOT v=192 | documentMode=" + dm + " | embed=" + emb + " | match=" + (window.__TW_MATCH_ENABLED__ ? "1" : "0") + " | _r=" + (r || "-");
     var font = document.getElementById("twBootFont");
     if (font) font.innerHTML = msg;
     var el = document.getElementById("twBoot");
@@ -390,8 +399,6 @@ if (!_login) {
 
             <div class="card hidden" id="cardChips"><h2>&#xD574;&#xC11D;&#xD55C; &#xC870;&#xAC74;</h2><div class="chip-line" id="chipLine"></div><div class="chips" id="chips"></div></div>
 
-            <div class="card hidden" id="cardFunnel"><h2>&#xD37C;&#xB110; &#xCE74;&#xC6B4;&#xD2B8; (&#xBCF4;&#xB958;)</h2><table class="funnel" id="funnel"></table></div>
-
             <div class="card hidden" id="cardGates"><h2>&#xC900;&#xBE44; &#xC0C1;&#xD0DC;</h2><div class="gates" id="gates"></div></div>
 
             <div class="card hidden" id="cardCode">
@@ -430,10 +437,22 @@ if (!_login) {
       <div id="twDiagSum" style="cursor:pointer;font-weight:600;margin-bottom:4px;">&#xC9C4;&#xB2E8; (IE / urlViewer) &#x2014; &#xD074;&#xB9AD;&#xD558;&#xC5EC; &#xC811;&#xAE30;</div>
       <div id="twDiagLog" style="display:block;"></div>
     </div>
+    <div id="twLabelModal" class="tw-modal hidden">
+      <div class="tw-modal-backdrop" id="twLabelModalBackdrop"></div>
+      <div class="tw-modal-box">
+        <h3 id="twLabelModalTitle">&#xC774;&#xB984; &#xC785;&#xB825;</h3>
+        <p id="twLabelModalMsg">&#xD45C;&#xC2DC; &#xC774;&#xB984;&#xC744; &#xC785;&#xB825;&#xD55C; &#xB4A4; [&#xB9CC;&#xB4E4;&#xAE30;]&#xB97C; &#xB204;&#xB974;&#xC138;&#xC694;.</p>
+        <input type="text" id="twLabelModalInput" value="" maxlength="120" />
+        <div class="tw-modal-actions">
+          <button type="button" class="btn btn-outline" id="twLabelModalCancel">&#xCDE8;&#xC18C;</button>
+          <button type="button" class="btn" id="twLabelModalOk">&#xB9CC;&#xB4E4;&#xAE30;</button>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <!-- v=187 · debug 트레이스 · Match OFF 유지 -->
-  <script type="text/javascript" src="/woo/testWooAiStudioJs.jssp?v=187"></script>
+  <!-- v=195 · orphan SQL 배지 · WKF 삭제 이력 재사용 -->
+  <script type="text/javascript" src="/woo/testWooAiStudioJs.jssp?v=195"></script>
 </body>
 </html>
 <%

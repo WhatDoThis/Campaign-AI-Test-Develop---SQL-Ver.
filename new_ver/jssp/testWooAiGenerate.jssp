@@ -124,7 +124,8 @@ try {
     include: plan.include || [],
     exclude: plan.exclude || [],
     unmatched: unmatched,
-    unresolved: unresolved
+    unresolved: unresolved,
+    nl_request: String(p.nl_request || plan.nl_request || "")
   };
 
   if (unmatched.length || unresolved.length) {

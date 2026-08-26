@@ -1,7 +1,7 @@
 /*
  * testWooStudioContext.js (Studio 컨텍스트 조회)
  * ==================================================
- * litmus 동기 __v=159 (#160 배포정합).
+ * litmus 동기 __v=160 (folder label sanitize).
  * AI Studio 2차: @isAiFolder=1 Program/폴더만 queryDef 조회.
  * Write·삭제 없음. WKF 클론은 testWooWorkflowClone.js.
  *
@@ -48,10 +48,15 @@ testWoo.studioContext = (function () {
       var res = q.ExecuteQuery();
       if (res && res.folder) {
         for each (var r in res.folder) {
+          var fid = String(r.@id || "");
+          var fnm = twSanitizeXmlText ? twSanitizeXmlText(r.@name || "") : String(r.@name || "");
+          var flb = twSanitizeXmlText
+            ? twSanitizeXmlText(r.@label || r.@name || "")
+            : String(r.@label || r.@name || "");
           items.push({
-            id: String(r.@id || ""),
-            name: String(r.@name || ""),
-            label: String(r.@label || r.@name || "")
+            id: fid,
+            name: fnm,
+            label: flb || fnm
           });
         }
       }
@@ -71,4 +76,4 @@ testWoo.studioContext = (function () {
     listAiFolders: listAiFolders
   };
 })();
-testWoo.studioContext.__v = "159";
+testWoo.studioContext.__v = "160";

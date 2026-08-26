@@ -1,7 +1,7 @@
 /*
  * testWooGates.js (Plan·Fragment 검증 게이트)
  * ==================================================
- * litmus 동기 __v=163 (planCode enum∪nlMap·plan_code 별칭).
+ * litmus 동기 __v=164 (span absolute NL — joinDaysWithin plan gate skip).
  * CNF plan·fragment sql_text·param_domain 최소 검증.
  * Stage A 후보 밖 fragment 거절은 LLM Pass1 전용.
  * enum은 nlMap db와 합친다. {db,en} 는 db만. snake↔camel 별칭. 배열 params는 원소별.
@@ -19,6 +19,7 @@
  * [Dependencies]
  * =========
  * - testWoo.fragments.getByName — active fragment 존재 확인
+ * - testWoo.fragContract.spanRangeSqlText — relative sql + calendar NL gate (#350)
  */
 var testWoo = testWoo || {};
 testWoo.gates = (function () {
@@ -81,12 +82,12 @@ testWoo.gates = (function () {
       if (!group || !_isArray(group.any) || !group.any.length)
         return _fail("PLAN", "include[" + gi + "].any empty");
       for (var ai = 0; ai < group.any.length; ai++) {
-        var r = _checkItem(group.any[ai], grain, "include[" + gi + "].any[" + ai + "]");
+        var r = _checkItem(group.any[ai], grain, "include[" + gi + "].any[" + ai + "]", plan);
         if (!r.ok) return r;
       }
     }
     for (var ei = 0; ei < plan.exclude.length; ei++) {
-      var re = _checkItem(plan.exclude[ei], grain, "exclude[" + ei + "]");
+      var re = _checkItem(plan.exclude[ei], grain, "exclude[" + ei + "]", plan);
       if (!re.ok) return re;
     }
     return _ok("PLAN");
@@ -106,7 +107,17 @@ testWoo.gates = (function () {
     return results;
   }
 
-  function _checkItem(item, grain, path) {
+  function _relativeParamSpanBound(f, item, pk, nlHay) {
+    if (!testWoo.fragContract || !testWoo.fragContract.spanRangeSqlText) return false;
+    var sql = String(f.sql_text || "");
+    if (sql.indexOf("{{" + String(pk) + "}}") < 0) return false;
+    try {
+      return !!testWoo.fragContract.spanRangeSqlText(
+        sql, f.param_domain, (item && item.params) || {}, f.key_column, nlHay || "");
+    } catch (eB) { return false; }
+  }
+
+  function _checkItem(item, grain, path, plan) {
     if (!item || !item.fragment) return _fail("PLAN", path + ": fragment missing");
     var f = testWoo.fragments.getByName(item.fragment);
     if (!f) return _fail("PLAN", "unknown fragment: " + item.fragment);
@@ -133,6 +144,7 @@ testWoo.gates = (function () {
     if (!domainParse.ok) return _fail("PLAN", path + ": param_domain JSON invalid: " + item.fragment);
     var domain = domainParse.value || {};
     var params = item.params || {};
+    var nlHay = plan && plan.nl_request ? String(plan.nl_request) : "";
     // sql_text {{}} 만 검사. 도메인 키는 planCode↔plan_code 별칭으로 합친다.
     var need = {};
     var sql = String(f.sql_text || "");
@@ -144,8 +156,10 @@ testWoo.gates = (function () {
       var spec = _specForParam(domain, pk);
       var val = params[pk];
       var missing = (val == null || val === "");
-      if (spec.required && missing)
+      if (spec.required && missing) {
+        if (_relativeParamSpanBound(f, item, pk, nlHay)) continue;
         return _fail("PLAN", "required param missing: " + item.fragment + "." + pk);
+      }
       if (missing) continue;
       var tv = _checkTypeEnumRange(val, spec, item.fragment + "." + pk);
       if (!tv.ok) return tv;
@@ -466,4 +480,4 @@ testWoo.gates = (function () {
     checkScopePlan: checkScopePlan
   };
 })();
-testWoo.gates.__v = "163";
+testWoo.gates.__v = "164";

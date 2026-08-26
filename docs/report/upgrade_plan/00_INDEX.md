@@ -37,6 +37,7 @@
 | 174, EN-Pivot, 번역, param 추출 | **#174** |
 | 175, 값확장, Group Expansion, 전라도 | **#175** |
 | 176, 프롬프트검증, clarify, 보강버튼, 모호질문 | **#176** |
+| 178, axis cold-start, axis_proven, verdict 분리 | **#178** → `43_AxisColdStart_178.md` |
 | 완성, 로드맵, 핸드오프, 남은일 | **완성** → `41_완성로드맵.md` |
 | 상용화, 여정갭, WKF열기, 임시목록 | **상용화** |
 | UX-ST1, 목록, 임시, 멘트 | **UX-ST1** |
@@ -126,6 +127,7 @@
 | 40 | 프롬프트 검증 Clarify Chips (#176) · **[~]** C1~C3 repo · C4 HUMAN |
 | 41 | 완성 로드맵 · 다음 AI 정본 |
 | 42 | Studio/JSSP 잔재 대장 · R8 사전조사(grep 증거) |
+| 43 | Axis Cold-Start (#178) · feasibility verdict 분리 · `[ ]` DEFERRED |
 | `[별도]` | 관리자 원본 (번호 밖) |
 
 ---

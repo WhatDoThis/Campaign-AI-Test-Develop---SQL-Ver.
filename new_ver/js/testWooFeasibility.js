@@ -1,7 +1,7 @@
 /*
  * testWooFeasibility.js (슬롯 실현가능성 Triage)
  * ==================================================
- * litmus 동기 __v=164 (N월은 YYYY-MM 카탈로그로 확정. 연도 질문 없음).
+ * litmus 동기 __v=166 (libraryLookup M3-only skip · 값 M1/M2만 hit).
  * Foundry SQL 생성 전 슬롯별 feasible 여부 판정.
  * #169: Triage 진입 전 Stage A 라이브러리 조회(서가 우선). 미스만 스키마 탐색.
  * 축·커버·도메인 매칭은 testWoo.fragContract.libraryHitPredicate에 위임.
@@ -16,7 +16,7 @@
  *
  * [Dependencies]
  * =========
- * - testWoo.fragContract — axes·libraryHitPredicate·domainMatch (#172)
+ * - testWoo.fragContract — matchEnPivotSlot·libraryHitPredicate·domainMatch (#172)
  * - testWoo.toolkit — specs/invoke/markPhase/getEvidenceLogSince·invoke 캐시
  * - testWoo.fragments — searchBySlot·getByName (#169 서가)
  * - testWoo.llm.postChat — tool calling 루프
@@ -145,6 +145,90 @@ testWoo.feasibility = (function () {
     return null;
   }
 
+  function _matchToLibMatched(m) {
+    if (!m || !m.layer || m.ambiguous) return null;
+    return {
+      param: m.param || "",
+      nl: m.nl || "",
+      value: m.value,
+      layer: m.layer,
+      group: !!m.group
+    };
+  }
+
+  function _enPivotDomainMatch(domain, slotObj) {
+    if (testWoo.fragContract && testWoo.fragContract.matchEnPivotSlot) {
+      return _matchToLibMatched(
+        testWoo.fragContract.matchEnPivotSlot(domain, slotObj));
+    }
+    return _domainMatchSlot(domain, String(slotObj.text || ""));
+  }
+
+  function _collectLibraryCandidates(slotObj, statuses) {
+    var cands = [];
+    var seen = {};
+    function add(card) {
+      if (!card || !card.name || seen[card.name]) return;
+      seen[card.name] = 1;
+      cands.push(card);
+    }
+    try {
+      var fromSearch = testWoo.fragments.searchBySlot(slotObj, 8, statuses) || [];
+      var si;
+      for (si = 0; si < fromSearch.length; si++) add(fromSearch[si]);
+    } catch (eS) { /* catalog scan below */ }
+
+    var fc = testWoo.fragContract;
+    if (!fc || !testWoo.fragments || !testWoo.fragments.listLexiconCards) return cands;
+
+    var cards = [];
+    try { cards = testWoo.fragments.listLexiconCards(statuses) || []; }
+    catch (eL) { return cands; }
+
+    var ci, card, m, srcConcept;
+    for (ci = 0; ci < cards.length; ci++) {
+      card = cards[ci];
+      if (!card) continue;
+      if (slotObj.resolvedName && String(card.name) === String(slotObj.resolvedName)) {
+        add(card);
+        continue;
+      }
+      if (fc.conceptOf && slotObj.concept) {
+        srcConcept = fc.conceptOf(card.param_domain);
+        if (srcConcept && (String(slotObj.concept) === srcConcept ||
+            (fc.conceptsAxisMatch &&
+              fc.conceptsAxisMatch(slotObj.concept, srcConcept, slotObj.kind))) &&
+            fc.axesCompatible && fc.axesCompatible(card, slotObj)) {
+          add(card);
+          continue;
+        }
+      }
+      if (fc.matchEnPivotSlot) {
+        m = fc.matchEnPivotSlot(card.param_domain, slotObj, card);
+        if (m && m.layer && !m.ambiguous && fc.axesCompatible &&
+            fc.axesCompatible(card, slotObj)) {
+          add(card);
+          continue;
+        }
+      }
+      if (fc.domainMatchSlot && fc.domainMatchSlot(card.param_domain, slotObj.text) &&
+          fc.axesCompatible && fc.axesCompatible(card, slotObj))
+        add(card);
+    }
+    return cands;
+  }
+
+  function _triageUserBlock(slotObj, nlContext) {
+    var text = String((slotObj && slotObj.text) || slotObj || "");
+    var block = "<user_request>" + text + "</user_request>";
+    var en = _trim(slotObj && slotObj.en_literal);
+    if (en) block += "\n<en_literal>" + en + "</en_literal>";
+    var concept = _trim(slotObj && slotObj.concept);
+    if (concept) block += "\n<concept>" + concept + "</concept>";
+    if (nlContext) block += "\n<nl_context>" + String(nlContext) + "</nl_context>";
+    return block;
+  }
+
   function _libraryCoverOk(card, slotObj, domain, slotText) {
     if (testWoo.fragContract && testWoo.fragContract.libraryHitPredicate)
       return testWoo.fragContract.libraryHitPredicate(card, slotObj, domain);
@@ -218,7 +302,7 @@ testWoo.feasibility = (function () {
     if (!statuses || !statuses.length) statuses = ["active", "verified"];
     var cands = [];
     try {
-      cands = testWoo.fragments.searchBySlot(slotObj, 8, statuses) || [];
+      cands = _collectLibraryCandidates(slotObj, statuses) || [];
     } catch (eS) {
       return { ok: false, reason: String(eS.message || eS) };
     }
@@ -258,14 +342,16 @@ testWoo.feasibility = (function () {
         }
         continue;
       }
-      // ok / ttl_expired: 히트 허용(갱신은 Foundry). 값은 도메인에서 매칭.
-      var matched = _domainMatchSlot(domain, slotText);
+      // ok / ttl_expired: 값 M1/M2/M2G 매칭만 서가 skip — M3(축만)은 Foundry triage/generate 계속
+      var matched = _enPivotDomainMatch(domain, slotObj);
+      if (!matched || !matched.layer || matched.layer === "M3") continue;
       return {
         ok: true,
         fragmentId: Number(full.id),
         name: String(full.name || ""),
         domain: domain,
         matched: matched,
+        matchLayer: matched ? matched.layer : "",
         freshness: fresh.status,
         resolvedBy: "library_cache_hit"
       };
@@ -318,8 +404,8 @@ testWoo.feasibility = (function () {
     };
   }
 
-  function runTriageLoop(cfg, slotText, slotId, nlContext) {
-    var userBlock = "<user_request>" + String(slotText || "") + "</user_request>";
+  function runTriageLoop(cfg, slotObj, slotId, nlContext) {
+    var userBlock = _triageUserBlock(slotObj, nlContext);
     var messages = [
       { role: "system", content: _triageSystemPrompt() },
       { role: "user", content: userBlock }
@@ -626,7 +712,7 @@ testWoo.feasibility = (function () {
     if (testWoo.toolkit.setPhaseBudget) testWoo.toolkit.setPhaseBudget("triage");
     var phaseStart = testWoo.toolkit.markPhase ?
       testWoo.toolkit.markPhase("triage:" + slotId) : 0;
-    var raw = runTriageLoop(cfg, slotText, slotId, slotText);
+    var raw = runTriageLoop(cfg, slotObj, slotId, nlContext || slotText);
     raw.slotId = raw.slotId || slotId;
     var toolLog = testWoo.toolkit.getEvidenceLogSince ?
       testWoo.toolkit.getEvidenceLogSince(phaseStart) : [];
@@ -652,4 +738,4 @@ testWoo.feasibility = (function () {
     meetsConfidence: meetsConfidence
   };
 })();
-testWoo.feasibility.__v = "164";
+testWoo.feasibility.__v = "166";

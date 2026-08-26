@@ -1,6 +1,49 @@
 # Log
 
 ## Log Index
+361. 2026-08-26 HUMAN PASS — span «2023 1~6월 가입자» inline heal E2E (fragContract 204 / llm 200)
+360. 2026-08-25 library_cache_hit span — predicate gate + Foundry/Generate inline heal (fragContract 204 / foundry 179 / llm 200)
+359. 2026-08-25 compact yms «2023 1~6월» — induce·span gate·compile (fragContract 203 / llm 199 / compiler 168)
+358. 2026-08-25 Foundry span yms auto-heal — healYearMonthSpanDomain (fragContract 202 / foundry 178)
+357. 2026-08-25 libVersions — expectedByMod match=160
+356. 2026-08-25 orphan SQL — 보존·배지·재사용·Match 제외 (v=195 / match 160)
+355. 2026-08-25 Studio goBack·createWkf — inject 상태 리셋·자동 WKF 열기 제거 (v=194)
+354. 2026-08-25 Register span nl_request · 캠페인/WKF 라벨 모달 (v=193)
+353. 2026-08-25 testWooAiStudioContext.jssp — \\r\\r\\n 줄바꿈 정규화
+352. 2026-08-25 StudioContext lazy load — listAiFolders·libVersions tryLoad
+351. 2026-08-25 fix-downstream-review rule·skill — 파이프라인 hop 검수 후 답변
+350. 2026-08-25 gates span — joinDaysWithin skip when spanRangeSqlText binds (gates 164)
+349. 2026-08-25 spanRangeSqlText — NL induce·bucket-only domain fallback (fragContract 201)
+348. 2026-08-25 span compile — joinDaysWithin sql + _range domain rewrite (fragContract 200 / compiler 167 / foundry 177)
+347. 2026-08-25 Foundry heal 후 range M3→M1 bind · _boundHas partial (fragContract 199 / llm 198)
+346. 2026-08-25 span gap 큐 resolvedName·Foundry heal nlMap bind (fragContract 198 / llm 197)
+345. 2026-08-25 연·월 span gap → Foundry · Pass1 analogy 차단 (fragContract 197 / llm 196)
+344. 2026-08-25 HUMAN PASS — #176 C4-A 연월 칩 (1~6월 ambiguous→2026 patch→Generate)
+343. 2026-08-24 clarify 칩 patch — 1월~6월 replace·enPivot bypass·clarifyPick bind (fragContract 196 / llm 195)
+342. 2026-08-24 month-range 칩 — 연도 5개까지·슬래시 날짜·probe+calendar 병합 (fragContract 195)
+341. 2026-08-24 month-range 연도 칩 — probe_values columnName·캘린더 fallback (fragContract 194)
+340. 2026-08-24 join_date 1~6월 — ambiguous·연도 칩 · Pass1/Foundry 차단 (fragContract 193 / llm 194)
+339. 2026-08-24 HUMAN PASS — consent 3축 NL (join+marketing=0+push=1 · relative 배지)
+338. 2026-08-24 Pass1 boolean EXCEPT 역전 · listSql relative 배지 (llm 193 / repo 164 / v=191)
+337. 2026-08-24 boolean exclude polarity · 반영됨 행 덮어쓰기 차단 (llm 192 / v=190)
+336. 2026-08-24 no-domain-hardcoding 규칙 — 운영 스케일 금지 이유 정본
+335. 2026-08-24 축 정합 카탈로그화 — concept/xpath·Foundry synth (192/175)
+334. 2026-08-24 consent 축 분리 — marketing≠push 매칭·polarity 가드 (191)
+333. 2026-08-24 R8 HUMAN PASS — 파도3 닫힘 · 7월+iOS+LTE E2E
+332. 2026-08-24 value_not_in_domain → Foundry 승격 (llm 190)
+331. 2026-08-24 Foundry Done≠publish — M3 cache hit · verified 검색 (190/189/166/174)
+330. 2026-08-24 libraryLookup·Foundry — matchEnPivotSlot 통일 (165/173)
+329. 2026-08-24 EnPivot 경로 — KO merge/splitCompound 스킵 (llm 188)
+328. 2026-08-24 splitCompound — mart enum 하드코딩 제거 · glueStrip (189)
+327. 2026-08-24 splitCompound·Foundry — LTE prefix·glue·prose retry (188/172)
+326. 2026-08-24 Foundry — fragment JSON 우선 채택 · iOS/LTE split (171/187)
+325. 2026-08-24 R8 — funnel dead·count API 제거·큐 운영절차 (v=189)
+324. 2026-08-24 R7 HUMAN PASS — absolute 배지
+323. 2026-08-21 R7 — absolute/relative time 배지 (v=188)
+322. 2026-08-21 파도2 HUMAN — #161·R5·UX-ST1·R6 PASS · 파도2 닫힘
+321. 2026-08-21 S-1-06 — libVersions diag 전모듈·allMatch ok (v=187)
+320. 2026-08-21 파도1 HUMAN-B — 3문장 PASS · 파도1 닫힘
+319. 2026-08-21 회귀조사(A) — #175-5 rescue 미진입 = (b) 카드 전제
 318. 2026-08-21 파도1 HUMAN — #308 PASS · #175-5 FAIL (cands=0)
 317. 2026-08-21 42 잔재대장 — R8 사전조사 문서 (grep 증거)
 316. 2026-08-21 llm 187 — _negKey Rhino 구문 오류 수정
@@ -321,6 +364,356 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+361. 2026-08-26 HUMAN PASS — span «2023 1~6월 가입자» inline heal E2E (fragContract 204 / llm 200)
+Purpose: #359~#360 배포 후 마케터 축약 NL E2E — Foundry 큐 없이 spanHeal → pass1 → Register.
+Changes:
+- HUMAN: `2023 1~6월 가입자` → spanHeal → plan {} → Register ai_sql_id=41380 (WKF158)
+- libs allMatch: fragContract=204 llm=200 foundry=179 compiler=168
+Changed files: (HUMAN only) docs/log/log.md
+
+360. 2026-08-25 library_cache_hit span — predicate gate + Foundry/Generate inline heal (fragContract 204 / foundry 179 / llm 200)
+Purpose: Foundry Done(library_cache_hit) 후 span yms 미등재 — 축(M3)만 커버된 cache hit이 domain heal 없이 Done → afterFoundry Stage A 재실패.
+Changes:
+- libraryHitPredicate — looksLikeYearMonthSpan이면 domainMatchSlot 필수
+- foundry _healSpanDomainOnLibraryHit — cache hit 시 param_domain heal Write
+- llm _trySpanHealExistingAxis — Generate 재시도 시 resolvedName 축 inline heal
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooFoundry.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+359. 2026-08-25 compact yms «2023 1~6월» — induce·span gate·compile (fragContract 203 / llm 199 / compiler 168)
+Purpose: 축약 NL(2023 1~6월)에서 span induce 실패 → span gate skip → pass1 matched {} → compiler joinDaysWithin missing. LLM 문제 아님 — 형태 파서·게이트 hole.
+Changes:
+- fragContract induceYearMonthSpan — `2023 1~6월`·`2023년 1~6월`·EN January~June
+- looksLikeYearMonthSpan — induce 실패해도 span gate 유지
+- llm _planBindsYearMonthSpan — looksLike + slot haystack
+- compiler _nlHaystack — nl_request+slots 통합 haystack
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/js/testWooCompiler.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+358. 2026-08-25 Foundry span yms auto-heal — healYearMonthSpanDomain (fragContract 202 / foundry 178)
+Purpose: RFP 요건 — 연·월 span NL(예 2023년 1~6월) 미등재 시 Foundry가 param_domain에 `_range` span 계약·`_bucket.nlMap` surface를 자동 추가. ACC 수동 편집 불필요.
+Changes:
+- fragContract healYearMonthSpanDomain — yms induce → joinYear/joinMonthFrom/joinMonthTo + nlMap 키
+- mergeParamDomainJson — `_range` min/max와 span meta(year/monthFrom/monthTo) 동시 merge
+- foundry _healSpanDomainOnFrag — generate·axis reuse merge 직전 호출
+- smoke — joindate-like 2023 heal·span merge 회귀
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooFoundry.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+357. 2026-08-25 libVersions — expectedByMod match=160
+Purpose: match __v=160 배포 후 libVersions want match=159(기본값) 불일치 경고.
+Changes:
+- testWooAiStudioContext.jssp expectedByMod.match = "160"
+Changed files: new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+356. 2026-08-25 orphan SQL — 보존·배지·재사용·Match 제외 (v=195 / match 160)
+Purpose: WKF/캠페인 삭제 후 testWooAiSql 이력 orphan — 물리 삭제 없이 UI 표시·점프 차단·조건 재사용.
+Changes:
+- listRegisteredSql: orphan 플래그(resolveWorkflowsByName 실패)
+- Studio v=195: badge WKF 삭제됨 · _reuseOrphanSql → [대상 만들기] 안내
+- testWooMatch 160: _enrichItems orphan 제외 주석(기존 동작 명시)
+Changed files: new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/js/testWooMatch.js, docs/log/log.md
+
+355. 2026-08-25 Studio goBack·createWkf — inject 상태 리셋·자동 WKF 열기 제거 (v=194)
+Purpose: Register 후 뒤로→새 WKF 시 이전 commitOk로 showOpenHint 자동 Explorer 열림·반영됨 착시. compose는 유지하고 inject 플래그만 WKF 전환 시 초기화.
+Changes:
+- _leaveWkfContext — goBack·navToWkfList·_enterCampaign에서 commitOk·wfHasInjected·aiSqlId 리셋
+- createWkf — showOpenHint() 제거(사용자 [WKF로 이동]만) · 생성 전 inject 리셋
+- selectWkf — WKF 전환 시 inject 리셋 · setBusy가 btnReg도 잠금
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
+
+354. 2026-08-25 Register span nl_request · 캠페인/WKF 라벨 모달 (v=193)
+Purpose: WKF 넣기 `param missing: joinDaysWithin` — Register/Validate 재컴파일 시 clientPlan에 nl_request 없음. 캠페인/WKF 생성 라벨 입력 모달(confirm 대체).
+Changes:
+- common: twPlanForCompile — Register·Validate compile/gates 전 nl 주입
+- Register·Validate·Generate clientPlan nl_request
+- Studio v=193: #twLabelModal · createCampaign/createWkf 2단계(입력→만들기)
+Changed files: new_ver/js/testWooCommon.js, new_ver/jssp/testWooAiRegister.jssp, new_ver/jssp/testWooAiValidate.jssp, new_ver/jssp/testWooAiGenerate.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, docs/log/log.md
+
+353. 2026-08-25 testWooAiStudioContext.jssp — \r\r\n 줄바꿈 정규화
+Purpose: JSSP 634행·illegal XML character — `\r\r\n` 이중 CR로 ACC XML 파서 실패 가능.
+Changes:
+- `\r\r\n` → `\r\n` (317행) · js/jssp 전수 스캔 — 해당 파일만 이상
+Changed files: new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+352. 2026-08-25 StudioContext lazy load — listAiFolders·libVersions tryLoad
+Purpose: 임시SQL→폴더 목록 `illegal XML character` — listAiFolders가 wfClone까지 eager load. Generate JSSP와 분리된 StudioContext 전용 JS 배포/파싱 실패 격리.
+Changes:
+- StudioContext.jssp: action별 lazy load(studioContext|wfClone|repo) — listAiFolders는 studioContext만
+- libVersions: loadLibrary 개별 tryLoad + loadErrors[] — 한 모듈 실패가 전체 abort 방지
+- common: twSanitizeXmlText — folder label 제어문자 제거
+- studioContext 160: listAiFolders sanitize
+- StudioJs: libs LOAD_ERR diag
+Changed files: new_ver/jssp/testWooAiStudioContext.jssp, new_ver/js/testWooCommon.js, new_ver/js/testWooStudioContext.js, new_ver/jssp/testWooAiStudioJs.jssp, docs/log/log.md
+
+351. 2026-08-25 fix-downstream-review rule·skill — 파이프라인 hop 검수 후 답변
+Purpose: 단편 수정→다음 턴 실패 반복 방지. fix → downstream trace → verify → respond 워크플로 고정.
+Changes:
+- rule: `.cursor/rules/fix-downstream-review.mdc` (alwaysApply)
+- skill: `.cursor/skills/campaign-ai-studio/pipeline-downstream-review.md` (hop 표·touch map·span lesson)
+- SKILL.md·campaign-ai-project.mdc·AGENTS.md 참조 추가
+Changed files: .cursor/rules/fix-downstream-review.mdc, .cursor/skills/campaign-ai-studio/pipeline-downstream-review.md, .cursor/skills/campaign-ai-studio/SKILL.md, .cursor/rules/campaign-ai-project.mdc, AGENTS.md, docs/log/log.md
+
+350. 2026-08-25 gates span — joinDaysWithin skip when spanRangeSqlText binds (gates 164)
+Purpose: compile absolute SQL OK인데 validatePlan `required param missing: joinDaysWithin` — gates가 template placeholder만 검사.
+Changes:
+- gates: _relativeParamSpanBound — compiler와 동일 spanRangeSqlText 경로로 relative param gate skip
+Changed files: new_ver/js/testWooGates.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+349. 2026-08-25 spanRangeSqlText — NL induce·bucket-only domain fallback (fragContract 201)
+Purpose: compiler 167 배포 후에도 joinDaysWithin fail — Foundry domain에 `_range` 없이 _bucket nlMap만 있어 rewrite 미진입.
+Changes:
+- _inferSpanSpecFromBucket — nlMap object 키에서 span spec 추론
+- _spanParamsFrom — _induceYearMonthSpan(haystack) fallback
+- smoke: bucket-only·NL-only domain rewrite 회귀
+Changed files: new_ver/js/testWooFragContract.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+348. 2026-08-25 span compile — joinDaysWithin sql + _range domain rewrite (fragContract 200 / compiler 167 / foundry 177)
+Purpose: Stage A M1 match 후 plan `{}` — sql_text `{{joinDaysWithin}}` vs healed span domain 불일치 → compiler fail.
+Changes:
+- fragContract: spanRangeSqlText — relative template + _range params → absolute calendar SQL
+- compiler: compile 시 span rewrite (nlHay + resolveNlParams)
+- foundry: axis reuse 시 span-compatible sql_text adopt
+- smoke: spanRangeSqlText 2026-01~06 rewrite 회귀
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooCompiler.js, new_ver/js/testWooFoundry.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+347. 2026-08-25 Foundry heal 후 range M3→M1 bind · _boundHas partial (fragContract 199 / llm 198)
+Purpose: Foundry Done(domainChanged) 후에도 `2025년 1~6월` — M3 kind=range가 value_not_in_domain·재큐 없이 Stage A miss.
+Changes:
+- llm: _refreshCardFromDb · _trySpanRangeBind · M3/range decided.kind 재매칭
+- fragContract: _boundHas multi-token nlMap partial(_ciHas)
+- smoke: partial span text bind 회귀
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+346. 2026-08-25 span gap 큐 resolvedName·Foundry heal nlMap bind (fragContract 198 / llm 197)
+Purpose: 칩 후 2025년 1~6월 — span gap Foundry 큐 frag= 빈값·subscription joindate 오매칭·Done 후 Stage A miss.
+Changes:
+- llm: _pickSpanAxisCard(slotCandidates) · _primarySpanSlot · 큐 resolvedName=woo__customer__joindate
+- fragContract: domainMatchSlot nlMap bucket partial span · nlBindsYearMonthSpan getByName 우선
+- foundry: _normalizeSlots resolvedName 보존 · pinned axis 타축 cache hit 차단
+- smoke: Foundry heal nlMap partial bind 회귀
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/js/testWooFoundry.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+345. 2026-08-25 연·월 span gap → Foundry · Pass1 analogy 차단 (fragContract 197 / llm 196)
+Purpose: 칩 후 2026년 1~6월 NL — Pass1 subscription/181 analogy로 Foundry 우회.
+Changes:
+- fragContract: induceYearMonthSpan · yearMonthSpanCatalogGap · nlBindsYearMonthSpan
+- llm: span gap → Foundry 큐 · Pass1 후 bind 검증 · clarifyPick span weak bind 거부 · Pass1 prompt EXCEPTION
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+344. 2026-08-25 HUMAN PASS — #176 C4-A 연월 칩 (1~6월 ambiguous→2026 patch→Generate)
+Purpose: #176 C4-A HUMAN — 월범위(연도 없음) clarify 칩→보강→재Generate E2E.
+Changes:
+- NL: `1월~6월 사이에 가입한 고객` → 칩 2026 선택 → `2026년 1월~6월 사이에 가입한 고객`
+- Generate OK (retryInput/unresolved 없음) · fragContract 196 / llm 195 / Studio v=192
+- SQL 미정합(별도): Pass1→subscription 181일 relative — joindate absolute span 카탈로그 필요
+Changed files: docs/log/log.md
+
+343. 2026-08-24 clarify 칩 patch — 1월~6월 replace·enPivot bypass·clarifyPick bind (fragContract 196 / llm 195)
+Purpose: 칩 클릭 NL이 append(…2025년 1월~6월) → enPivot retryInput. surface 1~6월≠1월~6월.
+Changes:
+- fragContract: induceMonthRange.span · hint surface · applyNlPatch 월범위 replace · resolveNlParams year span
+- llm: clarifyPick 시 enPivot bypass · domainMatchSlot bind · synthetic slot
+- Studio applyNlPatch 월범위 fallback
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+342. 2026-08-24 month-range 칩 — 연도 5개까지·슬래시 날짜·probe+calendar 병합 (fragContract 195)
+Purpose: 1~6월 칩이 2023·2024 2개만 — probe 50건·YYYY-MM만 파싱·≥2 조기 return.
+Changes:
+- _parseProbeYearMonth: YYYY/MM·YYYY-MM datetime
+- _yearsFromMonthRangeHints: probe+enum+calendar 병합 최대 5 · probe limit 200
+Changed files: new_ver/js/testWooFragContract.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+341. 2026-08-24 month-range 연도 칩 — probe_values columnName·캘린더 fallback (fragContract 194)
+Purpose: ambiguous 배너는 나오나 promptHints 비어 있음 — probe에 xpath 전달·연도 후보 부족.
+Changes:
+- fragContract: _probeYearsForMonthSpan → columnName(@created_date→created_date) · refreshDomain · 캘린더 연도 fallback
+- smoke: buildPromptHints 1~6월 칩 ≥2 검증
+Changed files: new_ver/js/testWooFragContract.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+340. 2026-08-24 join_date 1~6월 — ambiguous·연도 칩 · Pass1/Foundry 차단 (fragContract 193 / llm 194)
+Purpose: «1월~6월 가입»이 joinDaysWithin:1095+Foundry G-C 실패 — 월범위(연도 없음)는 clarify 경로로.
+Changes:
+- fragContract: _induceMonthRange · monthRangeNeedsClarify · 연도 probe 칩 · _yearMonthSpanSpec 바인딩
+- llm: range/M3 join_date 월범위 → unresolved ambiguous (Pass1·splitCompound·Foundry 큐 차단)
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+339. 2026-08-24 HUMAN PASS — consent 3축 NL (join+marketing=0+push=1 · relative 배지)
+Purpose: #338 배포 후 운영자 HUMAN — 3년 가입·마케팅 미동의·푸시 동의 복합 NL 회귀 닫힘.
+Changes:
+- SQL: INTERSECT join(1095) · push=1 · marketing=0 — EXCEPT marketing=0 없음
+- 배지: 임시 SQL·WKF 반영 후 목록 모두 relative 유지
+- UX: 반영됨 행 → 「이미 반영됨」 (v=191)
+Changed files: (HUMAN 확인만 — 코드 #337·#338 배포본)
+
+338. 2026-08-24 Pass1 boolean EXCEPT 역전 · listSql relative 배지 (llm 193 / repo 164 / v=191)
+Purpose: Pass1이 marketing=0을 exclude[]에 두어 EXCEPT 역전 · 반영 후 목록 배지 absolute 오표시 수정.
+Changes:
+- llm: _demoteBooleanFilterExclude — kind=boolean·byte[0,1]·match=저 enum + include[] 있으면 exclude→include 승격
+- repo: listAiSqlByWorkflow에 plan_json·sql_query 포함 (__v=164)
+- Studio: _appendTimeBasisBadge(it.sql_query) 필드명 정정 · v=191
+Changed files: new_ver/js/testWooLlm.js, new_ver/js/testWooRepository.js, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+337. 2026-08-24 boolean exclude polarity · 반영됨 행 덮어쓰기 차단 (llm 192 / v=190)
+Purpose: «마케팅 미동의»가 EXCEPT marketing=0으로 역전되던 polarity 버그 수정 · WKF 반영됨 행 선택 시 덮어쓰기 버튼 비활성.
+Changes:
+- llm: _skipBooleanExcludePolarity — kind=boolean·byte[0,1]·match=저 enum값이면 exclude[] 이동 생략 (include 유지)
+- Studio: _isCurrentInjectedSql → btnReg «이미 반영됨» disabled · loadSqlItem 시 overwrite arm 해제
+- litmus llm=192 · Studio v=190
+Changed files: new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+336. 2026-08-24 no-domain-hardcoding 규칙 — 운영 스케일 금지 이유 정본
+Purpose: 에이전트가 하드코딩 금지 이유를 운영 스케일(스키마×컬럼×조합 폭발)로 고정.
+Changes:
+- .cursor/rules/no-domain-hardcoding.mdc (alwaysApply)
+- campaign-ai-project.mdc · SKILL.md 링크
+Changed files: .cursor/rules/no-domain-hardcoding.mdc, .cursor/rules/campaign-ai-project.mdc, .cursor/skills/campaign-ai-studio/SKILL.md, docs/log/log.md
+
+335. 2026-08-24 축 정합 카탈로그화 — concept/xpath·Foundry synth (192/175)
+Purpose: marketing/push/iOS/LTE 등 도메인명 하드코딩 제거 — _source.concept·xpath·conceptAliases·tags 기반 축 정합.
+Changes:
+- fragContract: _cardConceptKeys/_slotConceptKeys overlap · xpath @attr 일반 추출 · regex 축 힌트 삭제
+- foundry: _synthFragName = schema leaf + filter column · publish 시 slot.concept stamp
+- smoke: marketing/push card axesCompatible 교차 검증
+Changed files: testWooFragContract.js, testWooFoundry.js, testWooLlm.js, testWooAiStudioContext.jssp, testWooSmoke.js, docs/log/log.md, docs/report/upgrade_plan/28_배포정합_진단.md
+
+334. 2026-08-24 consent 축 분리 — marketing≠push 매칭·polarity 가드 (191)
+Purpose: 마케팅 미동의 슬롯이 woo__app__pushconsent에 오매칭·EXCEPT 역전 — push/marketing consent 축 분리.
+Changes:
+- fragContract: push_consent/marketing_consent/sms_consent 축(_source.xpath·concept) · generic consent 교차매칭 금지
+- llm: _resolveEnPivotSlot axesCompatible 필터 · 동일 frag include+exclude 충돌 → unmatched
+- smoke: marketing_consent slot must not hit push card
+Changed files: new_ver/js/testWooFragContract.js, testWooLlm.js, testWooAiStudioContext.jssp, new_ver/tools/testWooSmoke.js, docs/log/log.md
+
+333. 2026-08-24 R8 HUMAN PASS — 파도3 닫힘 · 7월+iOS+LTE E2E
+Purpose: R8 E2E HUMAN 1회 완료 — ST0 Generate→SQL·absolute 배지·회귀 확인. 파도1~3 로드맵 마감.
+Changes:
+- HUMAN: «7월 납부한 고객 중 iOS 사용하면서 LTE사용하는 고객» SQL 생성 PASS
+- R8 E2E ST0→ST6 회귀 PASS (운영자 확인)
+- 파도3 닫힘 — 신규 구현 Chat 없음 (#178·Match ON·P6 COUNT DEFERRED)
+Changed files: docs/log/log.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/42_잔재대장_R8사전조사.md
+
+332. 2026-08-24 value_not_in_domain → Foundry 승격 (llm 190)
+Purpose: «LTE» M3 축 hit + domain 값 없음 → unresolved(확인 필요)로 Foundry 차단되던 dead-end.
+Changes:
+- _promoteFoundryUnresolved: value_not_in_domain+fragment/concept → unmatchedSlots(Foundry 큐)
+- ambiguous/group abstain은 기존대로 unresolved
+Changed files: new_ver/js/testWooLlm.js, testWooAiStudioContext.jssp, docs/log/log.md, docs/report/upgrade_plan/28_배포정합_진단.md
+
+331. 2026-08-24 Foundry Done≠publish — M3 cache hit · verified 검색 (190/189/166/174)
+Purpose: Foundry Done 후에도 LTE unmatched — 축-only library hit · verified frag Stage A 미검색.
+Changes:
+- libraryHitPredicate: M3(축만) auto-hit 제거 — M1/M2/M2G 값 매칭만
+- libraryLookup: M3-only continue (Foundry triage/generate 계속)
+- generatePlan: Stage A active+verified · keywordsFromSlot en_literal
+- buildIndexFields/publish: enLiteral(LTE) synonyms 색인
+- Foundry: created=0 orphan → needs_human_design (가짜 Done 방지)
+Changed files: testWooFragContract.js, testWooLlm.js, testWooFeasibility.js, testWooFoundry.js, testWooAiStudioContext.jssp, docs/log/log.md, docs/report/upgrade_plan/28_배포정합_진단.md
+
+330. 2026-08-24 libraryLookup·Foundry — matchEnPivotSlot 통일 (165/173)
+Purpose: generatePlan과 Foundry libraryLookup 매칭 split-brain 제거 — en_literal M2 경로 공유.
+Changes:
+- libraryLookup: _collectLibraryCandidates(Stage A+카탈로그 matchEnPivot) · _enPivotDomainMatch
+- triage: en_literal·concept user block · slotObj 전달
+- Foundry: triage full slot · EnPivot 슬롯 splitCompound 스kip
+- expectedByMod: feasibility=165 foundry=173
+Changed files: new_ver/js/testWooFeasibility.js, testWooFoundry.js, testWooAiStudioContext.jssp, docs/log/log.md, docs/report/upgrade_plan/28_배포정합_진단.md
+
+329. 2026-08-24 EnPivot 경로 — KO merge/splitCompound 스킵 (llm 188)
+Purpose: EnPivot 슬롯(en_literal·concept) 뒤 KO splitCompound가 3→7슬롯으로 재오염 — EN 매칭 설계와 충돌.
+Changes:
+- skipPass0(enPivot llm/cache): mergeLexiconSlots·splitCoord·splitCompound 생략 — pivot 슬롯 그대로
+- expectedByMod llm=188
+Changed files: new_ver/js/testWooLlm.js, testWooAiStudioContext.jssp, docs/log/log.md, docs/report/upgrade_plan/28_배포정합_진단.md
+
+328. 2026-08-24 splitCompound — mart enum 하드코딩 제거 · glueStrip (189)
+Purpose: _martEnumHitsInText(iOS/LTE…) 스키마별 하드코딩은 확장 불가 — 카탈로그·glue 패턴으로 대체.
+Changes:
+- _martEnumHitsInText 삭제
+- _stripAttachedGlue: «LTE사용하는»→«LTE» (KO 접미 패턴만, 값 목록 없음)
+- splitCompound: pack.lex(카탈로그 enum·synonyms) 사용 — identityOnly 제거
+- expectedByMod fragContract=189
+Changed files: new_ver/js/testWooFragContract.js, testWooLlm.js, testWooFoundry.js, testWooAiStudioContext.jssp, docs/log/log.md, docs/report/upgrade_plan/28_배포정합_진단.md
+
+327. 2026-08-24 splitCompound·Foundry — LTE prefix·glue·prose retry (188/172)
+Purpose: queueId=38741 — LTE사용하는 cands=0 · splitCompound dup · Foundry prose-only final turn.
+Changes:
+- splitCompound: axis|key dedup · LTE사용하는→LTE prefix · glue(사용하는/납부한) drop · single-axis enum split
+- isNoiseResidue: glue 토큰 필터 · generatePlan post-split 적용
+- _dedupSlots: 동일 text dedup (resolvedName 분기 제거)
+- runToolLoop: final turn prose → throw 대신 shape retry · markdown ``` json 추출
+- expectedByMod: fragContract=188 foundry=172
+Changed files: new_ver/js/testWooFragContract.js, testWooFoundry.js, testWooLlm.js, testWooAiStudioContext.jssp, docs/log/log.md, docs/report/upgrade_plan/28_배포정합_진단.md
+
+326. 2026-08-24 Foundry — fragment JSON 우선 채택 · iOS/LTE split (171/187)
+Purpose: queueId=38740 shape failed — feasibility JSON이 fragment보다 먼저 채택되던 오류 수정.
+Changes:
+- `_parseFragmentJson` — fragment형(sqlText+name) 우선 · feasibility(verdict/valueProbes) 스킵 · name 합성
+- `_shapeFeedback` — feasibility JSON 출력 금지 명시
+- `_triageFilterCols` — valueProbes 컬럼도 split_atomic 후보
+- fragContract `_martEnumHitsInText` — iOS/LTE/5G splitCompound (187)
+- expectedByMod: foundry=171 fragContract=187
+Changed files: new_ver/js/testWooFoundry.js, testWooFragContract.js, testWooAiStudioContext.jssp, docs/report/upgrade_plan/28_배포정합_진단.md, docs/log/log.md
+
+325. 2026-08-24 R8 — funnel dead·count API 제거·큐 운영절차 (v=189)
+Purpose: 파도3 R8 repo 정리. intent grep 0 · dead funnel/count 제거 · 큐 정책 문서화.
+Changes:
+- Studio: `#cardFunnel`·funnel CSS·`.alt-chips`·embed funnel rule 제거
+- StudioJs·html: `hideFunnel` 제거 · hideResultCards cardFunnel 제외
+- Validate.jssp: `action=count`·`_runCount` 스텁 제거
+- 42 §R8 조치완료·Foundry 큐 운영 절차 · litmus v=189
+Changed files: new_ver/jssp/testWooAiStudio.jssp, testWooAiStudioJs.jssp, testWooAiValidate.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/42_잔재대장_R8사전조사.md, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+324. 2026-08-24 R7 HUMAN PASS — absolute 배지
+Purpose: 운영자 R7 HUMAN 회신. 7월 미납 5축 조건 absolute 배지 확인.
+Changes:
+- 준비 상태·SQL 목록 `absolute` 배지 PASS
+- Generate·R6 회귀 정상
+Changed files: docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+323. 2026-08-21 R7 — absolute/relative time 배지 (v=188)
+Purpose: 파도3 R7 — SQL 카드·준비 상태에 time basis 배지. compiler 동결.
+Changes:
+- `_inferTimeBasis` — plan params joinDaysWithin 또는 SQL AddDays(GetDate()) → relative, 그 외 absolute
+- 배지: WKF SQL 목록·새 SQL 행·gate 준비됨 행
+- CSS badge-time-abs/rel · litmus v=188
+Changed files: new_ver/jssp/testWooAiStudio.jssp, testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md, docs/report/upgrade_plan/01_진행판.md
+
+322. 2026-08-21 파도2 HUMAN — #161·R5·UX-ST1·R6 PASS · 파도2 닫힘
+Purpose: 운영자 HUMAN 회신 — 배포정합·셸·주입 전 구간 PASS.
+Changes:
+- `#161` **PASS** — libs allMatch ok 21모듈 · TW-BOOT/js v=187 · llm=187 fragContract=186
+- Generate **PASS** — `7월 미납자 중 푸시 동의한 10대 남성` 5축 INTERSECT · pass1 matched=5
+- **HUMAN-A PASS** — 분기 A Program→Campaign→WKF · 분기 B 점프 · UX-ST1/ST0 화면
+- **HUMAN-B PASS** — R6 반영·락·덮어쓰기·WKF 열기
+Changed files: docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/28_배포정합_진단.md, docs/log/log.md
+
+321. 2026-08-21 S-1-06 — libVersions diag 전모듈·allMatch ok (v=187)
+Purpose: #161 배포정합 HUMAN 전 libVersions 오판정(S-1-06) 수정. 파도2 착수.
+Changes:
+- StudioJs·html: diag `keys` 21모듈(probe/dedup/toolkit/feasibility/workflowUi 추가)
+- `allMatch ok` 시 모듈별 expectedByMod 나열 — `expected=159` 단일 줄 제거
+- init diag `v=181` → `v=187` (Studio litmus와 동기)
+- 28 §3-A expectedByMod 표 · 01 파도2 진행 표기
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, docs/report/upgrade_plan/28_배포정합_진단.md, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+320. 2026-08-21 파도1 HUMAN-B — 3문장 PASS · 파도1 닫힘
+Purpose: 명령문 B 운영자 HUMAN 회신. region 축 카드 존재 전제 하 generatePlan 직행.
+Changes:
+- `서울에 사는 남성` **PASS** — M1 `woo__customer__region`+gender · SQL `sRegion IN ('서울')`∩`M` · Foundry 미진입
+- `전라도에 사는 남성` **PASS** — pass1 matched=2 · plan `region:["전남","전북"]` · 칩 `전라도→전남,전북`+[맞음] · SQL IN INTERSECT M
+- `7월 미납자 남성` **PASS** — 회귀 동일(2026-07·unpaid·M 3축)
+- C4-B SKIP 유지(3접두 샘플 없음)
+Verification: llm=187 fragContract=186 · debug `decide stage=pass1`
+Changed files: docs/report/upgrade_plan/38_값확장_GroupExpansion_175.md, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
+
+319. 2026-08-21 회귀조사(A) — #175-5 rescue 미진입 = (b) 카드 전제
+Purpose: log #315 rescue vs #318 FAIL debug 교차조사. 코드 변경 0.
+Changes:
+- 결론 **(b)**: `_rescueAxisCard`(llm 344-362)는 `pack.cards` 순회만 — **축 mint 없음**. region 카드 없으면 rescue 불가.
+- **(a) 기각**: log #315·#316 = git 동일 커밋 `3fb0811`. `_tryMatchOrExpand` 도달(`unmatched empty` 로그) · `_negKey`는 rescue 전 경로 아님.
+- **(c) 후보**: Foundry `_markFragmentLifecycle`(1033) stale/orphaned→active=false. log #257 PASS 시 카드 존재 · 현재 Active 5장만(region 없음).
+- 42: S-1-06 libVersions 오판정 · R8-13 splitCompound · R8-14 칩 라벨
+- 43_AxisColdStart_178.md DEFERRED 설계 등재
+Changed files: docs/report/upgrade_plan/42_잔재대장_R8사전조사.md, docs/report/upgrade_plan/43_AxisColdStart_178.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/01_진행판.md, docs/log/log.md
 
 318. 2026-08-21 파도1 HUMAN — #308 PASS · #175-5 FAIL (cands=0)
 Purpose: 파도1 HUMAN 2문장 운영자 회신 기록. AI 자체 PASS 금지 — 파도1 **미완료**.

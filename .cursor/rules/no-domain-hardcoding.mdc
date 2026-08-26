@@ -1,0 +1,32 @@
+---
+description: Domain hardcoding forbidden — production scale (schemas × columns × conditions)
+alwaysApply: true
+---
+
+# No domain hardcoding (운영 스케일)
+
+## Why (필수 이해)
+
+실운영에서는 **스키마·컬럼·값 종류가 폭발적으로 늘어난다.**  
+지금은 샘플 mart 몇 개·조건 몇 개로 테스트하지만, 이후 **스키마 수백 × 컬럼 다수 × 수십 조합 NL**을 처리해야 한다.
+
+- 컬럼/값 하나마다 JS에 2줄씩 넣으면 → 스키마 100 × 컬럼 10 = **2,000줄**만으로도 코드가 비대해지고 **부하·유지·회귀**가 감당 불가.
+- 조건 조합도 지금보다 **수십 배**로 늘어나는데, 임기응변으로 if/regex/enum을 계속 붙이는 방식은 **반드시 깨진다.**
+
+**JS = 축·값과 무관한 고정 엔진.**  
+**스키마/컬럼/enum/concept = fragment 카탈로그(`param_domain`, `_source`, nlMap) + Foundry publish.**
+
+## Forbidden in `new_ver/js`
+
+- 특정 컬럼명·축명·enum 값·mart/테이블을 **if/regex/switch/상수 목록**으로 분기
+- «이번 장애 컬럼만» 2줄 추가 — **금지.** 카탈로그·concept·xpath·conceptAliases로 흡수
+
+## Allowed
+
+- 언어 glue(조사·접미) — 도메인 값 아님
+- 형태 파서(N대·N월) — 바인딩 값은 `_bucket.nlMap`/enum
+- `_source.concept` · xpath `@attr` · tags · conceptAliases · nlMap 기반 **범용** 매칭
+
+## Before adding «just 2 lines»
+
+→ 운영 스케일에서 2,000줄+로 불어난다. **카탈로그/Foundry 경로**로 해결할 것.

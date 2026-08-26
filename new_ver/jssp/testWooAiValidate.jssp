@@ -1,15 +1,14 @@
 <%
 response.setContentType("application/json;charset=utf-8");
 /*
- * testWooAiValidate.jssp (검증·카운트·SQL 이력 API)
+ * testWooAiValidate.jssp (검증·SQL 이력 API)
  * ==================================================
- * plan gates 재실행·COUNT·fragment catalog·WKF별 SQL CRUD.
+ * plan gates 재실행·fragment catalog·WKF별 SQL CRUD.
  * setBindPick/getBindPick으로 폼 Apply용 ai_sql_id를 Option에 저장.
  *
  * [Main Functions]
  * ===========
  * - validate — compile+runAll gates 결과
- * - count — 대상자 수 집계
  * - catalog — active fragment 목록
  * - listSql / getSql / deleteSql — WKF SQL 이력(CSRF: delete)
  * - setBindPick / getBindPick — workflow별 선택 id Option
@@ -36,8 +35,6 @@ try {
 
   if (action === "catalog") {
     _runCatalog();
-  } else if (action === "count") {
-    _runCount(p);
   } else if (action === "validate") {
     _runValidate(p);
   } else if (action === "listsql") {
@@ -57,7 +54,7 @@ try {
   } else {
     throw new Error(
       "unknown action: " + action +
-      " (validate|count|catalog|listSql|getSql|deleteSql|setBindPick|getBindPick|listRecentNl|pushRecentNl)"
+      " (validate|catalog|listSql|getSql|deleteSql|setBindPick|getBindPick|listRecentNl|pushRecentNl)"
     );
   }
 } catch (e) {
@@ -177,29 +174,6 @@ function _runCatalog() {
   jsonOut({ ok: true, categories: testWoo.fragments.listCategories() });
 }
 
-function _runCount(p) {
-  if (!p.plan) throw new Error("Validate/count: plan missing");
-  loadLibrary("woo:testWooConfig.js");
-  loadLibrary("woo:testWooFragContract.js");
-  loadLibrary("woo:testWooFragments.js");
-  loadLibrary("woo:testWooToolkit.js");
-  loadLibrary("woo:testWooCompiler.js");
-  loadLibrary("woo:testWooGates.js");
-  twRequireLib("woo:testWooFragContract.js", (typeof testWoo !== "undefined") && testWoo.fragContract);
-  twRequireLib("woo:testWooFragments.js", (typeof testWoo !== "undefined") && testWoo.fragments);
-  twRequireLib("woo:testWooCompiler.js", (typeof testWoo !== "undefined") && testWoo.compiler);
-  twRequireLib("woo:testWooGates.js", (typeof testWoo !== "undefined") && testWoo.gates);
-  var compiled = testWoo.compiler.compile(p.plan);
-  jsonOut({
-    ok: true,
-    sql: compiled.sql,
-    keyColumn: compiled.keyColumn,
-    funnel: [],
-    finalCount: null,
-    total: null
-  });
-}
-
 function _runValidate(p) {
   if (!p.plan) throw new Error("Validate: plan missing");
   loadLibrary("woo:testWooConfig.js");
@@ -213,8 +187,9 @@ function _runValidate(p) {
   twRequireLib("woo:testWooCompiler.js", (typeof testWoo !== "undefined") && testWoo.compiler);
   twRequireLib("woo:testWooGates.js", (typeof testWoo !== "undefined") && testWoo.gates);
 
-  var compiled = testWoo.compiler.compile(p.plan);
-  var results = testWoo.gates.runAll(p.plan, compiled.sql);
+  var valPlan = twPlanForCompile(p.plan, p.nl_request);
+  var compiled = testWoo.compiler.compile(valPlan);
+  var results = testWoo.gates.runAll(valPlan, compiled.sql);
   var passed = true;
   for (var i = 0; i < results.length; i++) {
     if (!results[i].ok) { passed = false; break; }
@@ -225,8 +200,8 @@ function _runValidate(p) {
     results: results,
     sql: compiled.sql,
     summary: compiled.summary,
-    chips: testWoo.compiler.chipsFromPlan(p.plan),
-    plan: p.plan
+    chips: testWoo.compiler.chipsFromPlan(valPlan),
+    plan: valPlan
   });
 }
 

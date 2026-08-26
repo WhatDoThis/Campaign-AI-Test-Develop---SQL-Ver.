@@ -8,7 +8,7 @@ response.setContentType("application/json;charset=utf-8");
  *
  * [Main Functions]
  * ===========
- * - compile+runAll — gates 실패 시 registered 없이 results 반환
+ * - compile+runAll — gates 실패 시 registered 없이 results 반환 (twPlanForCompile·nl_request)
  * - findAiSqlBySqlHash — 동일 WKF·SQL 해시면 신규 행 없이 그 id로 주입
  * - 2클릭 덮어쓰기 — 다른 저장본(해시 중복·비현재)일 때만. 새 SQL은 1클릭 넣기
  * - commitInject — 첫 AI 액티비티 script+ai-sql-id (confirm_overwrite)
@@ -53,8 +53,9 @@ try {
   twRequireLib("woo:testWooLifecycle.js", (typeof testWoo !== "undefined") && testWoo.lifecycle);
   twRequireLib("woo:testWooRepository.js", (typeof testWoo !== "undefined") && testWoo.repo);
 
-  var compiled = testWoo.compiler.compile(p.plan);
-  var results = testWoo.gates.runAll(p.plan, compiled.sql);
+  var regPlan = twPlanForCompile(p.plan, p.nl_request);
+  var compiled = testWoo.compiler.compile(regPlan);
+  var results = testWoo.gates.runAll(regPlan, compiled.sql);
   var passed = true;
   for (var i = 0; i < results.length; i++) {
     if (!results[i].ok) { passed = false; break; }
@@ -68,14 +69,14 @@ try {
       results: results,
       sql: compiled.sql,
       summary: compiled.summary,
-      plan: p.plan,
-      chips: testWoo.compiler.chipsFromPlan(p.plan),
+      plan: regPlan,
+      chips: testWoo.compiler.chipsFromPlan(regPlan),
       error: "validation failed — not registered"
     });
   } else {
-    var used = testWoo.compiler.collectUsedFragments(p.plan);
+    var used = testWoo.compiler.collectUsedFragments(regPlan);
     if (!used.length) throw new Error("[Register] usedFragments empty");
-    var compileHash = testWoo.lifecycle.compileHash(p.plan, compiled.sql);
+    var compileHash = testWoo.lifecycle.compileHash(regPlan, compiled.sql);
     var sqlHash = testWoo.lifecycle.sqlContentHash(compiled.sql);
     var wfName = String(p.workflow_name || "");
     var wfId = String(p.workflow_id || "");
@@ -92,9 +93,9 @@ try {
       title: title,
       creator: currentLogin(),
       nl_request: p.nl_request,
-      plan_json: JSON.stringify(p.plan),
+      plan_json: JSON.stringify(regPlan),
       used_fragments: JSON.stringify(used),
-      param_key: testWoo.compiler.paramKeyFromPlan(p.plan),
+      param_key: testWoo.compiler.paramKeyFromPlan(regPlan),
       compile_hash: compileHash,
       sql_query: compiled.sql,
       summary_ko: compiled.summary || p.summary,

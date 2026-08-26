@@ -64,6 +64,7 @@ Before implementing:
 3. Connection: frontend `fetch` URLs match `/woo/*.jssp`
 4. Header: `.cursor/rules/module-header-docstring.mdc` (역할 / Main Functions / Dependencies)
 5. Log: append entry to `docs/log/log.md`
+6. **Downstream**: `.cursor/rules/fix-downstream-review.mdc` + `.cursor/skills/campaign-ai-studio/pipeline-downstream-review.md` — NL fix 시 Stage A→compile→gates→UI 같은 턴 trace
 
 ## External references priority
 

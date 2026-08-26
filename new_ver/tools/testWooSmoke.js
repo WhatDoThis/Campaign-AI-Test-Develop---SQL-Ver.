@@ -196,6 +196,54 @@ function twStepFragContract() {
       twFail("1b.fragContract", "resolveNlParams joinDaysWithin!=365");
       return false;
     }
+    if (!fc.induceMonthRange) {
+      twFail("1b.fragContract", "induceMonthRange missing");
+      return false;
+    }
+    var mr = fc.induceMonthRange("1\uC6D4~6\uC6D4 \uC0AC\uC774\uC5D0 \uAC00\uC785\uD55C");
+    if (!mr || mr.monthMin !== 1 || mr.monthMax !== 6) {
+      twFail("1b.fragContract", "induceMonthRange 1~6 fail");
+      return false;
+    }
+    if (!fc.monthRangeNeedsClarify) {
+      twFail("1b.fragContract", "monthRangeNeedsClarify missing");
+      return false;
+    }
+    if (!fc.monthRangeNeedsClarify({ text: "1\uC6D4~6\uC6D4", kind: "range" }, {
+      name: "woo__customer__joindate",
+      param_domain: domain
+    })) {
+      twFail("1b.fragContract", "monthRangeNeedsClarify relative joindate");
+      return false;
+    }
+    if (fc.buildPromptHints) {
+      var mrHints = fc.buildPromptHints({
+        slots: [{
+          slotId: "mr0",
+          surface: "1\uC6D4~6\uC6D4 \uC0AC\uC774\uC5D0 \uAC00\uC785\uD55C",
+          kind: "range",
+          domain: domain
+        }],
+        clarifyRound: 0
+      });
+      if (!mrHints || !mrHints.length || !mrHints[0].options || mrHints[0].options.length < 2) {
+        twFail("1b.fragContract", "buildPromptHints month-range year chips");
+        return false;
+      }
+      var cy = new Date().getFullYear();
+      var hasCy = false;
+      var hoi;
+      for (hoi = 0; hoi < mrHints[0].options.length; hoi++) {
+        if (String(mrHints[0].options[hoi].label || "").indexOf(String(cy)) >= 0) {
+          hasCy = true;
+          break;
+        }
+      }
+      if (!hasCy) {
+        twFail("1b.fragContract", "month-range hints must include current year");
+        return false;
+      }
+    }
     var ageDomain = {
       ageMin: { required: true, type: "int" },
       ageMax: { required: true, type: "int" },
@@ -229,7 +277,7 @@ function twStepFragContract() {
     }
     var consentDomain = {
       consent: { required: true, type: "byte", enum: [0, 1], nlMap: { "동의": 1 } },
-      _source: { schema: "woo:testWooSampleApp", xpath: "@push_consent" }
+      _source: { schema: "woo:testWooSampleApp", xpath: "@push_consent", concept: "push_consent" }
     };
     var consentCard = {
       name: "woo__app__push_consent", tags: "consent", label: "Push Consent",
@@ -237,6 +285,43 @@ function twStepFragContract() {
       sample_questions: ["푸시 및 마케팅 수신동의"],
       param_domain: consentDomain, description: "", category: "foundry"
     };
+    if (fc.axesCompatible(consentCard, {
+      text: "마케팅 수신동의하지 않고",
+      concept: "marketing_consent",
+      en_literal: "did not consent to marketing communications"
+    })) {
+      twFail("1b.fragContract", "push frag must not axes-match marketing_consent slot");
+      return false;
+    }
+    if (!fc.axesCompatible(consentCard, {
+      text: "푸시 수신동의한",
+      concept: "push_consent",
+      en_literal: "consented to push notifications"
+    })) {
+      twFail("1b.fragContract", "push frag must axes-match push_consent slot");
+      return false;
+    }
+    var mktDomain = {
+      marketing_consent: { required: true, type: "byte", enum: [0, 1] },
+      _source: { schema: "woo:testWooSampleCustomer", xpath: "@marketing_consent",
+        concept: "marketing_consent" }
+    };
+    var mktCard = {
+      name: "woo__customer__marketing_consent", tags: "consent",
+      param_domain: mktDomain, description: "", category: "foundry"
+    };
+    if (!fc.axesCompatible(mktCard, {
+      text: "마케팅 수신동의하지 않고", concept: "marketing_consent"
+    })) {
+      twFail("1b.fragContract", "marketing frag must axes-match marketing_consent slot");
+      return false;
+    }
+    if (fc.axesCompatible(mktCard, {
+      text: "푸시 수신동의한", concept: "push_consent"
+    })) {
+      twFail("1b.fragContract", "marketing frag must not axes-match push_consent slot");
+      return false;
+    }
     if (fc.libraryHitPredicate(consentCard, {
       text: "푸시 및 마케팅 수신동의", searchKeywords: ["푸시", "마케팅"]
     }, consentDomain)) {
@@ -562,6 +647,139 @@ function twStepFragContract() {
       twFail("1b.fragContract", "applyNlPatch no-op when patch already present");
       return false;
     }
+    var patchedMr = fc.applyNlPatch(
+      "1\uC6D4~6\uC6D4 \uC0AC\uC774\uC5D0 \uAC00\uC785\uD55C \uACE0\uAC1D",
+      "1~6\uC6D4",
+      "2025\uB144 1\uC6D4~6\uC6D4");
+    if (patchedMr !== "2025\uB144 1\uC6D4~6\uC6D4 \uC0AC\uC774\uC5D0 \uAC00\uC785\uD55C \uACE0\uAC1D") {
+      twFail("1b.fragContract", "applyNlPatch month-range replace: " + patchedMr);
+      return false;
+    }
+    var mrSpan = fc.induceMonthRange("1\uC6D4~6\uC6D4 \uC0AC\uC774\uC5D0 \uAC00\uC785\uD55C");
+    if (!mrSpan || !mrSpan.span || mrSpan.span !== "1\uC6D4~6\uC6D4") {
+      twFail("1b.fragContract", "induceMonthRange span");
+      return false;
+    }
+    if (!fc.induceYearMonthSpan || !fc.yearMonthSpanCatalogGap || !fc.nlBindsYearMonthSpan ||
+        !fc.healYearMonthSpanDomain) {
+      twFail("1b.fragContract", "yearMonthSpan helpers missing");
+      return false;
+    }
+    var yms = fc.induceYearMonthSpan("2026\uB144 1\uC6D4~6\uC6D4 \uC0AC\uC774\uC5D0 \uAC00\uC785\uD55C");
+    if (!yms || yms.year !== 2026 || yms.monthMin !== 1 || yms.monthMax !== 6) {
+      twFail("1b.fragContract", "induceYearMonthSpan 2026 1~6");
+      return false;
+    }
+    var ymsCompact = fc.induceYearMonthSpan("2023 1~6\uC6D4 \uAC00\uC785\uC790");
+    if (!ymsCompact || ymsCompact.year !== 2023 || ymsCompact.monthMin !== 1 ||
+        ymsCompact.monthMax !== 6) {
+      twFail("1b.fragContract", "induceYearMonthSpan compact 2023 1~6");
+      return false;
+    }
+    if (!fc.looksLikeYearMonthSpan || !fc.looksLikeYearMonthSpan("2023 1~6\uC6D4")) {
+      twFail("1b.fragContract", "looksLikeYearMonthSpan compact");
+      return false;
+    }
+    var ymsEn = fc.induceYearMonthSpan("2023 January~June joiners");
+    if (!ymsEn || ymsEn.year !== 2023 || ymsEn.monthMin !== 1 || ymsEn.monthMax !== 6) {
+      twFail("1b.fragContract", "induceYearMonthSpan EN January~June");
+      return false;
+    }
+    if (!fc.yearMonthSpanCatalogGap(domain, "2026\uB144 1\uC6D4~6\uC6D4 \uC0AC\uC774\uC5D0 \uAC00\uC785\uD55C")) {
+      twFail("1b.fragContract", "relative joindate must span catalog gap");
+      return false;
+    }
+    var spanDom = {
+      joinYear: { required: true, type: "int" },
+      joinMonthFrom: { required: true, type: "byte" },
+      joinMonthTo: { required: true, type: "byte" },
+      _range: { year: "joinYear", monthFrom: "joinMonthFrom", monthTo: "joinMonthTo", bucket: "_bucket" },
+      _source: { schema: "woo:testWooSampleCustomer", xpath: "@created_date" }
+    };
+    if (fc.yearMonthSpanCatalogGap(spanDom, "2026\uB144 1\uC6D4~6\uC6D4 \uC0AC\uC774\uC5D0 \uAC00\uC785\uD55C")) {
+      twFail("1b.fragContract", "span domain must not be catalog gap");
+      return false;
+    }
+    if (!fc.nlBindsYearMonthSpan([{ name: "woo__customer__joindate", param_domain: spanDom }],
+        "2026\uB144 1\uC6D4~6\uC6D4 \uC0AC\uC774\uC5D0 \uAC00\uC785\uD55C")) {
+      twFail("1b.fragContract", "nlBindsYearMonthSpan span domain");
+      return false;
+    }
+    var healDom = {
+      _bucket: {
+        nlMap: {
+          "2026\uB144 1\uC6D4~6\uC6D4": {
+            joinYear: 2026,
+            joinMonthFrom: 1,
+            joinMonthTo: 6
+          }
+        }
+      },
+      joinYear: { required: true, type: "int" },
+      joinMonthFrom: { required: true, type: "byte" },
+      joinMonthTo: { required: true, type: "byte" },
+      _range: {
+        year: "joinYear",
+        monthFrom: "joinMonthFrom",
+        monthTo: "joinMonthTo",
+        bucket: "_bucket"
+      }
+    };
+    var dmHeal = fc.domainMatchSlot(healDom,
+      "2026\uB144 1\uC6D4~6\uC6D4 \uC0AC\uC774\uC5D0 \uAC00\uC785\uD55C");
+    if (!dmHeal || !dmHeal.value || Number(dmHeal.value.joinYear) !== 2026) {
+      twFail("1b.fragContract", "domainMatchSlot nlMap bucket span partial");
+      return false;
+    }
+    if (!fc.domainMatchSlot(healDom, "2026\uB144 1\uC6D4~6\uC6D4")) {
+      twFail("1b.fragContract", "_boundHas substring nlMap key in span text");
+      return false;
+    }
+    if (!fc.spanRangeSqlText) {
+      twFail("1b.fragContract", "spanRangeSqlText missing");
+      return false;
+    }
+    var relSql = "SELECT DISTINCT sCustomer_id FROM testWooSampleCustomer " +
+      "WHERE tsCreated_date >= AddDays(GetDate(), -{{joinDaysWithin}})";
+    var absSql = fc.spanRangeSqlText(relSql, spanDom,
+      { joinYear: 2026, joinMonthFrom: 1, joinMonthTo: 6 },
+      "sCustomer_id", "2026\uB144 1\uC6D4~6\uC6D4 \uC0AC\uC774\uC5D0 \uAC00\uC785\uD55C");
+    if (!absSql || absSql.indexOf("'2026-01-01'") < 0 || absSql.indexOf("'2026-07-01'") < 0) {
+      twFail("1b.fragContract", "spanRangeSqlText absolute rewrite: " + String(absSql));
+      return false;
+    }
+    var bucketOnlyDom = {
+      joinDaysWithin: { required: true, type: "int" },
+      _bucket: {
+        nlMap: {
+          "2026\uB144 1\uC6D4~6\uC6D4": {
+            joinYear: 2026,
+            joinMonthFrom: 1,
+            joinMonthTo: 6
+          }
+        }
+      },
+      _source: { schema: "woo:testWooSampleCustomer", xpath: "@created_date" }
+    };
+    var absBucket = fc.spanRangeSqlText(relSql, bucketOnlyDom, {},
+      "sCustomer_id", "2026\uB144 1\uC6D4~6\uC6D4 \uC0AC\uC774\uC5D0 \uAC00\uC785\uD55C");
+    if (!absBucket || absBucket.indexOf("'2026-07-01'") < 0) {
+      twFail("1b.fragContract", "spanRangeSqlText bucket-only domain: " + String(absBucket));
+      return false;
+    }
+    var absNlOnly = fc.spanRangeSqlText(relSql, { joinDaysWithin: { type: "int" } }, {},
+      "sCustomer_id", "2026\uB144 1\uC6D4~6\uC6D4 \uC0AC\uC774\uC5D0 \uAC00\uC785\uD55C \uACE0\uAC1D");
+    if (!absNlOnly || absNlOnly.indexOf("'2026-01-01'") < 0) {
+      twFail("1b.fragContract", "spanRangeSqlText NL induce only: " + String(absNlOnly));
+      return false;
+    }
+    var absCompact = fc.spanRangeSqlText(relSql, { joinDaysWithin: { type: "int" } }, {},
+      "sCustomer_id", "2023 1~6\uC6D4 \uAC00\uC785\uC790");
+    if (!absCompact || absCompact.indexOf("'2023-01-01'") < 0 ||
+        absCompact.indexOf("'2023-07-01'") < 0) {
+      twFail("1b.fragContract", "spanRangeSqlText compact 2023 1~6: " + String(absCompact));
+      return false;
+    }
     var incheonToks = fc.keywordsFromSlot({ text: "인천에 사는", concept: "region" });
     var hasRegion = false;
     var ki;
@@ -587,6 +805,69 @@ function twStepFragContract() {
     var wr = wide && wide.domain && wide.domain._range;
     if (!wide || !wide.changed || !wr || Number(wr.min) !== 0 || Number(wr.max) !== 69) {
       twFail("1b.fragContract", "mergeParamDomainJson must widen _range");
+      return false;
+    }
+    var spanMerge = fc.mergeParamDomainJson(
+      { _range: { min: 2023, max: 2026 } },
+      { _range: { year: "joinYear", monthFrom: "joinMonthFrom", monthTo: "joinMonthTo", bucket: "_bucket" } }
+    );
+    var sm = spanMerge && spanMerge.domain && spanMerge.domain._range;
+    if (!spanMerge || !spanMerge.changed || !sm || sm.year !== "joinYear" ||
+        Number(sm.min) !== 2023 || Number(sm.max) !== 2026) {
+      twFail("1b.fragContract", "mergeParamDomainJson must keep min/max and add span meta");
+      return false;
+    }
+    var joindateLike = {
+      joinDaysWithin: { required: true, type: "int" },
+      _bucket: {
+        nlMap: {
+          "<relative>": { joinDaysWithin: 1095 },
+          "2026\uB144 1\uC6D4~6\uC6D4": {
+            joinDateFrom: "2026-01-01",
+            joinDateTo: "2026-07-01"
+          }
+        }
+      },
+      _range: { min: 2023, max: 2026 },
+      _source: {
+        schema: "woo:testWooSampleCustomer",
+        xpath: "@created_date",
+        tier: "range",
+        evidence: "type=datetime is numeric/temporal"
+      }
+    };
+    var nl2023 = "2023\uB144 1\uC6D4~6\uC6D4 \uC0AC\uC774\uC5D0 \uAC00\uC785\uD55C \uACE0\uAC1D";
+    if (!fc.yearMonthSpanCatalogGap(joindateLike, nl2023)) {
+      twFail("1b.fragContract", "joindate-like domain must be span catalog gap for 2023");
+      return false;
+    }
+    var healed2023 = fc.healYearMonthSpanDomain(joindateLike, nl2023);
+    if (!healed2023 || !healed2023.changed ||
+        !fc.domainMatchSlot(healed2023.domain, nl2023)) {
+      twFail("1b.fragContract", "healYearMonthSpanDomain must bind 2023 yms");
+      return false;
+    }
+    if (!fc.nlBindsYearMonthSpan(
+        [{ name: "woo__customer__joindate", param_domain: healed2023.domain }], nl2023)) {
+      twFail("1b.fragContract", "nlBindsYearMonthSpan after heal 2023");
+      return false;
+    }
+    var joindateCard = {
+      name: "woo__customer__joindate",
+      tags: "joindate",
+      param_domain: joindateLike
+    };
+    var spanSlot = {
+      text: "2023 1~6\uC6D4 \uAC00\uC785\uC790",
+      concept: "join_date",
+      en_literal: "2023 January~June joiners"
+    };
+    if (fc.libraryHitPredicate(joindateCard, spanSlot, joindateLike)) {
+      twFail("1b.fragContract", "libraryHitPredicate must reject span yms unbound");
+      return false;
+    }
+    if (!fc.libraryHitPredicate(joindateCard, spanSlot, healed2023.domain)) {
+      twFail("1b.fragContract", "libraryHitPredicate must hit after span heal");
       return false;
     }
     var attached = fc.attachAlias(ageDomain, "10대", { ageMin: 10, ageMax: 20 });

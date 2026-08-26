@@ -11,16 +11,15 @@ response.setContentType("application/json;charset=utf-8");
  * - listAiFolders — @isAiFolder Program 목록
  * - listCampaigns / createCampaign — Program 하위 Campaign
  * - listWkfs / createWkf — Campaign 하위 WKF(Max 15, sqlCount=반영 SQL 건수)
- * - listRegisteredSql — 최근 반영 SQL + WKF/Program 점프 메타(분기 B)
+ * - listRegisteredSql — 최근 반영 SQL + WKF/Program 점프 메타 · orphan(resolve 실패)
  * - selectWkf / releaseLock — soft-lock 획득·해제(CSRF)
- * - libVersions — 로드된 testWoo.* 모듈 __v JSON (expectedByMod: foundry=170 llm=187 enPivot=178 fragContract=186 env=160 cfg=160 common=160 feasibility=164 toolkit=164 gates=163 compiler=166 repo=163 workflowUi=162 fragments=166)
+ * - libVersions — 로드된 testWoo.* 모듈 __v JSON (expectedByMod: llm=198 … match=160)
  *
  * [Dependencies]
  * =========
- * - woo:testWooCommon.js, testWooStudioContext.js, testWooWorkflowClone.js, testWooRepository.js
+ * - woo:testWooCommon.js — action별 lazy loadLibrary(studioContext|wfClone|repo)
  * - right testWooAiSqlGenerate · schema nms:program, nms:operation, xtk:workflow
- * - right testWooAiSqlGenerate · schema nms:program, nms:operation, xtk:workflow
- * - libVersions — 진단용으로 pipeline/Foundry JS 추가 loadLibrary
+ * - libVersions — pipeline/Foundry JS 개별 tryLoad(한 파일 실패가 전체 abort 방지)
  */
 try {
   TW_RESPONSE = response;
@@ -28,10 +27,30 @@ try {
   TW_DOCUMENT = document;
   loadLibrary("woo:testWooCommon.js");
   requireRight("testWooAiSqlGenerate");
-  loadLibrary("woo:testWooStudioContext.js");
-  loadLibrary("woo:testWooWorkflowClone.js");
-  twRequireLib("woo:testWooStudioContext.js", (typeof testWoo !== "undefined") && testWoo.studioContext);
-  twRequireLib("woo:testWooWorkflowClone.js", (typeof testWoo !== "undefined") && testWoo.wfClone);
+
+  function _twLoadStudioCtx() {
+    loadLibrary("woo:testWooStudioContext.js");
+    twRequireLib(
+      "woo:testWooStudioContext.js",
+      (typeof testWoo !== "undefined") && testWoo.studioContext
+    );
+  }
+
+  function _twLoadWfClone() {
+    loadLibrary("woo:testWooWorkflowClone.js");
+    twRequireLib(
+      "woo:testWooWorkflowClone.js",
+      (typeof testWoo !== "undefined") && testWoo.wfClone
+    );
+  }
+
+  function _twLoadRepo() {
+    loadLibrary("woo:testWooRepository.js");
+    twRequireLib(
+      "woo:testWooRepository.js",
+      (typeof testWoo !== "undefined") && testWoo.repo
+    );
+  }
 
   var p = readPayload();
   var action = String(
@@ -39,31 +58,48 @@ try {
   ).toLowerCase();
 
   if (action === "libversions") {
-    loadLibrary("woo:testWooConfig.js");
-    loadLibrary("woo:testWooEnv.js");
-    loadLibrary("woo:testWooFragContract.js");
-    loadLibrary("woo:testWooFragments.js");
-    loadLibrary("woo:testWooEnPivot.js");
-    loadLibrary("woo:testWooLlm.js");
-    loadLibrary("woo:testWooCompiler.js");
-    loadLibrary("woo:testWooGates.js");
-    loadLibrary("woo:testWooRepository.js");
-    loadLibrary("woo:testWooLifecycle.js");
-    loadLibrary("woo:testWooEmbedding.js");
-    loadLibrary("woo:testWooFoundry.js");
-    loadLibrary("woo:testWooMatch.js");
-    loadLibrary("woo:testWooProbe.js");
-    loadLibrary("woo:testWooDedup.js");
-    loadLibrary("woo:testWooToolkit.js");
-    loadLibrary("woo:testWooFeasibility.js");
-    loadLibrary("woo:testWooWorkflowUi.js");
+    var libLoadErrors = [];
+    function _twTryLoad(ns) {
+      try {
+        loadLibrary(ns);
+        return true;
+      } catch (eL) {
+        libLoadErrors.push({
+          lib: String(ns),
+          error: String(eL && eL.message != null ? eL.message : eL)
+        });
+        return false;
+      }
+    }
+    _twTryLoad("woo:testWooConfig.js");
+    _twTryLoad("woo:testWooEnv.js");
+    _twTryLoad("woo:testWooFragContract.js");
+    _twTryLoad("woo:testWooFragments.js");
+    _twTryLoad("woo:testWooEnPivot.js");
+    _twTryLoad("woo:testWooLlm.js");
+    _twTryLoad("woo:testWooCompiler.js");
+    _twTryLoad("woo:testWooGates.js");
+    _twTryLoad("woo:testWooRepository.js");
+    _twTryLoad("woo:testWooLifecycle.js");
+    _twTryLoad("woo:testWooEmbedding.js");
+    _twTryLoad("woo:testWooFoundry.js");
+    _twTryLoad("woo:testWooMatch.js");
+    _twTryLoad("woo:testWooProbe.js");
+    _twTryLoad("woo:testWooDedup.js");
+    _twTryLoad("woo:testWooToolkit.js");
+    _twTryLoad("woo:testWooFeasibility.js");
+    _twTryLoad("woo:testWooWorkflowUi.js");
+    _twTryLoad("woo:testWooStudioContext.js");
+    _twTryLoad("woo:testWooWorkflowClone.js");
     // 모듈별 기대 __v. 기본 159. heal 경로만 올림(전체 강제 재배포 방지).
     var expectedByMod = {
-      llm: "187", toolkit: "164", enPivot: "178",
-      fragContract: "186", fragments: "166", compiler: "166",
-      foundry: "170", dedup: "160", feasibility: "164", gates: "163",
+      llm: "200", toolkit: "164", enPivot: "178",
+      fragContract: "204", fragments: "166", compiler: "168",
+      foundry: "179", dedup: "160", feasibility: "166", gates: "164",
+      match: "160",
       env: "160", cfg: "160", common: "160",
-      repo: "163", workflowUi: "162"
+      repo: "164", workflowUi: "162",
+      studioContext: "160"
     };
     var expectedDefault = "159";
     function _twLibV(mod) {
@@ -109,13 +145,16 @@ try {
       expectedByMod: expectedByMod,
       libs: libs,
       mismatch: mismatch,
-      allMatch: mismatch.length === 0
+      allMatch: mismatch.length === 0 && libLoadErrors.length === 0,
+      loadErrors: libLoadErrors
     });
   } else if (action === "listaifolders") {
+    _twLoadStudioCtx();
     var lim = p.limit != null ? p.limit : 200;
     var items = testWoo.studioContext.listAiFolders(lim);
     jsonOut({ ok: true, items: items, count: items.length });
   } else if (action === "listcampaigns") {
+    _twLoadWfClone();
     var progId = String(p.program_id || p.folder_id || "");
     var limC = p.limit != null ? p.limit : 200;
     var campRes = testWoo.wfClone.listCampaignsByProgram(progId, limC);
@@ -128,21 +167,19 @@ try {
     });
   } else if (action === "createcampaign") {
     requireStudioCsrf(p);
+    _twLoadWfClone();
     var progIdC = String(p.program_id || p.folder_id || "");
     var camp = testWoo.wfClone.createCampaign(progIdC, p.label);
     jsonOut({ ok: true, campaign: camp });
   } else if (action === "listwkfs") {
+    _twLoadWfClone();
     var cidL = String(p.campaign_id || p.operation_id || "");
     if (!cidL) {
       throw new Error("campaign_id required (not program_id)");
     }
     var limW = p.limit != null ? p.limit : 200;
     var wkfRes = testWoo.wfClone.listWkfsByCampaign(cidL, limW);
-    loadLibrary("woo:testWooRepository.js");
-    twRequireLib(
-      "woo:testWooRepository.js",
-      (typeof testWoo !== "undefined") && testWoo.repo
-    );
+    _twLoadRepo();
     var itemsW = wkfRes.items || [];
     for (var iw = 0; iw < itemsW.length; iw++) {
       var cntW = 0;
@@ -171,11 +208,8 @@ try {
       open_mode: "fallback"
     });
   } else if (action === "listregisteredsql") {
-    loadLibrary("woo:testWooRepository.js");
-    twRequireLib(
-      "woo:testWooRepository.js",
-      (typeof testWoo !== "undefined") && testWoo.repo
-    );
+    _twLoadWfClone();
+    _twLoadRepo();
     var limR = p.limit != null ? p.limit : 10;
     var recent = testWoo.repo.listRecentAiSql(limR);
     var names = [];
@@ -192,6 +226,8 @@ try {
     for (var rj = 0; rj < recent.length; rj++) {
       var rec = recent[rj];
       var meta = metaMap[rec.workflow_name] || {};
+      var wnR = String(rec.workflow_name || "");
+      var orphanR = !!(wnR && !meta.id);
       itemsR.push({
         id: rec.id,
         title: rec.title,
@@ -201,8 +237,9 @@ try {
         param_key: rec.param_key || "",
         workflow_name: rec.workflow_name,
         creation_date: rec.creation_date,
+        orphan: orphanR,
         workflow_id: meta.id || "",
-        workflow_label: meta.label || rec.workflow_name || "",
+        workflow_label: orphanR ? wnR : (meta.label || wnR || ""),
         campaign_id: meta.campaign_id || "",
         campaign_name: meta.campaign_name || "",
         campaign_label: meta.campaign_label || "",
@@ -214,6 +251,7 @@ try {
     jsonOut({ ok: true, items: itemsR, count: itemsR.length });
   } else if (action === "createwkf") {
     requireStudioCsrf(p);
+    _twLoadWfClone();
     var cidC = String(p.campaign_id || p.operation_id || "");
     if (!cidC) {
       throw new Error("campaign_id required (not program_id)");
@@ -232,6 +270,7 @@ try {
     });
   } else if (action === "selectwkf") {
     requireStudioCsrf(p);
+    _twLoadWfClone();
     var widS = String(p.workflow_id || "");
     var wnameS = String(p.workflow_name || "");
     var lock = null;
@@ -264,6 +303,7 @@ try {
     });
   } else if (action === "releaselock") {
     requireStudioCsrf(p);
+    _twLoadWfClone();
     var widR = String(p.workflow_id || "");
     testWoo.wfClone.releaseLock(widR);
     jsonOut({ ok: true, released: true, workflow_id: widR });
@@ -278,3 +318,4 @@ try {
   handleApiError(e);
 }
 %>
+

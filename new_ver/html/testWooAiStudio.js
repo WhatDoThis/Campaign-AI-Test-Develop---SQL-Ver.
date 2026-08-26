@@ -9,11 +9,13 @@
  * - generate / validate / register — ST0대상만들기 → ST1 목록(임시=이어서) → ST3~ST5 후 WKF면 R6 커밋
  * - renderNlHints / applyNlPatch — #nlHints 클릭=표면만 보강 후 Generate 재호출
  * - loadAiFolders·selectFolder·loadCampaigns·createCampaign·loadWkfs·createWkf·selectWkf — ST3~ST5
+ * - _leaveWkfContext — WKF 이탈 시 commitOk·inject·aiSqlId 초기화(compose 유지)
+ * - _reuseOrphanSql / _isSqlOrphan — WKF 삭제된 SQL 이력 재사용
  * - _jumpExistingSql — 분기 B 기존 SQL → Program/Campaign/WKF 점프 후 그 WKF SQL 이력
  * - _similarRegistered — param_key(값 없는 조건축) 비교. NL/조사 토큰 없음
  * - renderListPane / goBack / resetCtx — 브레드크럼은 listMode 기준(목록=타입만, 선택=타입:라벨)
  * - _wfListText — WKF 행 `라벨 / 인터널네임 / SQL개수`
- * - loadSqlList — injected_at(없으면 creation_date) 최대 행을 반영됨으로 표시. 클릭 후 버튼=덮어쓰기
+ * - loadSqlList — injected_at(없으면 creation_date) 최대 행을 반영됨으로 표시. 반영됨 행=덮어쓰기 비활성
  * - _appendNewSqlRow — 임시 조건 [새 SQL 쓰기]. 넣기=신규 행, 같은 SQL 해시는 행 재사용
  * - putDraft / _cacheListDrafts — R2 미반영 SQL 캐시(twStudioCache)
  * - renderChips / _chipDisplay — 칩은 params 값. `_group`이면 별칭 → 값. 미확인은 [맞음]
@@ -32,7 +34,7 @@
  * - intent create/reuse UI 폐기 — 분기는 목록 데이터(R4+)
  * - ST0 최초 진입 시 NL 즉시 활성(폴더 선지정 게이트 없음)
  * - Draft는 saveAiSql/DB 금지 — Register 성공 시만 DB
- * - Mirror of /woo/testWooAiStudioJs.jssp?v=185 · #nlHints 보강칩 · 스키마 반영이면 [WKF로 이동]
+ * - Mirror of /woo/testWooAiStudioJs.jssp?v=189 · R8 funnel dead 제거
  * - Foundry done 자동 재생성은 after_foundry(재큐잉 금지)
  */
 (function () {
@@ -273,7 +275,6 @@
       renderSql(state.sql);
       _addCls($("cardChips"), "hidden");
       _addCls($("cardGates"), "hidden");
-      _addCls($("cardFunnel"), "hidden");
       _addCls($("cardSlotResults"), "hidden");
     }
     _syncRegButton();
@@ -523,9 +524,10 @@
           var libs = res.libs || {};
           var parts = [];
           var keys = [
-            "repo", "fragments", "foundry", "common", "env", "cfg", "llm",
-            "fragContract", "enPivot", "compiler", "gates", "lifecycle",
-            "embedding", "match", "studioContext", "wfClone"
+            "common", "env", "cfg", "fragContract", "fragments", "llm", "enPivot",
+            "compiler", "gates", "repo", "lifecycle", "embedding", "foundry", "match",
+            "probe", "dedup", "toolkit", "feasibility", "studioContext", "wfClone",
+            "workflowUi"
           ];
           var ki;
           for (ki = 0; ki < keys.length; ki++) {
@@ -534,6 +536,15 @@
           }
           _diag("libs: " + parts.join(" "));
           var mm = res.mismatch || [];
+          var le = res.loadErrors || [];
+          if (le.length) {
+            var lb = [];
+            var li;
+            for (li = 0; li < le.length; li++) {
+              lb.push(String(le[li].lib || "?") + ":" + String(le[li].error || "?"));
+            }
+            _diag("libs LOAD_ERR: " + lb.join(" | "));
+          }
           if (mm.length || res.allMatch === false) {
             var expMap = res.expectedByMod || {};
             var wantBits = [];
@@ -556,7 +567,15 @@
             }
             _diag("libs MISMATCH: " + mm.join(","));
           } else {
-            _diag("libs: allMatch expected=" + String(res.expected || "159"));
+            var expOk = res.expectedByMod || {};
+            var okBits = [];
+            var oi;
+            for (oi = 0; oi < keys.length; oi++) {
+              var ok = keys[oi];
+              okBits.push(ok + "=" +
+                (expOk[ok] != null ? String(expOk[ok]) : String(res.expected || "159")));
+            }
+            _diag("libs: allMatch ok (" + okBits.join(" ") + ")");
           }
         } catch (eLib) {
           _diag("libs: parse err " + String(eLib && eLib.message ? eLib.message : eLib));
@@ -814,6 +833,8 @@
     if (!p) return o;
     if (o.indexOf(p) >= 0) return o;
     if (s && o.indexOf(s) >= 0) return o.replace(s, p);
+    var mr = /(\d{1,2})\s*\uC6D4\s*[~\-–]\s*(\d{1,2})\s*\uC6D4/.exec(o);
+    if (mr && mr[0] && o.indexOf(mr[0]) >= 0) return o.replace(mr[0], p);
     if (!o) return p;
     return o + " " + p;
   }
@@ -967,7 +988,6 @@
           renderSummaryHint(res.summary, true);
         }
         if (state.passed && _trim(state.sql)) putDraft();
-        hideFunnel();
         if (SHELL_MODE && !ctx.workflow) {
           ctx.wkfs = [];
           ctx.matchShown = false;
@@ -1057,7 +1077,6 @@
             $("hint").textContent =
               "\uC870\uAC74 \uACC4\uD68D \uC644\uB8CC \u2014 \uAC12 \uB300\uC870 WKF\uB97C \uCC3E\uB294 \uC911\u2026";
           }
-          hideFunnel();
           runMatch(null, "discover");
         } finally {
           setBusy(false);
@@ -1298,6 +1317,18 @@
     ctx.currentInjectedId = null;
   }
 
+  function _leaveWkfContext() {
+    ctx.workflow = null;
+    ctx.openHint = "";
+    if (!EMBED) WORKFLOW_NAME = "";
+    state.commitOk = false;
+    state.aiSqlId = null;
+    _resetInjectFlags();
+    _clearOverwriteArm();
+    _showSqlSide(false);
+    _refreshOpenButtons();
+  }
+
   function _latestDraft() {
     var drafts = _cacheListDrafts();
     return drafts.length ? drafts[0] : null;
@@ -1338,6 +1369,7 @@
     var row = document.createElement("div");
     row.className = "sid";
     row.appendChild(document.createTextNode("\uC0C8 SQL \uC4F0\uAE30"));
+    _appendTimeBasisBadge(row, state.plan, state.sql);
     var title = document.createElement("div");
     var label = "";
     if (_hasCompose() && !state.aiSqlId) label = state.nl || "";
@@ -1369,9 +1401,19 @@
     return ph === "ST3" || ph === "ST4" || ph === "ST5";
   }
 
+  function _isCurrentInjectedSql() {
+    if (!state.aiSqlId || !ctx.currentInjectedId) return false;
+    return Number(state.aiSqlId) === Number(ctx.currentInjectedId);
+  }
+
   function _syncRegButton() {
     var el = $("btnReg");
     if (!el) return;
+    if (_isCurrentInjectedSql()) {
+      el.textContent = "\uC774\uBBF8 \uBC18\uC601\uB428";
+      el.disabled = true;
+      return;
+    }
     if (_overwriteArmed) {
       el.textContent = "\uB36E\uC5B4\uC4F0\uB824\uBA74 \uB2E4\uC2DC \uD074\uB9AD";
     } else if (ctx.wfHasInjected && _activeWorkflowName() && state.aiSqlId) {
@@ -1500,8 +1542,71 @@
     );
   }
 
+  function _isSqlOrphan(row) {
+    if (!row) return false;
+    if (row.orphan === true) return true;
+    var wn = _trim(row.workflow_name || "");
+    return !!(wn && !row.workflow_id);
+  }
+
+  function _reuseOrphanSql(row) {
+    if (!row || !row.id) return;
+    setBusy(true);
+    clearErr();
+    post(
+      "testWooAiValidate.jssp",
+      { action: "getSql", ai_sql_id: row.id },
+      function (res) {
+        setBusy(false);
+        if (!res || !res.ok || !res.item) {
+          showErr(_errText(res) || "load failed");
+          return;
+        }
+        var it = res.item;
+        state.aiSqlId = null;
+        state.commitOk = false;
+        _resetInjectFlags();
+        _clearOverwriteArm();
+        ctx.workflow = null;
+        ctx.openHint = "";
+        if (!EMBED) WORKFLOW_NAME = "";
+        state.sql = it.sql_query || "";
+        state.summary = it.summary_ko || "";
+        state.nl = it.nl_request || "";
+        state.plan = null;
+        try {
+          if (it.plan_json) state.plan = JSON.parse(it.plan_json);
+        } catch (eParse) {
+          state.plan = null;
+        }
+        state.passed = !!_trim(state.sql);
+        try {
+          if (it.nl_request) $("nl").value = it.nl_request;
+        } catch (eNl) {}
+        renderSql(state.sql);
+        _syncRegButton();
+        setInputEnabled(true);
+        _refreshOpenButtons();
+        var hOr = $("hint");
+        if (hOr) {
+          hOr.className = "banner warn";
+          hOr.textContent =
+            "\uC774 \uC870\uAC74\uC758 WKF\uAC00 \uC0AD\uC81C\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uC870\uAC74\uC744 \uD655\uC778\uD55C \uB4A4 [\uB300\uC0C1 \uB9CC\uB4E4\uAE30]\uB85C \uC0C8 WKF\uC5D0 \uB123\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4.";
+        }
+      },
+      function (e) {
+        setBusy(false);
+        showErr(String(e && e.message ? e.message : e));
+      }
+    );
+  }
+
   function _jumpExistingSql(row) {
     if (!row || !row.id) return;
+    if (_isSqlOrphan(row)) {
+      _reuseOrphanSql(row);
+      return;
+    }
     if (!row.workflow_id && !row.campaign_id) {
       showErr(
         "\uC774 \uC870\uAC74\uC758 WKF\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uC0C8 \uC870\uAC74\uC73C\uB85C [\uB300\uC0C1 \uB9CC\uB4E4\uAE30]\uD558\uC138\uC694."
@@ -1779,11 +1884,8 @@
     _releaseCurrentLock(function () {
       var keepSql = !!(state.passed && _trim(state.sql));
       if (!keepSql) _restoreLatestDraftIfNeeded();
-      ctx.workflow = null;
-      ctx.openHint = "";
+      _leaveWkfContext();
       ctx.bareLevel = "";
-      if (!EMBED) WORKFLOW_NAME = "";
-      _showSqlSide(false);
       ctx.listMode = "WKF";
       ctx.phase = "ST5";
       setInputEnabled(true);
@@ -2181,13 +2283,30 @@
     for (rg = 0; rg < list.length; rg++) {
       (function (row) {
         var el = document.createElement("div");
-        el.className = "shell-item";
+        var isOrph = _isSqlOrphan(row);
+        el.className = isOrph ? "shell-item orphan" : "shell-item";
         var nlLab = _trim(row.nl_request || row.title || "");
         if (nlLab.length > 40) nlLab = nlLab.substring(0, 37) + "...";
         var wfLab = row.workflow_label || row.workflow_name || "";
-        el.appendChild(document.createTextNode(
+        var title = document.createElement("div");
+        title.appendChild(document.createTextNode(
           nlLab + (wfLab ? (" \u00B7 " + wfLab) : "")
         ));
+        if (isOrph) {
+          var badge = document.createElement("span");
+          badge.className = "badge-orphan";
+          badge.appendChild(document.createTextNode("WKF \uC0AD\uC81C\uB428"));
+          title.appendChild(badge);
+        }
+        el.appendChild(title);
+        if (isOrph) {
+          var metaO = document.createElement("div");
+          metaO.className = "meta";
+          metaO.appendChild(document.createTextNode(
+            "\uD074\uB9AD=\uC870\uAC74 \uBD88\uB7EC\uC624\uAE30 \u00B7 [\uB300\uC0C1 \uB9CC\uB4E4\uAE30]\uB85C \uC0C8 WKF"
+          ));
+          el.appendChild(metaO);
+        }
         el.onclick = function () {
           _jumpExistingSql(row);
           return false;
@@ -2204,7 +2323,8 @@
       (function (item) {
         var row = item.row;
         var el = document.createElement("div");
-        el.className = "shell-item";
+        var isOrph = _isSqlOrphan(row);
+        el.className = isOrph ? "shell-item orphan" : "shell-item";
         var nlLab = _trim(row.nl_request || row.title || "");
         if (nlLab.length > 40) nlLab = nlLab.substring(0, 37) + "...";
         var wfLab = row.workflow_label || row.workflow_name || "";
@@ -2212,6 +2332,12 @@
         title.appendChild(document.createTextNode(
           nlLab + (wfLab ? (" \u00B7 " + wfLab) : "")
         ));
+        if (isOrph) {
+          var badgeS = document.createElement("span");
+          badgeS.className = "badge-orphan";
+          badgeS.appendChild(document.createTextNode("WKF \uC0AD\uC81C\uB428"));
+          title.appendChild(badgeS);
+        }
         el.appendChild(title);
         if (item.fragHits && item.fragHits.length) {
           var metaF = document.createElement("div");
@@ -2732,8 +2858,7 @@
       name: String(row.name || ""),
       label: String(row.label || row.name || "")
     };
-    ctx.workflow = null;
-    ctx.openHint = "";
+    _leaveWkfContext();
     ctx.wkfs = [];
     ctx.canCreateWkf = row.canCreateWkf !== false;
     if (row.wkfMax != null) ctx.wkfMax = row.wkfMax;
@@ -2767,6 +2892,10 @@
       return;
     }
     setBusy(true);
+    state.commitOk = false;
+    state.aiSqlId = null;
+    _resetInjectFlags();
+    _clearOverwriteArm();
     post(
       "testWooAiStudioContext.jssp",
       {
@@ -2792,10 +2921,8 @@
         };
         if (!EMBED) WORKFLOW_NAME = String(res.workflow.name || "");
         ctx.openHint = String(res.open_hint || "");
-        state.aiSqlId = null;
         loadWkfs(function () {
           _afterWkfBound(res);
-          showOpenHint();
         });
       },
       function (err) {
@@ -2878,7 +3005,10 @@
         // Tools Studio(embed=0)는 URL workflowName 이 없음 → 선택 WKF 로 바인딩
         if (!EMBED) WORKFLOW_NAME = String(row.name || "");
         ctx.openHint = String(res.open_hint || "");
-        if (!_hasCompose()) state.aiSqlId = null;
+        state.commitOk = false;
+        state.aiSqlId = null;
+        _resetInjectFlags();
+        _clearOverwriteArm();
         _afterWkfBound(res, opts);
       },
       function (err) {
@@ -2892,11 +3022,7 @@
   function goBack() {
     if (!SHELL_MODE) return;
     _releaseCurrentLock(function () {
-      ctx.workflow = null;
-      ctx.openHint = "";
-      if (!EMBED) WORKFLOW_NAME = "";
-      _showSqlSide(false);
-      _refreshOpenButtons();
+      _leaveWkfContext();
       if (!ctx.stack.length) {
         _enterSqlList();
         return;
@@ -3149,6 +3275,7 @@
           var row = document.createElement("div");
           row.className = "sid";
           row.appendChild(document.createTextNode("ai_sql_id=" + String(it.id)));
+          _appendTimeBasisBadge(row, it.plan_json, it.sql_query);
           if (isCur) {
             var badge = document.createElement("span");
             badge.className = "badge-now";
@@ -3276,6 +3403,7 @@
       }
       var it = res.item;
       state.aiSqlId = it.id;
+      if (_isCurrentInjectedSql()) _clearOverwriteArm();
       state.sql = it.sql_query || "";
       state.summary = it.summary_ko || "";
       state.nl = it.nl_request || "";
@@ -3513,6 +3641,61 @@
     return map[k] || k;
   }
 
+  /* R7 — plan params·SQL에서 relative/absolute 추론 (compiler·Foundry 동결) */
+  function _forEachPlanParam(plan, fn) {
+    if (!plan || !fn) return;
+    var groups = ["include", "exclude"];
+    var gi, inc, ii, blk, branches, bi, slot, params, pk;
+    for (gi = 0; gi < groups.length; gi++) {
+      inc = plan[groups[gi]] || [];
+      for (ii = 0; ii < inc.length; ii++) {
+        blk = inc[ii];
+        branches = blk.any || blk.and || null;
+        if (!branches || !branches.length) branches = [blk];
+        for (bi = 0; bi < branches.length; bi++) {
+          slot = branches[bi];
+          if (!slot) continue;
+          params = slot.params || {};
+          for (pk in params) {
+            if (params.hasOwnProperty(pk)) fn(pk, params[pk]);
+          }
+        }
+      }
+    }
+  }
+
+  function _inferTimeBasis(planOrJson, sqlOpt) {
+    var plan = planOrJson;
+    if (typeof plan === "string") {
+      try { plan = JSON.parse(plan); } catch (eP) { plan = null; }
+    }
+    var rel = false;
+    _forEachPlanParam(plan, function (pk) {
+      if (pk === "joinDaysWithin" || pk === "joinDays" || pk === "daysWithin") rel = true;
+    });
+    if (rel) return "relative";
+    var sql = String(sqlOpt || "");
+    if (sql.indexOf("AddDays(GetDate()") >= 0 || sql.indexOf("AddDays( GetDate()") >= 0) {
+      return "relative";
+    }
+    return "absolute";
+  }
+
+  function _timeBasisTitle(basis) {
+    if (basis === "relative") return "\uC2E4\uD589 \uC2DC\uC810 \uAE30\uC900 \uC7AC\uACC4\uC0B0";
+    return "\uACE0\uC815 \uAE30\uAC04 \u00B7 \uC7AC\uC2E4\uD589 \uC2DC \uB300\uC0C1 \uB3D9\uC77C";
+  }
+
+  function _appendTimeBasisBadge(parent, planOrJson, sqlOpt) {
+    if (!parent) return;
+    var basis = _inferTimeBasis(planOrJson, sqlOpt);
+    var badge = document.createElement("span");
+    badge.className = "badge-time " + (basis === "relative" ? "badge-time-rel" : "badge-time-abs");
+    badge.title = _timeBasisTitle(basis);
+    badge.textContent = basis;
+    parent.appendChild(badge);
+  }
+
   function renderGates(results) {
     var box = $("gates"); box.innerHTML = "";
     var list = results || [];
@@ -3524,9 +3707,14 @@
     if (allOk) {
       var okEl = document.createElement("div");
       okEl.className = "gate";
-      okEl.innerHTML =
-        "<span class='g-ok'>\uC900\uBE44\uB428</span> " +
-        "\uC774 \uC870\uAC74\uC73C\uB85C \uB300\uC0C1 SQL\uC774 \uC900\uBE44\uB410\uC2B5\uB2C8\uB2E4.";
+      var okSpan = document.createElement("span");
+      okSpan.className = "g-ok";
+      okSpan.textContent = "\uC900\uBE44\uB428";
+      okEl.appendChild(okSpan);
+      okEl.appendChild(document.createTextNode(
+        " \uC774 \uC870\uAC74\uC73C\uB85C \uB300\uC0C1 SQL\uC774 \uC900\uBE44\uB410\uC2B5\uB2C8\uB2E4."
+      ));
+      _appendTimeBasisBadge(okEl, state.plan, state.sql);
       box.appendChild(okEl);
       _rmCls($("cardGates"), "hidden");
       return;
@@ -3563,9 +3751,8 @@
         "\uC774 \uC870\uAC74\uC73C\uB85C \uB300\uC0C1 SQL\uC774 \uC900\uBE44\uB410\uC2B5\uB2C8\uB2E4.";
     }
   }
-  function hideFunnel() { _addCls($("cardFunnel"), "hidden"); }
   function hideResultCards() {
-    var ids = ["cardSlotResults", "cardChips", "cardFunnel", "cardGates", "cardCode"];
+    var ids = ["cardSlotResults", "cardChips", "cardGates", "cardCode"];
     for (var i = 0; i < ids.length; i++) _addCls($(ids[i]), "hidden");
     $("btnReg").disabled = true;
     state.passed = false;
@@ -3577,8 +3764,11 @@
     if (b) {
       $("btnGen").disabled = true;
       $("nl").disabled = true;
+      var br = $("btnReg");
+      if (br) br.disabled = true;
     } else {
       setInputEnabled(true);
+      _syncRegButton();
     }
   }
 
@@ -3604,7 +3794,7 @@
       _wireDiagToggle();
       try {
         var dm0 = (typeof document.documentMode !== "undefined") ? String(document.documentMode) : "n/a(non-IE)";
-          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | match=" + (MATCH_ENABLED ? "1" : "0") + " | phase=" + ctx.phase + " | v=181";
+          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | match=" + (MATCH_ENABLED ? "1" : "0") + " | phase=" + ctx.phase + " | v=189";
         var bootReached = !!(window.__TW_BOOT_MSG__);
         if (bootReached) _diag(String(window.__TW_BOOT_MSG__));
         _diag(okMsg);

@@ -1,7 +1,7 @@
 /*
  * testWooFoundry.js (Fragment Foundry 배치 처리)
  * ==================================================
- * litmus 동기 __v=170 (큐 슬롯 재분할. generate는 슬롯 원문만. infeasible에 promptHints).
+ * litmus 동기 __v=179 (library_cache_hit span yms → heal domain write · cache hit gate).
  * 큐 슬롯별 triage → feasible만 SQL 생성 → dedup → publish.
  * 색인·샘플바인딩·재사용 게이트는 testWoo.fragContract에 위임.
  *
@@ -11,7 +11,7 @@
  * - processBatch — 프리플라이트·스테일 복구·queued 순차 처리
  * - runToolLoop — LLM tool calling 루프(requireJson·sanitize)
  * - generateFragmentForSlot — tool 루프 + 도메인 스냅샷 후 게이트 재시도 생성
- * - parseFragmentJson — 최상위 JSON 열거·첫 채택·dropped 슬롯 (V0)
+ * - parseFragmentJson — fragment형 JSON 우선 채택 · feasibility형 스킵 (V1)
  * - dryRunSlot — 큐 없이 triage+생성 1회 스모크
  * - peekQueue — 읽기 전용 큐 조회
  * - isAutoApprove — Option testWooAiAutoApprove 판정
@@ -21,7 +21,7 @@
  *
  * [Dependencies]
  * =========
- * - testWoo.fragContract — buildIndexFields·sampleBindSql·promoteEqPlaceholderToIn·libraryHitPredicate·mergeParamDomainJson
+ * - testWoo.fragContract — buildIndexFields·sampleBindSql·promoteEqPlaceholderToIn·libraryHitPredicate·mergeParamDomainJson·healYearMonthSpanDomain
  * - testWoo.feasibility.libraryLookup·triage — #169 서가 우선(공유)
  * - testWoo.toolkit·llm·repo·probe·dedup·lifecycle·gates·fragments·compiler
  * - woo:testWooAiRequestQueue — xtk.queryDef·xtk.session#Write
@@ -353,9 +353,19 @@ testWoo.foundry = (function () {
 
       // F-1: 평문("조사 완료")만 오면 return 하지 않고 nudge 후 다음 턴
       if (requireJson && !hasJson) {
-        if (lastTurn)
+        if (lastTurn) {
+          var clen = String(msg.content == null ? 0 : String(msg.content).length);
+          if (clen > 0) {
+            logWarning("[testWoo.foundry.runToolLoop] final turn prose-only contentLen=" + clen);
+            _sanitizeToolHistory(msgs);
+            return {
+              messages: msgs, content: msg.content, tokensUsed: tokensUsed,
+              finishReason: ch.finish_reason, proseOnly: true
+            };
+          }
           throw new Error("[testWoo.foundry.runToolLoop] fragment JSON missing after final turn" +
-            " (contentLen=" + String(msg.content == null ? 0 : String(msg.content).length) + ")");
+            " (contentLen=0)");
+        }
         msgs.push({ role: "user", content: JSON_NUDGE });
         continue;
       }
@@ -446,8 +456,19 @@ testWoo.foundry = (function () {
   }
 
   // 균형 잡힌 JSON 객체들을 순서대로 추출 (first{…last} 스팬 금지 — 이중 frag 파싱 실패 원흉)
-  function _extractJsonObjects(text) {
+  function _stripMarkdownFences(text) {
     var s = String(text || "");
+    var lb = s.indexOf("```");
+    if (lb < 0) return s;
+    var rb = s.indexOf("```", lb + 3);
+    if (rb < 0) return s;
+    var inner = s.substring(lb + 3, rb);
+    if (inner.indexOf("json") === 0) inner = inner.substring(4);
+    return _trim(inner) || s;
+  }
+
+  function _extractJsonObjects(text) {
+    var s = _stripMarkdownFences(text);
     var out = [];
     var i = 0;
     while (i < s.length) {
@@ -535,8 +556,100 @@ testWoo.foundry = (function () {
     return out;
   }
 
-  // #174-1: 최상위 JSON 2+ → 파싱 실패로 죽이지 않음. 첫 객체 채택.
-  // extra_fragment_dropped 로그 1건 + 나머지 축은 extraSlots(미처리).
+  function _isFeasibilityJsonObj(o) {
+    if (!o || typeof o !== "object") return false;
+    if (o.verdict != null || o.valueProbes != null || o.schemasScanned != null) return true;
+    if (o.evidence && typeof o.evidence === "object") {
+      if (o.evidence.valueProbes || o.evidence.schemasScanned) return true;
+    }
+    if (o.slotId != null && o.narrative != null && !o.sqlText && !o.sql_text) return true;
+    return false;
+  }
+
+  function _normFragPickObj(o) {
+    if (!o || typeof o !== "object") return o;
+    if (!o.sqlText && o.sql_text) o.sqlText = o.sql_text;
+    if (!o.keyColumn && o.key_column) o.keyColumn = o.key_column;
+    return o;
+  }
+
+  function _isFragmentJsonObj(o) {
+    if (!o || typeof o !== "object") return false;
+    if (_isFeasibilityJsonObj(o)) return false;
+    var sql = _trim(o.sqlText || o.sql_text || "");
+    if (!sql) return false;
+    if (_trim(o.name)) return true;
+    if (_trim(o.keyColumn || o.key_column)) return true;
+    return false;
+  }
+
+  function _accColStem(col) {
+    var c = String(col || "");
+    if (c.length > 2 &&
+        (c.charAt(0) === "i" || c.charAt(0) === "s" || c.charAt(0) === "d" ||
+         c.charAt(0) === "t") &&
+        c.charAt(1) >= "A" && c.charAt(1) <= "Z")
+      c = c.charAt(1).toLowerCase() + c.substring(2);
+    else if (c.length)
+      c = c.charAt(0).toLowerCase() + c.substring(1);
+    return c.replace(/[^a-z0-9_]/gi, "_").toLowerCase();
+  }
+
+  function _tableLeafFromSql(sql) {
+    var s = String(sql || "");
+    var m = /testWooSample(\w+)/i.exec(s);
+    if (m) return String(m[1] || "").toLowerCase();
+    m = /\bFROM\s+(\w+)/i.exec(s);
+    if (m) {
+      var t = String(m[1] || "");
+      if (t.indexOf("testWooSample") === 0)
+        return t.substring("testWooSample".length).toLowerCase();
+      return t.toLowerCase();
+    }
+    return "";
+  }
+
+  function _synthFragName(o, slotText) {
+    if (_trim(o.name)) return _trim(o.name);
+    var sql = String(o.sqlText || o.sql_text || "");
+    var leaf = _tableLeafFromSql(sql);
+    var cols = _sqlFilterColumns(sql);
+    var axis = cols.length ? _accColStem(cols[0]) : "";
+    if (leaf && axis) return "woo__" + leaf + "__" + axis;
+    if (leaf) return "woo__" + leaf + "__axis";
+    return "woo__foundry__" + String(new Date().getTime());
+  }
+
+  function _pickFragmentObject(objs, slotText) {
+    var picked = null;
+    var dropped = [];
+    var i, o, pi;
+    for (i = 0; i < objs.length; i++) {
+      o = _normFragPickObj(objs[i]);
+      if (_isFragmentJsonObj(o)) {
+        if (!picked) picked = o;
+        else dropped.push(o);
+      } else {
+        dropped.push(o);
+      }
+    }
+    if (!picked) {
+      for (pi = 0; pi < objs.length; pi++) {
+        o = _normFragPickObj(objs[pi]);
+        if (_isFeasibilityJsonObj(o)) continue;
+        if (o && _trim(o.sqlText || o.sql_text || "")) {
+          picked = o;
+          break;
+        }
+      }
+    }
+    if (picked && !_trim(picked.name))
+      picked.name = _synthFragName(picked, slotText);
+    return { picked: picked, dropped: dropped };
+  }
+
+  // #174-1: 최상위 JSON 2+ → 파싱 실패로 죽이지 않음. fragment형 우선 채택(V1).
+  // feasibility/triage JSON이 먼저 오면 no usable object — dropped에 실제 fragment가 있을 수 있음.
   function _parseFragmentJson(content, loop, slotText) {
     var text = String(content || "");
     var objs = _extractJsonObjects(text);
@@ -548,10 +661,9 @@ testWoo.foundry = (function () {
       throw new Error("[testWoo.foundry] fragment JSON missing (contentLen=" +
         text.length + ctx + ")");
     }
-    var picked = objs[0];
-    var dropped = [];
-    var di;
-    for (di = 1; di < objs.length; di++) dropped.push(objs[di]);
+    var pick = _pickFragmentObject(objs, slotText);
+    var picked = pick.picked;
+    var dropped = pick.dropped || [];
     if (dropped.length) {
       logWarning("[testWoo.foundry] extra_fragment_dropped count=" + dropped.length +
         " slot=" + String(slotText || "") + " kept=" + String(picked && picked.name || ""));
@@ -577,6 +689,7 @@ testWoo.foundry = (function () {
   function _shapeFeedback(err) {
     return "SHAPE_FAILED " + String(err || "") +
       "\nOutput EXACTLY ONE JSON object for THIS slot only. No markdown. No second fragment. " +
+      "Do NOT output feasibility/triage JSON (verdict, valueProbes, schemasScanned). " +
       "Required keys: name, keyColumn, sqlText. scopeKey must be \"\" for recipient-level.\n" +
       "If the slot is gender → woo__customer__gender only. If age → woo__customer__age only.\n" +
       FRAGMENT_SCHEMA_EXAMPLE;
@@ -692,7 +805,7 @@ testWoo.foundry = (function () {
         fragDoc = _fragDocFromLlm(
           parsed.picked,
           queueId,
-          slotText,
+          { text: slotText, en_literal: (optsGen && optsGen.en_literal) || "" },
           nlText
         );
       } catch (eShape) {
@@ -718,6 +831,7 @@ testWoo.foundry = (function () {
             String(eAtt.message || eAtt));
         } catch (eL) { /* non-ACC */ }
       }
+      _healSpanDomainOnFrag(fragDoc, slotText);
 
       // gates/probe 는 {{param}} 거부 — 샘플 바인딩본으로만 검증, 저장본은 템플릿 유지.
       var probeDoc = {};
@@ -846,9 +960,10 @@ testWoo.foundry = (function () {
 
   function _triageFilterCols(ev) {
     var raw = (ev && ev.columnsConsidered) ? ev.columnsConsidered : [];
+    var probes = (ev && ev.valueProbes) ? ev.valueProbes : [];
     var out = [];
     var seen = {};
-    var i, c, key;
+    var i, c, key, p;
     for (i = 0; i < raw.length; i++) {
       c = raw[i] || {};
       key = _trim(c.sqlColumn || c.columnName || c.name || "");
@@ -858,6 +973,17 @@ testWoo.foundry = (function () {
         sqlColumn: key,
         name: _trim(c.name || c.columnName || ""),
         label: _trim(c.label || "")
+      });
+    }
+    for (i = 0; i < probes.length; i++) {
+      p = probes[i] || {};
+      key = _trim(p.sqlColumn || p.column || p.columnName || "");
+      if (!key || seen[key.toLowerCase()]) continue;
+      seen[key.toLowerCase()] = 1;
+      out.push({
+        sqlColumn: key,
+        name: _trim(p.columnName || p.column || ""),
+        label: _trim(p.label || "")
       });
     }
     return out;
@@ -1014,6 +1140,51 @@ testWoo.foundry = (function () {
     return String(sqlText || "").replace(/\{\{\w+\}\}/g, "0");
   }
 
+  function _healSpanDomainOnFrag(fragDoc, slotText) {
+    if (!fragDoc || !testWoo.fragContract || !testWoo.fragContract.healYearMonthSpanDomain)
+      return false;
+    var d;
+    try { d = JSON.parse(String(fragDoc.param_domain || "{}")); }
+    catch (eP) { return false; }
+    var r = testWoo.fragContract.healYearMonthSpanDomain(d, slotText);
+    if (!r || !r.changed) return false;
+    fragDoc.param_domain = JSON.stringify(r.domain);
+    try {
+      logInfo("[testWoo.foundry] span domain heal surface=" + String(r.surface || "") +
+        " name=" + String(fragDoc.name || ""));
+    } catch (eL) { /* non-ACC */ }
+    return true;
+  }
+
+  // library_cache_hit — span yms 미등재면 param_domain heal Write (Done만 하고 값 공백 금지)
+  function _healSpanDomainOnLibraryHit(libHit, slotText) {
+    if (!libHit || !libHit.fragmentId || !testWoo.fragContract) return false;
+    var fc = testWoo.fragContract;
+    if (!fc.healYearMonthSpanDomain || !fc.looksLikeYearMonthSpan) return false;
+    if (!fc.looksLikeYearMonthSpan(slotText)) return false;
+    var d = libHit.domain;
+    if (!d && libHit.name && testWoo.fragments && testWoo.fragments.getByName) {
+      try {
+        var row = testWoo.fragments.getByName(String(libHit.name));
+        if (row) d = _parseDomain(row.param_domain);
+      } catch (eR) { d = null; }
+    }
+    if (!d) return false;
+    var r = fc.healYearMonthSpanDomain(d, slotText);
+    if (!r || !r.changed) return false;
+    try {
+      _writeFragmentDomain(Number(libHit.fragmentId), JSON.stringify(r.domain));
+      libHit.domain = r.domain;
+      logInfo("[testWoo.foundry] span library heal surface=" + String(r.surface || "") +
+        " id=" + String(libHit.fragmentId) + " name=" + String(libHit.name || ""));
+    } catch (eW) {
+      logWarning("[testWoo.foundry] span library heal failed id=" +
+        String(libHit.fragmentId) + " / " + String(eW.message || eW));
+      return false;
+    }
+    return true;
+  }
+
   function _mergeParamDomainJson(existingJson, incomingJson) {
     if (testWoo.fragContract && testWoo.fragContract.mergeParamDomainJson)
       return testWoo.fragContract.mergeParamDomainJson(existingJson, incomingJson);
@@ -1026,6 +1197,31 @@ testWoo.foundry = (function () {
     doc.@param_domain = String(domainJson || "");
     xtk.session.Write(doc);
     if (testWoo.fragments && testWoo.fragments.clearCache) testWoo.fragments.clearCache();
+  }
+
+  function _writeFragmentSql(fragmentId, sqlText) {
+    var doc = <testWooAiFragment xtkschema={FRAG_SCHEMA} _operation="update"/>;
+    doc.@id = Number(fragmentId);
+    doc.@sql_text = String(sqlText || "");
+    xtk.session.Write(doc);
+    if (testWoo.fragments && testWoo.fragments.clearCache) testWoo.fragments.clearCache();
+  }
+
+  function _shouldAdoptSqlOnAxisReuse(existingRow, fragDoc, mergedDomainJson) {
+    if (!existingRow || !fragDoc || !fragDoc.sql_text) return false;
+    var fc = testWoo.fragContract;
+    if (!fc || !fc.yearMonthSpanSpec) return false;
+    var dom = null;
+    try { dom = JSON.parse(String(mergedDomainJson || "{}")); } catch (eD) { dom = null; }
+    if (!dom || !fc.yearMonthSpanSpec(dom)) return false;
+    var exSql = String(existingRow.sql_text || "");
+    var incSql = String(fragDoc.sql_text || "");
+    if (!/\{\{joinDaysWithin\}\}/.test(exSql)) return false;
+    if (/\{\{joinDaysWithin\}\}/.test(incSql)) return false;
+    var sp = fc.yearMonthSpanSpec(dom);
+    if (sp && incSql.indexOf("{{" + sp.year + "}}") >= 0) return true;
+    if (incSql.indexOf(">= '") >= 0 && incSql.indexOf("< '") >= 0) return true;
+    return false;
   }
 
   // fragmentStatus enum 에 stale/orphaned 없음 → ACC 안전 매핑 + _source.freshness 원문 유지.
@@ -1073,9 +1269,30 @@ testWoo.foundry = (function () {
   }
 
   // #169: feasibility.libraryLookup 공유. stale면 여기서 갱신 후 히트.
-  // (구 _coversCachedAxis: 단일축+_source만으로 히트 → 타축 삼킴. libraryLookup이 도메인 값 매칭 강제)
+  // resolvedName(Stage A span gap)이 있으면 해당 축만 — 타축 library_cache_hit 금지.
   function _tryLibraryCacheHit(slot) {
     if (!testWoo.feasibility || !testWoo.feasibility.libraryLookup) return { ok: false };
+    var pinName = (slot && slot.resolvedName) ? String(slot.resolvedName) : "";
+    if (pinName && testWoo.fragments && testWoo.fragments.getByName) {
+      try {
+        var pinFrag = testWoo.fragments.getByName(pinName);
+        if (pinFrag && pinFrag.id) {
+          var pinDom = _parseDomain(pinFrag.param_domain);
+          var fcPin = testWoo.fragContract;
+          if (pinDom && pinDom._source && fcPin && fcPin.libraryHitPredicate &&
+              fcPin.libraryHitPredicate(pinFrag, slot, pinDom)) {
+            return {
+              ok: true,
+              fragmentId: Number(pinFrag.id),
+              name: pinName,
+              domain: pinDom,
+              resolvedBy: "library_cache_hit"
+            };
+          }
+          return { ok: false, pinnedAxis: pinName };
+        }
+      } catch (ePin) { /* fall through */ }
+    }
     var statuses = isAutoApprove() ? ["active"] : ["active", "verified"];
     var lib = testWoo.feasibility.libraryLookup(slot, { statuses: statuses });
     if (lib && lib.ok) {
@@ -1284,6 +1501,35 @@ testWoo.foundry = (function () {
     };
   }
 
+  function _stampSlotConceptOnFrag(fragDoc, slot) {
+    if (!fragDoc || !slot) return;
+    var d;
+    try { d = JSON.parse(String(fragDoc.param_domain || "{}")); }
+    catch (eP) { return; }
+    if (!d._source || typeof d._source !== "object") d._source = {};
+    var concept = _trim(slot.concept || "");
+    if (concept) d._source.concept = concept;
+    var aliases = slot.conceptAliases;
+    var merged = [];
+    var seen = {};
+    var i, a;
+    function addAlias(x) {
+      a = _trim(x);
+      if (!a || seen[a]) return;
+      seen[a] = 1;
+      merged.push(a);
+    }
+    if (d._source.conceptAliases && d._source.conceptAliases.length) {
+      for (i = 0; i < d._source.conceptAliases.length; i++)
+        addAlias(d._source.conceptAliases[i]);
+    }
+    if (aliases && aliases.length) {
+      for (i = 0; i < aliases.length; i++) addAlias(aliases[i]);
+    }
+    if (merged.length) d._source.conceptAliases = merged;
+    fragDoc.param_domain = JSON.stringify(d);
+  }
+
   function _maybeEnrichDomainEn(fragDoc) {
     if (!fragDoc || !testWoo.enPivot || !testWoo.enPivot.enrichDomainEn) return;
     var d;
@@ -1303,7 +1549,11 @@ testWoo.foundry = (function () {
     }
   }
 
-  function _fragDocFromLlm(frag, queueId, slotText, nlText) {
+  function _fragDocFromLlm(frag, queueId, slotRef, nlText) {
+    var slotText = (slotRef && typeof slotRef === "object") ?
+      String(slotRef.text || "") : String(slotRef || "");
+    var enLiteral = (slotRef && typeof slotRef === "object") ?
+      String(slotRef.en_literal || "") : "";
     if (!frag || typeof frag !== "object")
       throw new Error("[testWoo.foundry] fragment object missing");
     var missing = [];
@@ -1346,6 +1596,7 @@ testWoo.foundry = (function () {
     if (testWoo.fragContract && testWoo.fragContract.buildIndexFields) {
       idx = testWoo.fragContract.buildIndexFields({
         slotText: slotText,
+        enLiteral: enLiteral,
         rationale: frag.rationale || "",
         label: frag.label || frag.name,
         name: frag.name,
@@ -1405,22 +1656,42 @@ testWoo.foundry = (function () {
     var resolved = 0;
     var statuses = isAutoApprove() ? ["active"] : ["active", "verified"];
     for (var k = 0; k < pending.length; k++) {
+      var slotK = pending[k];
+      if (testWoo.feasibility && testWoo.feasibility.libraryLookup) {
+        var lib = testWoo.feasibility.libraryLookup(slotK, { statuses: statuses });
+        if (lib && lib.ok && lib.matched && lib.matchLayer !== "M3") {
+          resolved++;
+          slotResults.push({
+            slotId: slotK.id,
+            slotText: slotK.text,
+            verdict: "feasible",
+            confidence: "medium",
+            narrative: "libraryLookup after publish name=" + String(lib.name || ""),
+            evidence: {},
+            alternatives: [],
+            resolvedBy: "reuse_after_publish",
+            fragmentName: String(lib.name || ""),
+            fragmentId: lib.fragmentId || null,
+            needsDedupReview: false
+          });
+          continue;
+        }
+      }
       var hit = null;
       try {
-        hit = testWoo.fragments.searchSlots([pending[k]], null, statuses);
+        hit = testWoo.fragments.searchSlots([slotK], null, statuses);
       } catch (eS) {
         logWarning("[testWoo.foundry._resolveRemainingBySearch] " + String(eS.message || eS));
       }
       var cands = (hit && hit.length && hit[0].candidates) ? hit[0].candidates : [];
-      if (!cands.length || !_coversSlot(cands[0], pending[k])) {
-        // 부분 히트는 재사용 불가 — pending 에 남겨 같은 큐 안에서 계속 생성한다.
-        stillMissing.push(pending[k]);
+      if (!cands.length || !_coversSlot(cands[0], slotK)) {
+        stillMissing.push(slotK);
         continue;
       }
       resolved++;
       slotResults.push({
-        slotId: pending[k].id,
-        slotText: pending[k].text,
+        slotId: slotK.id,
+        slotText: slotK.text,
         verdict: "feasible",
         confidence: "medium",
         narrative: "직전 생성 fragment(" + String(cands[0].name) +
@@ -1436,7 +1707,7 @@ testWoo.foundry = (function () {
     return { pending: stillMissing, resolved: resolved };
   }
 
-  // missing_slots_json 항목(문자열 또는 객체)을 {id, text, searchKeywords} 로 통일
+  // missing_slots_json 항목(문자열 또는 객체)을 {id, text, searchKeywords, resolvedName…} 로 통일
   // #170: normalizeAtomicSlots 로 EnPivot 슬롯 필드 보존(KO 재분할 없음)
   function _normalizeSlots(missing) {
     var out = [];
@@ -1447,8 +1718,10 @@ testWoo.foundry = (function () {
       out.push({
         id: (isObj && mo.id) ? String(mo.id) : ("m" + i),
         text: isObj ? String(mo.text || mo) : String(mo),
+        surface: isObj ? String(mo.surface || mo.text || mo) : String(mo),
         hintedCategory: isObj ? String(mo.hintedCategory || "") : "",
         searchKeywords: (isObj && mo.searchKeywords) ? mo.searchKeywords : [],
+        resolvedName: isObj ? String(mo.resolvedName || "") : "",
         concept: (isObj && mo.concept) ? mo.concept : null,
         en_literal: isObj ? String(mo.en_literal || "") : "",
         kind: isObj ? String(mo.kind || "") : "",
@@ -1463,12 +1736,20 @@ testWoo.foundry = (function () {
           String(eN.message || eN));
       }
     }
-    if (testWoo.fragContract && testWoo.fragContract.splitCompoundSlots &&
+    var hasEnPivot = false;
+    var hi;
+    for (hi = 0; hi < out.length; hi++) {
+      if (out[hi] && (out[hi].en_literal || out[hi].concept)) {
+        hasEnPivot = true;
+        break;
+      }
+    }
+    if (!hasEnPivot && testWoo.fragContract && testWoo.fragContract.splitCompoundSlots &&
         testWoo.fragments && testWoo.fragments.listLexiconCards) {
       try {
         var cards = testWoo.fragments.listLexiconCards() || [];
         var idLex = testWoo.fragContract.collectLexicon ?
-          testWoo.fragContract.collectLexicon(cards, { identityOnly: true }) : [];
+          testWoo.fragContract.collectLexicon(cards) : [];
         out = testWoo.fragContract.splitCompoundSlots(out, idLex);
       } catch (eC) {
         logWarning("[testWoo.foundry._normalizeSlots] compound split failed: " +
@@ -1639,7 +1920,8 @@ testWoo.foundry = (function () {
         // #169: 서가(_source) hit → triage/generate/툴 0회
         var libHit = _tryLibraryCacheHit(slot);
         var leftoverToks = [];
-        if (!libHit.ok && testWoo.fragContract && testWoo.fragContract.slotCoverParts &&
+        if (!libHit.ok && !String(slot.resolvedName || "") && !libHit.pinnedAxis &&
+            testWoo.fragContract && testWoo.fragContract.slotCoverParts &&
             testWoo.fragments && testWoo.fragments.searchBySlot) {
           try {
             var pCands = testWoo.fragments.searchBySlot(slot, 8,
@@ -1669,6 +1951,7 @@ testWoo.foundry = (function () {
           } catch (ePC) { /* miss */ }
         }
         if (libHit.ok) {
+          _healSpanDomainOnLibraryHit(libHit, slotText);
           feasibleCount++;
           slotResults.push({
             slotId: slotId,
@@ -1705,16 +1988,20 @@ testWoo.foundry = (function () {
             twDbg("foundry.slot", String(slotId) + " «" + String(slotText || "") +
               "» atomic=" + String(slot.atomicColumn || ""));
         } catch (eFs) { /* skip */ }
-        var triageResult = testWoo.feasibility.triage(
-          {
-            id: slotId,
-            text: slotText,
-            searchKeywords: slot.searchKeywords || []
-          }, cfg, row.nl_text);
+        var triageResult = testWoo.feasibility.triage(slot, cfg, row.nl_text);
 
         // triage Stage A 히트도 generate 스킵(서가 우선 이중 방어)
         if (triageResult.libraryHit ||
             triageResult.resolvedBy === "library_cache_hit") {
+          var triLibHit = {
+            ok: true,
+            fragmentId: triageResult.fragmentId || null,
+            name: triageResult.evidence && triageResult.evidence.fragmentName ?
+              String(triageResult.evidence.fragmentName) : "",
+            domain: null,
+            resolvedBy: "library_cache_hit"
+          };
+          _healSpanDomainOnLibraryHit(triLibHit, slotText);
           feasibleCount++;
           slotResults.push({
             slotId: slotId,
@@ -1852,7 +2139,8 @@ testWoo.foundry = (function () {
           evOff = evAll && evAll.length ? evAll.length : 0;
         } catch (eEv) { evOff = 0; }
         var gen = generateFragmentForSlot(cfg, row.nl_text, slotText, queueId, slotId, {
-          atomicColumn: slot.atomicColumn || ""
+          atomicColumn: slot.atomicColumn || "",
+          en_literal: slot.en_literal || ""
         });
         tokensUsed += Number(gen.tokensUsed) || 0;
         if (gen.extraSlots && gen.extraSlots.length)
@@ -1975,6 +2263,8 @@ testWoo.foundry = (function () {
           logWarning("[testWoo.foundry] domain attach soft-fail slot=" +
             String(slotId) + " / " + String(domAtt.reason || ""));
         }
+        _stampSlotConceptOnFrag(fragDoc, slot);
+        _healSpanDomainOnFrag(fragDoc, slotText);
 
         feasibleCount++;
 
@@ -2007,6 +2297,17 @@ testWoo.foundry = (function () {
             } catch (eW) {
               logWarning("[testWoo.foundry] param_domain merge failed id=" +
                 existingAxis.id + " / " + String(eW.message || eW));
+            }
+          }
+          if (_shouldAdoptSqlOnAxisReuse(existingAxis, fragDoc, mergeA.json)) {
+            try {
+              _writeFragmentSql(Number(existingAxis.id), fragDoc.sql_text);
+              existingAxis.sql_text = fragDoc.sql_text;
+              logInfo("[testWoo.foundry] axis reuse sql_text adopted name=" +
+                String(fragDoc.name || ""));
+            } catch (eSq) {
+              logWarning("[testWoo.foundry] sql_text adopt failed id=" +
+                existingAxis.id + " / " + String(eSq.message || eSq));
             }
           }
           fragmentId = Number(existingAxis.id);
@@ -2150,7 +2451,29 @@ testWoo.foundry = (function () {
         };
       }
 
-      /* created=0(dedup reuse만)이어도 missing을 비워야 Studio 재생성·수기 재큐잉이 안전 */
+      /* created=0 — publish 없이 Done 금지(축-only cache hit·skip 잔여) */
+      var orphanSlots = [];
+      var sri, sr;
+      for (sri = 0; sri < slotResults.length; sri++) {
+        sr = slotResults[sri];
+        if (!sr || sr.fragmentId) continue;
+        if (sr.resolvedBy === "library_cache_hit" ||
+            sr.resolvedBy === "reuse_after_publish") continue;
+        if (sr.verdict === "feasible" && sr.resolvedBy === "split_atomic") continue;
+        orphanSlots.push(String(sr.slotText || sr.slotId || "?"));
+      }
+      if (orphanSlots.length) {
+        _updateQueue(queueId, {
+          status: "needs_human_design",
+          last_error: "Foundry Done이지만 fragment 미등록 슬롯: " + orphanSlots.join(" | "),
+          missing_slots_json: JSON.stringify(pending.length ? pending : missing),
+          slot_results: JSON.stringify(slotResults),
+          evidence_log: JSON.stringify(allEvidence),
+          tokens_used: tokensUsed
+        });
+        return { ok: false, reason: "done_without_publish", status: "needs_human_design" };
+      }
+
       _updateQueue(queueId, {
         status: "done",
         missing_slots_json: "[]",
@@ -2511,4 +2834,4 @@ testWoo.foundry = (function () {
     repairIndexPollution: repairIndexPollution
   };
 })();
-testWoo.foundry.__v = "170";
+testWoo.foundry.__v = "179";

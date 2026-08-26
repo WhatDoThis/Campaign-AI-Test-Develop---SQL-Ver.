@@ -1,7 +1,7 @@
 /*
  * testWooRepository.js (AI SQL·큐·GapLog 저장소)
  * ==================================================
- * litmus 동기 __v=163 (injected_at 스키마 반영 상태).
+ * litmus 동기 __v=164 (listAiSqlByWorkflow — plan_json·sql_query 배지용).
  * woo:testWooAiSql·testWooAiRequestQueue·testWooAiGapLog CRUD.
  * Register·Foundry·Match·Studio가 xtk.session#Write·queryDef 경유.
  *
@@ -19,7 +19,7 @@
  * - approveFragment — verified→active 승인
  * - rejectFragment — fragment 거절
  * - completeQueue — 큐 완료 status 기록
- * - listAiSqlByWorkflow — WF별 SQL 목록 (injected_* · is_current=max injected_at)
+ * - listAiSqlByWorkflow — WF별 SQL 목록 (plan_json·sql_query · injected_* · is_current)
  * - listRecentAiSql — 최근 반영 SQL(목록·분기 B 점프, used_fragments 포함 · sql_query 제외)
  * - listAiSqlForMatch — 매칭용 plan_json·sql_query 목록
  * - findAiSqlBySqlHash — sqlContentHash 중복 조회
@@ -374,7 +374,7 @@ testWoo.repo = (function () {
     };
   }
 
-  // 3. WF 인터널네임으로 등록 SQL 목록 (sql_query/plan 제외 — 목록용)
+  // 3. WF 인터널네임으로 등록 SQL 목록 (plan_json·sql_query — 목록 배지용)
   function listAiSqlByWorkflow(workflowName, limit) {
     var wf = _wfName(workflowName);
     if (!wf) return [];
@@ -387,6 +387,7 @@ testWoo.repo = (function () {
         <select>
           <node expr="@id"/><node expr="@title"/><node expr="@status"/>
           <node expr="@summary_ko"/><node expr="@target_count"/>
+          <node expr="@plan_json"/><node expr="@sql_query"/>
           <node expr="@workflow_name"/><node expr="@creation_date"/>
           <node expr="@creator"/><node expr="@impact_status"/>
           <node expr="@injected_at"/><node expr="@injected_by"/>
@@ -410,6 +411,8 @@ testWoo.repo = (function () {
         status: String(r.@status || ""),
         summary_ko: String(r.@summary_ko || ""),
         target_count: Number(r.@target_count) || 0,
+        plan_json: String(r.@plan_json || ""),
+        sql_query: String(r.@sql_query || ""),
         workflow_name: String(r.@workflow_name || ""),
         creation_date: String(r.@creation_date || ""),
         creator: String(r.@creator || ""),
@@ -700,4 +703,4 @@ testWoo.repo = (function () {
     markAiSqlInjected: markAiSqlInjected
   };
 })();
-testWoo.repo.__v = "163";
+testWoo.repo.__v = "164";

@@ -1,16 +1,17 @@
 /*
  * testWooCompiler.js (CNF plan → SQL 컴파일러)
  * ==================================================
- * litmus 동기 __v=166 (bind는 live enum 우선. LLM STUDENT가 옛 별칭이면 덮음).
+ * litmus 동기 __v=168 (compile haystack slots+nl · compact yms spanRangeSqlText).
  * LLM이 낸 CNF plan을 fragment sql_text로 조합해 최종 audience SQL 생성.
  * summary·chips는 compile 결과에서만 만든다. Oracle은 EXCEPT→MINUS.
  * #168-B/#172: NL 바인딩은 fragContract.resolveNlParams 공유.
  * #175-1: `col = {{p}}` 는 치환 전 IN 승격. 배열 params는 쉼표 join.
  * #175 G5: include 없고 exclude만 있으면 exclude sql_text의 FROM으로 universe를 만들고 EXCEPT. NOT IN 금지.
+ * span _range params + relative joinDaysWithin sql_text → fragContract.spanRangeSqlText (#348).
  *
  * [Main Functions]
  * ===========
- * - compile — plan → {sql, keyColumn, summary, plan}. include 빈+exclude면 FROM universe + EXCEPT
+ * - compile — plan → {sql, keyColumn, summary, plan}. span _range 시 relative sql rewrite
  * - bindPlanParams — NL·도메인으로 plan item.params 채움. sql {{}} 키만 남김. snake↔camel 별칭
  * - chipsFromPlan — plan에서 UI 칩 배열 생성. `_group` 별칭·verified 첨부
  * - collectUsedFragments — plan에 쓰인 fragment 메타 수집
@@ -141,6 +142,20 @@ testWoo.compiler = (function () {
   }
 
   // 1. CNF plan → SQL + summary
+  function _nlHaystack(plan) {
+    var blobs = [];
+    var nl = _trim(plan && plan.nl_request ? plan.nl_request : "");
+    if (nl) blobs.push(nl);
+    if (plan && plan._meta && plan._meta.slots) {
+      var si, st;
+      for (si = 0; si < plan._meta.slots.length; si++) {
+        st = plan._meta.slots[si] && plan._meta.slots[si].text;
+        if (_trim(st)) blobs.push(String(st));
+      }
+    }
+    return blobs.join(" \n ");
+  }
+
   function compile(plan) {
     if (!plan) throw new Error("[testWoo.compiler] plan missing");
     bindPlanParams(plan, plan.nl_request || "");
@@ -169,6 +184,7 @@ testWoo.compiler = (function () {
 
     var groupSqls = [];
     var summaryParts = [];
+    var nlHay = _nlHaystack(plan);
     if (!plan.include.length) {
       var uf = testWoo.fragments.getByName(plan.exclude[0].fragment);
       if (!uf) throw new Error("[testWoo.compiler] universe fragment missing: " +
@@ -183,7 +199,7 @@ testWoo.compiler = (function () {
       var list = [];
       var labels = [];
       for (var ai = 0; ai < group.any.length; ai++) {
-        var built = _buildFragmentSql(group.any[ai], grain);
+        var built = _buildFragmentSql(group.any[ai], grain, nlHay);
         list.push(built.sql);
         labels.push(built.label + _paramSuffix(group.any[ai].params));
       }
@@ -195,7 +211,7 @@ testWoo.compiler = (function () {
     var excl = plan.exclude || [];
     if (!_isArray(excl)) throw new Error("[testWoo.compiler] plan.exclude must be array");
     for (var ei = 0; ei < excl.length; ei++) {
-      var eb = _buildFragmentSql(excl[ei], grain);
+      var eb = _buildFragmentSql(excl[ei], grain, nlHay);
       excludeSqls.push(eb.sql);
       summaryParts.push("· [EXCEPT] " + eb.label + _paramSuffix(excl[ei].params));
     }
@@ -209,7 +225,7 @@ testWoo.compiler = (function () {
     };
   }
 
-  function _buildFragmentSql(item, grain) {
+  function _buildFragmentSql(item, grain, nlHay) {
     if (!item || !item.fragment)
       throw new Error("[testWoo.compiler] fragment name missing");
     var f = testWoo.fragments.getByName(item.fragment);
@@ -241,7 +257,17 @@ testWoo.compiler = (function () {
     var tmpl = f.sql_text;
     if (testWoo.fragContract && testWoo.fragContract.promoteEqPlaceholderToIn)
       tmpl = testWoo.fragContract.promoteEqPlaceholderToIn(tmpl);
-    var sql = _substitute(tmpl, item.params || {}, f);
+    var params = item.params || {};
+    var spanSql = null;
+    if (testWoo.fragContract && testWoo.fragContract.spanRangeSqlText) {
+      try {
+        spanSql = testWoo.fragContract.spanRangeSqlText(
+          tmpl, f.param_domain, params, grain, nlHay || "");
+      } catch (eSp) { spanSql = null; }
+    }
+    if (spanSql)
+      return { sql: spanSql, label: item.label || f.label || item.fragment };
+    var sql = _substitute(tmpl, params, f);
     return { sql: sql, label: item.label || f.label || item.fragment };
   }
 
@@ -505,4 +531,4 @@ testWoo.compiler = (function () {
     paramKeyFromPlan: paramKeyFromPlan
   };
 })();
-testWoo.compiler.__v = "166";
+testWoo.compiler.__v = "168";

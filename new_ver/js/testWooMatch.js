@@ -1,7 +1,7 @@
 /*
  * testWooMatch.js (조건 매칭 엔진)
  * ==================================================
- * litmus 동기 __v=159 (#160 배포정합).
+ * litmus 동기 __v=160 (#160 orphan WKF Match 제외 주석).
  * dedup=Jaccard≥0.9(name 집합). discover=값복합키 SAME/CONFLICT/MISSING.
  * UI 단정·Option ON은 Studio — 본 모듈은 판정만.
  *
@@ -410,6 +410,7 @@ testWoo.match = (function () {
     for (var si = 0; si < scored.length; si++) {
       var sc = scored[si];
       var meta = wfMeta[sc.name] || null;
+      /* orphan: ACC에서 삭제된 WKF — Match 후보 제외 */
       if (!meta || !meta.id) continue;
       var row = {
         id: String(meta.id),
@@ -749,4 +750,4 @@ testWoo.match = (function () {
     matchByPlan: matchByPlan
   };
 })();
-testWoo.match.__v = "159";
+testWoo.match.__v = "160";

@@ -19,6 +19,8 @@
  * - requireRight — named right 검사(fail-closed)
  * - requireStudioCsrf — CSRF·Origin·pageHost 검증
  * - twTrim — Rhino-safe 문자열 trim
+ * - twSanitizeXmlText — XML 1.0 금지 제어문자 제거(queryDef label 등)
+ * - twPlanForCompile — compile/gates 전 plan.nl_request 주입(Register·Validate)
  *
  * [Dependencies]
  * =========
@@ -36,6 +38,31 @@ var TW_TITLE_MAX = 200; // woo:testWooAiSql @title length
 // ACC Rhino: String.trim 미보장 → regex
 function twTrim(s) {
   return String(s == null ? "" : s).replace(/^\s+|\s+$/g, "");
+}
+
+/* queryDef·JSON 직전 — ACC illegal XML character 방지 (탭·LF·CR 제외 제어문자) */
+function twSanitizeXmlText(s) {
+  var out = "";
+  var i, c, cp;
+  s = String(s == null ? "" : s);
+  for (i = 0; i < s.length; i++) {
+    c = s.charAt(i);
+    cp = s.charCodeAt(i);
+    if (cp === 9 || cp === 10 || cp === 13) {
+      out += c;
+      continue;
+    }
+    if (cp >= 32 && cp !== 65534 && cp !== 65535) out += c;
+  }
+  return out;
+}
+
+/* Register·Validate 재컴파일 — clientPlan에 nl_request 없을 때 span rewrite용 */
+function twPlanForCompile(plan, nlRequest) {
+  if (!plan) return plan;
+  var nl = nlRequest != null ? String(nlRequest) : "";
+  if (nl) plan.nl_request = nl;
+  return plan;
 }
 
 /* loadLibrary 실패는 예외 없이 넘어가는 경우가 있음 — 전역 부재를 즉시 노출 */

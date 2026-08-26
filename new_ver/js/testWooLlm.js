@@ -1,7 +1,7 @@
 /*
  * testWooLlm.js (LLM Pass0·Pass1 파이프라인)
  * ==================================================
- * litmus 동기 __v=187 (_negKey 구문 회귀 수정 · #175 rescue 유지).
+ * litmus 동기 __v=200 (span gap inline heal · library_cache_hit 후 재시도).
  * EnPivot(전체 문장 1콜, 캐시만 스킵) 후 Pass1. 추출 실패 시 재입력(Pass0 우회 금지).
  * 최종 SQL은 쓰지 않음. 동기 HttpClientRequest만 사용.
  *
@@ -33,7 +33,8 @@
  * - HttpClientRequest.wait 금지 · Rhino map/forEach/filter 금지
  * - #170: 슬롯 1개 = 조건 축 1개. 쪼개기는 EnPivot extract
  * - 같은 tags/name 축 frag가 있으면 값 미등재만 heal. leftover는 및/and 다른 지정어만 Foundry.
- * - unresolved(value_not_in_domain|ambiguous|ambiguous_group) → Foundry 큐 금지
+ * - unresolved(value_not_in_domain|ambiguous) → ambiguous만 abstain · value+축→Foundry
+ * - 연·월 span NL + domain bind 불가 → Pass1 전 Foundry(span gap) · Pass1 relative analogy 금지
  * - #175-3: 상위어는 M2G/M2C 한 frag. 닫힌 후보에만 편입. 자식이 후보에 있으면 그 값을 씀. Pass1 UNION 분할 금지
  * - #175 G5: exclude만 있으면 include=[] 허용. 컴파일러가 grain universe + EXCEPT. polarity=exclude는 exclude[]로
  * - 한글 없는 glue 잔여만 unmatched 금지. 분할된 한글 슬롯(7월/미납자)은 버린다
@@ -253,6 +254,9 @@ testWoo.llm = (function () {
         "If the candidate is the matching axis fragment (_source + same tags) pick it even when " +
         "the exact NL value is not yet a nlMap key. Fill params by analogy with existing " +
         "examples and the declared types/_range/enum. Do not put that phrase in unmatched[]. " +
+        "EXCEPTION: if NL contains an explicit calendar year and month range (e.g. YYYY년 M월~M월), " +
+        "do NOT use joinDaysWithin or relative day counts unless that fragment's param_domain " +
+        "declares year+monthFrom+monthTo (_range). Put the phrase in unmatched[] instead. " +
         "Only keys that appear as {{param}} in that fragment's SQL.",
       "CANDIDATES_BY_SLOT:",
       JSON.stringify(slim),
@@ -276,12 +280,17 @@ testWoo.llm = (function () {
     return plan;
   }
 
+  function _catalogStatuses() {
+    return ["active", "verified"];
+  }
+
   function _loadLexiconPack() {
     var empty = { cards: [], lex: [] };
     if (!testWoo.fragments || !testWoo.fragments.listLexiconCards) return empty;
     if (!testWoo.fragContract || !testWoo.fragContract.collectLexicon) return empty;
     var cards = [];
-    try { cards = testWoo.fragments.listLexiconCards() || []; }
+    var stat = _catalogStatuses();
+    try { cards = testWoo.fragments.listLexiconCards(stat) || []; }
     catch (eL) {
       logWarning("[testWoo.llm.generatePlan] listLexiconCards failed: " +
         String(eL.message || eL));
@@ -322,7 +331,7 @@ testWoo.llm = (function () {
           continue;
         }
         if (fc.matchEnPivotSlot) {
-          m = fc.matchEnPivotSlot(card.param_domain, sc);
+          m = fc.matchEnPivotSlot(card.param_domain, sc, card);
           if (m && m.layer && !m.ambiguous && fc.axesCompatible(card, sc)) {
             addHit(card);
             continue;
@@ -355,11 +364,18 @@ testWoo.llm = (function () {
       if (!picked) { picked = card; continue; }
       if (fc.matchEnPivotSlot) {
         var m0 = fc.matchEnPivotSlot(picked.param_domain, sc);
-        var m1 = fc.matchEnPivotSlot(card.param_domain, sc);
+        var m1 = fc.matchEnPivotSlot(card.param_domain, sc, card);
         if (m1 && m1.layer && (!m0 || !m0.layer)) picked = card;
       }
     }
     return picked;
+  }
+
+  function _monthRangeAmbiguous(sc, card) {
+    var fc = testWoo.fragContract;
+    if (!fc || !fc.monthRangeNeedsClarify || !card) return false;
+    try { return !!fc.monthRangeNeedsClarify(sc, card); }
+    catch (eM) { return false; }
   }
 
   function _tryMatchOrExpand(sc, pack) {
@@ -421,6 +437,81 @@ testWoo.llm = (function () {
     return out;
   }
 
+  /* M3 축 hit + 값 miss(value_not_in_domain) → Foundry가 domain heal/mint */
+  function _promoteFoundryUnresolved(unresolved, empty, emptySlots) {
+    if (!unresolved || !unresolved.length) return unresolved || [];
+    var foundryOn = false;
+    try {
+      var cfg = testWoo.cfg.getConfig();
+      foundryOn = !!(cfg.foundry && cfg.foundry.enabled);
+    } catch (eC) { foundryOn = false; }
+    if (!foundryOn) return unresolved;
+
+    var kept = [];
+    var i, u, r, surf, slotObj;
+    for (i = 0; i < unresolved.length; i++) {
+      u = unresolved[i] || {};
+      r = String(u.reason || "");
+      if (r === "value_not_in_domain" &&
+          (String(u.fragment || "") || String(u.concept || ""))) {
+        surf = String(u.surface || "");
+        if (!surf) {
+          kept.push(u);
+          continue;
+        }
+        empty.push(surf);
+        slotObj = {
+          id: "f" + String(emptySlots.length + 1),
+          text: surf,
+          surface: surf,
+          hintedCategory: "",
+          searchKeywords: [surf],
+          resolvedName: String(u.fragment || ""),
+          concept: u.concept || null,
+          en_literal: String(u.en_literal || "")
+        };
+        if (u.en_literal) slotObj.searchKeywords.push(String(u.en_literal));
+        if (u.concept) slotObj.searchKeywords.push(String(u.concept));
+        emptySlots.push(slotObj);
+        try {
+          if (typeof twDbg === "function")
+            twDbg("foundry.promote", "«" + surf + "» frag=" +
+              String(u.fragment || "") + " (value_not_in_domain→queue)");
+        } catch (eP) { /* skip */ }
+        continue;
+      }
+      kept.push(u);
+    }
+    return kept;
+  }
+
+  function _refreshCardFromDb(card) {
+    if (!card || !card.name || !testWoo.fragments || !testWoo.fragments.getByName)
+      return card;
+    try {
+      var row = testWoo.fragments.getByName(String(card.name));
+      if (row && row.param_domain != null) card.param_domain = row.param_domain;
+    } catch (eR) { /* stale lexicon snapshot */ }
+    return card;
+  }
+
+  function _trySpanRangeBind(sc, card) {
+    var fc = testWoo.fragContract;
+    if (!fc || !fc.domainMatchSlot || !card || !sc) return null;
+    _refreshCardFromDb(card);
+    var dm = fc.domainMatchSlot(card.param_domain, String(sc.text || sc.surface || ""));
+    if (!dm) return null;
+    return {
+      layer: dm.group ? "M2G" : "M1",
+      param: dm.param,
+      nl: dm.nl || String(sc.text || ""),
+      value: dm.value,
+      ambiguous: false,
+      group: !!dm.group,
+      hits: [dm]
+    };
+  }
+
   function _saveSlotDomain(card, domain) {
     if (!card || !card.name || !testWoo.fragments) return;
     if (!testWoo.fragments.saveParamDomain && !testWoo.fragments.getByName) return;
@@ -440,6 +531,7 @@ testWoo.llm = (function () {
 
   function _healSlotValue(sc, card) {
     var fc = testWoo.fragContract;
+    _refreshCardFromDb(card);
     var domain = fc.normalizeParamDomain(card.param_domain);
     var key = _negKey(sc);
     var now = new Date().getTime();
@@ -478,7 +570,7 @@ testWoo.llm = (function () {
     function add(c) {
       if (!c || !c.name || seen[c.name]) return;
       seen[c.name] = 1;
-      cards.push(c);
+      cards.push(_refreshCardFromDb(c));
     }
     var i;
     if (sc && sc.candidates) {
@@ -749,12 +841,42 @@ testWoo.llm = (function () {
     if (!sc || !pick) return false;
     var t = String(sc.text || sc.surface || "");
     var surf = String(pick.surface || "");
+    var patch = String(pick.patch || "");
     if (pick.slotId && sc.id && String(pick.slotId) === String(sc.id)) return true;
+    if (patch && t.indexOf(patch) >= 0) return true;
     if (surf && t.indexOf(surf) >= 0) return true;
+    if (testWoo.fragContract && testWoo.fragContract.induceMonthRange) {
+      var mr = testWoo.fragContract.induceMonthRange(t);
+      if (mr && mr.span) {
+        if (surf && (surf.indexOf(mr.span) >= 0 || mr.span.indexOf(surf) >= 0)) return true;
+        if (patch && patch.indexOf(mr.span) >= 0) return true;
+      }
+    }
     return false;
   }
 
   function _bindClarifyPick(sc, card, pick) {
+    var fc = testWoo.fragContract;
+    var patchText = String(pick.patch || pick.surface || "");
+    if (fc && fc.domainMatchSlot && card) {
+      var dm = fc.domainMatchSlot(card.param_domain, patchText);
+      if (dm) {
+        return {
+          kind: "matched",
+          slot: _matchedSlot(sc, card, {
+            layer: dm.group ? "M2G" : "M1",
+            param: dm.param,
+            nl: dm.nl || patchText,
+            value: dm.value,
+            group: !!dm.group,
+            ambiguous: false,
+            hits: []
+          })
+        };
+      }
+    }
+    if (fc && fc.induceYearMonthSpan && fc.induceYearMonthSpan(patchText))
+      return null;
     var val = pick.value;
     var union = pick.union === true || pick.union === "true";
     if (union) {
@@ -780,6 +902,23 @@ testWoo.llm = (function () {
     };
   }
 
+  function _pickBestMatchRow(rows, sc) {
+    if (!rows || !rows.length) return null;
+    var fc = testWoo.fragContract;
+    var hints = (fc && fc.axisFromSlot) ? fc.axisFromSlot(sc) : [];
+    var i, row, axis, first = null, exact = null;
+    for (i = 0; i < rows.length; i++) {
+      row = rows[i];
+      if (fc && fc.axesCompatible && !fc.axesCompatible(row.card, sc)) continue;
+      if (!first) first = row;
+      if (hints.length && fc && fc.axisFromCard) {
+        axis = fc.axisFromCard(row.card);
+        if (axis && hints[0] === axis) { exact = row; break; }
+      }
+    }
+    return exact || first;
+  }
+
   function _resolveEnPivotSlot(sc, pack, skipPass0) {
     var fc = testWoo.fragContract;
     if (!fc || !fc.matchEnPivotSlot)
@@ -797,7 +936,8 @@ testWoo.llm = (function () {
     var i, card, m;
     for (i = 0; i < cards.length; i++) {
       card = cards[i];
-      m = fc.matchEnPivotSlot(card.param_domain, sc);
+      if (fc.axesCompatible && !fc.axesCompatible(card, sc)) continue;
+      m = fc.matchEnPivotSlot(card.param_domain, sc, card);
       if (!m || !m.layer) continue;
       if (m.layer === "M1") m1.push({ card: card, match: m });
       else if (m.layer === "M2G") m2g.push({ card: card, match: m });
@@ -805,10 +945,15 @@ testWoo.llm = (function () {
       else if (m.layer === "M2") m2.push({ card: card, match: m });
       else if (m.layer === "M3") m3.push({ card: card, match: m });
     }
-    if (m1.length)
-      return { kind: "matched", slot: _matchedSlot(sc, m1[0].card, m1[0].match) };
-    if (m2g.length)
-      return { kind: "matched", slot: _matchedSlot(sc, m2g[0].card, m2g[0].match) };
+    var pick;
+    if (m1.length) {
+      pick = _pickBestMatchRow(m1, sc);
+      if (pick) return { kind: "matched", slot: _matchedSlot(sc, pick.card, pick.match) };
+    }
+    if (m2g.length) {
+      pick = _pickBestMatchRow(m2g, sc);
+      if (pick) return { kind: "matched", slot: _matchedSlot(sc, pick.card, pick.match) };
+    }
     if (m2.length === 1 && !m2Amb.length)
       return { kind: "matched", slot: _matchedSlot(sc, m2[0].card, m2[0].match) };
     if (m2.length > 1 || m2Amb.length) {
@@ -824,16 +969,32 @@ testWoo.llm = (function () {
       };
     }
     if (m3.length) {
-      var healed = _healSlotValue(sc, m3[0].card);
+      pick = _pickBestMatchRow(m3, sc);
+      if (!pick) pick = m3[0];
+      if (_monthRangeAmbiguous(sc, pick.card)) {
+        return {
+          kind: "unresolved",
+          item: _unresolvedItem(sc, "ambiguous", {
+            fragment: pick.card.name
+          })
+        };
+      }
+      var healed = _healSlotValue(sc, pick.card);
       if (healed && healed.ok)
-        return { kind: "matched", slot: _matchedSlot(sc, m3[0].card, healed.match) };
-      var exp3 = _tryGroupExpand(sc, m3[0].card, healed && healed.match);
+        return { kind: "matched", slot: _matchedSlot(sc, pick.card, healed.match) };
+      var exp3 = _tryGroupExpand(sc, pick.card, healed && healed.match);
       if (exp3 && exp3.ok)
         return { kind: "matched", slot: _matchedSlot(sc, exp3.card, exp3.match) };
+      var spanHit = _trySpanRangeBind(sc, pick.card);
+      if (spanHit)
+        return { kind: "matched", slot: _matchedSlot(sc, pick.card, spanHit) };
+      if (exp3 && exp3.skip === "range") {
+        return { kind: "range", slot: sc };
+      }
       return {
         kind: "unresolved",
         item: _unresolvedItem(sc, "value_not_in_domain", {
-          fragment: m3[0].card.name
+          fragment: pick.card.name
         })
       };
     }
@@ -842,11 +1003,299 @@ testWoo.llm = (function () {
     return { kind: "empty" };
   }
 
+  function _demoteFragPolarityConflict(matchedSlots, empty, emptySlots) {
+    if (!matchedSlots || !matchedSlots.length) return matchedSlots;
+    var byFrag = {};
+    var i, sc, name, pol, fi;
+    for (i = 0; i < matchedSlots.length; i++) {
+      sc = matchedSlots[i];
+      name = _slotFragName(sc);
+      if (!name) continue;
+      pol = String(sc.polarity || "include").toLowerCase();
+      if (!byFrag[name]) {
+        byFrag[name] = { pol: pol, idx: [i], conflict: false };
+        continue;
+      }
+      byFrag[name].idx.push(i);
+      if (byFrag[name].pol !== pol) byFrag[name].conflict = true;
+    }
+    var drop = {};
+    var moved = false;
+    for (name in byFrag) {
+      if (!byFrag.hasOwnProperty(name) || !byFrag[name].conflict) continue;
+      moved = true;
+      for (fi = 0; fi < byFrag[name].idx.length; fi++) {
+        drop[byFrag[name].idx[fi]] = 1;
+        sc = matchedSlots[byFrag[name].idx[fi]];
+        empty.push(sc.text);
+        emptySlots.push({
+          id: sc.id,
+          text: sc.text,
+          hintedCategory: sc.hintedCategory || "",
+          searchKeywords: sc.searchKeywords || [],
+          resolvedName: sc.resolvedName || "",
+          concept: sc.concept || null,
+          en_literal: sc.en_literal || ""
+        });
+      }
+      try {
+        if (typeof twDbg === "function")
+          twDbg("conflict", "frag=" + name + " polarity include+exclude");
+      } catch (eC) { /* skip */ }
+    }
+    if (!moved) return matchedSlots;
+    var kept = [];
+    for (i = 0; i < matchedSlots.length; i++) {
+      if (!drop[i]) kept.push(matchedSlots[i]);
+    }
+    return kept;
+  }
+
   function _slotFragName(sc) {
     var name = String((sc && sc.resolvedName) || "");
     if (!name && sc && sc.candidates && sc.candidates[0])
       name = String(sc.candidates[0].name || "");
     return name;
+  }
+
+  function _pickSpanAxisCard(nlRequest, pack, matchedSlots, slotCandidates) {
+    var fc = testWoo.fragContract;
+    if (!fc || !fc.induceYearMonthSpan || !fc.induceYearMonthSpan(nlRequest))
+      return null;
+    var probe = { text: nlRequest, concept: "join_date", kind: "range", searchKeywords: [nlRequest] };
+    var ci, card, mi, si, sc, c0, hi, axes, ca;
+    for (si = 0; si < (slotCandidates || []).length; si++) {
+      sc = slotCandidates[si] || {};
+      if (sc.candidates && sc.candidates.length) {
+        for (hi = 0; hi < sc.candidates.length; hi++) {
+          c0 = sc.candidates[hi];
+          if (c0 && fc.axesCompatible && fc.axesCompatible(c0, sc)) return c0;
+        }
+        if (sc.candidates[0]) return sc.candidates[0];
+      }
+      axes = fc.axisFromSlot ? fc.axisFromSlot(sc) : [];
+      if (axes.length) {
+        for (ci = 0; ci < (pack.cards || []).length; ci++) {
+          card = pack.cards[ci];
+          if (!card || !card.name) continue;
+          ca = fc.axisFromCard ? fc.axisFromCard(card) : "";
+          if (ca && ca === axes[0]) return card;
+        }
+      }
+      if (String(sc.concept || "") === "join_date") {
+        for (ci = 0; ci < (pack.cards || []).length; ci++) {
+          card = pack.cards[ci];
+          if (card && fc.axesCompatible && fc.axesCompatible(card, sc)) return card;
+        }
+      }
+    }
+    for (mi = 0; mi < (matchedSlots || []).length; mi++) {
+      sc = matchedSlots[mi];
+      c0 = sc.candidates && sc.candidates[0];
+      if (c0 && fc.axesCompatible && fc.axesCompatible(c0, sc)) return c0;
+      if (c0 && fc.axesCompatible && fc.axesCompatible(c0, probe)) return c0;
+    }
+    for (ci = 0; ci < (pack.cards || []).length; ci++) {
+      card = pack.cards[ci];
+      if (!card || !card.name) continue;
+      if (fc.libraryHitPredicate && fc.libraryHitPredicate(card, probe, card.param_domain))
+        return card;
+      if (fc.axesCompatible && fc.axesCompatible(card, probe)) return card;
+    }
+    return null;
+  }
+
+  function _primarySpanSlot(matchedSlots, slotCandidates, nlRequest) {
+    var i;
+    for (i = 0; i < (matchedSlots || []).length; i++) {
+      if (matchedSlots[i]) return matchedSlots[i];
+    }
+    for (i = 0; i < (slotCandidates || []).length; i++) {
+      if (slotCandidates[i]) return slotCandidates[i];
+    }
+    return {
+      id: "span0",
+      text: String(nlRequest || ""),
+      concept: "join_date",
+      searchKeywords: [String(nlRequest || "")]
+    };
+  }
+
+  function _trySpanHealExistingAxis(nlRequest, pack, empty, emptySlots) {
+    var fc = testWoo.fragContract;
+    if (!fc || !fc.healYearMonthSpanDomain || !fc.looksLikeYearMonthSpan) return;
+    if (!testWoo.fragments || !testWoo.fragments.getByName) return;
+    var i, es, name, row, dom, r, surf, ci, bound;
+    for (i = emptySlots.length - 1; i >= 0; i--) {
+      es = emptySlots[i];
+      if (!es) continue;
+      name = String(es.resolvedName || "");
+      if (!name) continue;
+      surf = String(es.text || es.surface || nlRequest || "");
+      if (!fc.looksLikeYearMonthSpan(surf)) continue;
+      row = null;
+      try { row = testWoo.fragments.getByName(name); } catch (eG) { row = null; }
+      if (!row || !row.id) continue;
+      dom = fc.normalizeParamDomain(row.param_domain);
+      r = fc.healYearMonthSpanDomain(dom, surf);
+      if (r && r.changed && testWoo.fragments.saveParamDomain) {
+        try {
+          testWoo.fragments.saveParamDomain(row, r.domain);
+          dom = r.domain;
+        } catch (eS) { /* keep dom */ }
+      } else if (r && r.domain) {
+        dom = r.domain;
+      }
+      bound = !!fc.domainMatchSlot(dom, surf);
+      if (!bound && fc.nlBindsYearMonthSpan && pack && pack.cards)
+        bound = fc.nlBindsYearMonthSpan(pack.cards, surf);
+      if (!bound) continue;
+      empty.splice(i, 1);
+      emptySlots.splice(i, 1);
+      if (pack && pack.cards) {
+        for (ci = 0; ci < pack.cards.length; ci++) {
+          if (pack.cards[ci] && String(pack.cards[ci].name || "") === name) {
+            try {
+              var fresh = testWoo.fragments.getByName(name);
+              if (fresh && fresh.param_domain)
+                pack.cards[ci].param_domain = fresh.param_domain;
+              else
+                pack.cards[ci].param_domain = dom;
+            } catch (eF) {
+              pack.cards[ci].param_domain = dom;
+            }
+          }
+        }
+      }
+      try {
+        if (typeof twDbg === "function")
+          twDbg("spanHeal", "axis=" + name + " surface=" + surf);
+      } catch (eD) { /* skip */ }
+    }
+    if (testWoo.fragments.clearCache) testWoo.fragments.clearCache();
+  }
+
+  function _pushSpanGapFoundry(nlRequest, pack, matchedSlots, slotCandidates, empty, emptySlots) {
+    var fc = testWoo.fragContract;
+    if (!fc || !fc.nlBindsYearMonthSpan) return;
+    if (fc.nlBindsYearMonthSpan(pack.cards || [], nlRequest)) return;
+    var axisCard = _pickSpanAxisCard(nlRequest, pack, matchedSlots, slotCandidates);
+    var fragName = axisCard ? String(axisCard.name || "") : "";
+    var sc = _primarySpanSlot(matchedSlots, slotCandidates, nlRequest);
+    var surf = String(sc.text || nlRequest || "");
+    empty.push(surf);
+    emptySlots.push({
+      id: String(sc.id || "span0"),
+      text: surf,
+      surface: surf,
+      hintedCategory: sc.hintedCategory || "",
+      searchKeywords: sc.searchKeywords || [surf],
+      resolvedName: fragName || _slotFragName(sc),
+      concept: sc.concept || "join_date",
+      en_literal: String(sc.en_literal || "")
+    });
+    try {
+      if (typeof twDbg === "function")
+        twDbg("foundry.spanGap", "NL yms unbound → queue frag=" +
+          (fragName || _slotFragName(sc)));
+    } catch (eSg) { /* skip */ }
+  }
+
+  function _planBindsYearMonthSpan(plan, nlRequest) {
+    var fc = testWoo.fragContract;
+    if (!fc || !fc.looksLikeYearMonthSpan) return true;
+    var hayBlobs = [String(nlRequest || "")];
+    var si, st, hi, hay, looks;
+    if (plan && plan._meta && plan._meta.slots) {
+      for (si = 0; si < plan._meta.slots.length; si++) {
+        st = plan._meta.slots[si] && plan._meta.slots[si].text;
+        if (st) hayBlobs.push(String(st));
+      }
+    }
+    looks = false;
+    for (si = 0; si < hayBlobs.length; si++) {
+      if (fc.looksLikeYearMonthSpan(hayBlobs[si])) { looks = true; break; }
+    }
+    if (!looks) return true;
+    var bound = false;
+    _walkFragments(plan, function (item) {
+      if (bound || !item || !item.fragment) return;
+      var domain = null;
+      if (testWoo.fragments && testWoo.fragments.getByName) {
+        try {
+          var row = testWoo.fragments.getByName(String(item.fragment));
+          if (row) domain = row.param_domain;
+        } catch (eR) { domain = null; }
+      }
+      if (!domain) return;
+      for (hi = 0; hi < hayBlobs.length; hi++) {
+        hay = hayBlobs[hi];
+        if (!hay) continue;
+        if (fc.domainMatchSlot(domain, hay)) {
+          bound = true;
+          return;
+        }
+      }
+      var sp = fc.yearMonthSpanSpec ? fc.yearMonthSpanSpec(domain) : null;
+      var params = item.params || {};
+      if (sp && params[sp.year] != null &&
+          params[sp.monthFrom] != null && params[sp.monthTo] != null)
+        bound = true;
+    });
+    return bound;
+  }
+
+  function _isBinaryByteParam(domain, pk) {
+    if (!domain || !pk || !domain.hasOwnProperty(pk)) return false;
+    var spec = domain[pk];
+    if (!spec || String(spec.type || "").toLowerCase() !== "byte") return false;
+    var en = spec.enum;
+    return en && _isArray(en) && en.length === 2;
+  }
+
+  // boolean·byte[0,1]: M2G가 저 enum(0)에 바인딩 = INTERSECT 필터. EXCEPT 아님.
+  function _booleanLowEnumFilter(sc) {
+    if (String((sc && sc.kind) || "").toLowerCase() !== "boolean") return false;
+    var m = sc.match;
+    if (!m || m.value == null || !m.param || m.param === "_bucket") return false;
+    var card = sc.candidates && sc.candidates[0];
+    var domain = card && card.param_domain;
+    if (!_isBinaryByteParam(domain, m.param)) return false;
+    var lo = domain[m.param].enum[0];
+    return String(m.value) === String(lo);
+  }
+
+  function _demoteBooleanFilterExclude(plan, matchedSlots) {
+    if (!plan || !matchedSlots || !matchedSlots.length) return;
+    if (!_isArray(plan.exclude) || !plan.exclude.length) return;
+    if (!_isArray(plan.include) || !plan.include.length) return;
+    var i, sc, name, ei, exItem, newEx, newItem, ei2;
+    for (i = 0; i < matchedSlots.length; i++) {
+      sc = matchedSlots[i];
+      if (!_booleanLowEnumFilter(sc)) continue;
+      name = _slotFragName(sc);
+      if (!name) continue;
+      exItem = null;
+      for (ei = 0; ei < plan.exclude.length; ei++) {
+        if (plan.exclude[ei] && String(plan.exclude[ei].fragment) === name) {
+          exItem = plan.exclude[ei];
+          break;
+        }
+      }
+      if (!exItem) continue;
+      newItem = {
+        fragment: exItem.fragment,
+        label: exItem.label || "",
+        params: exItem.params || {}
+      };
+      plan.include.push({ any: [newItem] });
+      newEx = [];
+      for (ei2 = 0; ei2 < plan.exclude.length; ei2++) {
+        if (plan.exclude[ei2] && String(plan.exclude[ei2].fragment) === name) continue;
+        newEx.push(plan.exclude[ei2]);
+      }
+      plan.exclude = newEx;
+    }
   }
 
   function _applyPolarity(plan, matchedSlots) {
@@ -858,6 +1307,7 @@ testWoo.llm = (function () {
     for (i = 0; i < matchedSlots.length; i++) {
       sc = matchedSlots[i];
       if (String((sc && sc.polarity) || "").toLowerCase() !== "exclude") continue;
+      if (_booleanLowEnumFilter(sc)) continue;
       name = _slotFragName(sc);
       if (!name) continue;
       moveSet[name] = 1;
@@ -963,6 +1413,8 @@ testWoo.llm = (function () {
   }
 
   function _generatePlanCore(nlRequest) {
+    if (testWoo.fragments && testWoo.fragments.clearCache)
+      testWoo.fragments.clearCache();
     try {
       if (typeof twDbg === "function") twDbg("nl", String(nlRequest || ""));
     } catch (eN) { /* skip */ }
@@ -986,17 +1438,27 @@ testWoo.llm = (function () {
       pivotSlots = testWoo.enPivot.toPipelineSlots(pivot.slots || []) || [];
     skipReason = pivot && pivot.meta ? String(pivot.meta.skipReason || "") : "";
     if (pivot && pivot.meta && pivot.meta.retryInput) {
-      return {
-        grainKey: "",
-        include: [],
-        exclude: [],
-        retryInput: true,
-        unmatched: ["조건을 해석하지 못했습니다. 문장을 다시 입력해 주세요."],
-        unmatchedSlots: [],
-        matchedSlots: [],
-        _meta: { slots: [], slotCandidates: [], stage: "enPivot_retry",
-          enPivot: skipReason, en: pivot.en || "" }
-      };
+      if (_activeClarifyPick) {
+        try {
+          if (typeof twDbg === "function")
+            twDbg("enPivot", "clarifyPick bypass retryInput");
+        } catch (eCp) { /* skip */ }
+        pivot = { en: "", slots: [], meta: { skipReason: "clarify_pick" } };
+        pivotSlots = [];
+        skipPass0 = false;
+      } else {
+        return {
+          grainKey: "",
+          include: [],
+          exclude: [],
+          retryInput: true,
+          unmatched: ["조건을 해석하지 못했습니다. 문장을 다시 입력해 주세요."],
+          unmatchedSlots: [],
+          matchedSlots: [],
+          _meta: { slots: [], slotCandidates: [], stage: "enPivot_retry",
+            enPivot: skipReason, en: pivot.en || "" }
+        };
+      }
     }
     if (pivotSlots.length && (skipReason === "cache" || skipReason === "llm"))
       skipPass0 = true;
@@ -1013,23 +1475,44 @@ testWoo.llm = (function () {
       }
     }
     var slots = llmSlots;
-    if (testWoo.fragContract && testWoo.fragContract.mergeLexiconSlots)
+    if (!skipPass0 && testWoo.fragContract && testWoo.fragContract.mergeLexiconSlots)
       slots = testWoo.fragContract.mergeLexiconSlots(lexSlots, llmSlots);
+    else if (!slots || !slots.length) slots = lexSlots.length ? lexSlots : llmSlots;
     try {
-      if (typeof twDbg === "function" && lexSlots.length && llmSlots.length)
+      if (typeof twDbg === "function" && lexSlots.length && llmSlots.length && !skipPass0)
         twDbg("merge", "lex=" + lexSlots.length + " vs pivot=" + llmSlots.length +
           " (긴 LLM span 우선 — 사전 슬롯이 삼켜질 수 있음)");
     } catch (eMg) { /* skip */ }
     if (!slots || !slots.length) slots = lexSlots.length ? lexSlots : llmSlots;
     slots = normalizeAtomicSlots(slots);
+    if (_activeClarifyPick && (!slots || !slots.length)) {
+      var cpSl = _activeClarifyPick;
+      slots = [{
+        id: String(cpSl.slotId || "cp0"),
+        text: String(nlRequest || ""),
+        searchKeywords: [String(cpSl.patch || cpSl.surface || "")],
+        concept: "join_date",
+        kind: "range",
+        polarity: "include"
+      }];
+    }
     var nBeforeCoord = (slots && slots.length) ? slots.length : 0;
-    if (testWoo.fragContract && testWoo.fragContract.splitCoordSlots)
+    if (!skipPass0 && testWoo.fragContract && testWoo.fragContract.splitCoordSlots)
       slots = testWoo.fragContract.splitCoordSlots(slots);
-    if (testWoo.fragContract && testWoo.fragContract.splitCompoundSlots) {
-      var idLex = pack.cards && testWoo.fragContract.collectLexicon ?
-        testWoo.fragContract.collectLexicon(pack.cards, { identityOnly: true }) :
-        (pack.lex || []);
-      slots = testWoo.fragContract.splitCompoundSlots(slots, idLex);
+    if (!skipPass0 && testWoo.fragContract && testWoo.fragContract.splitCompoundSlots) {
+      var valLex = (pack && pack.lex && pack.lex.length) ? pack.lex :
+        (pack.cards && testWoo.fragContract.collectLexicon ?
+          testWoo.fragContract.collectLexicon(pack.cards) : []);
+      slots = testWoo.fragContract.splitCompoundSlots(slots, valLex);
+    }
+    if (testWoo.fragContract && testWoo.fragContract.isNoiseResidue) {
+      var slotFilt = [];
+      var sfi;
+      for (sfi = 0; slots && sfi < slots.length; sfi++) {
+        if (!testWoo.fragContract.isNoiseResidue(slots[sfi].text || slots[sfi].surface))
+          slotFilt.push(slots[sfi]);
+      }
+      slots = slotFilt;
     }
     try {
       if (typeof twDbg === "function") {
@@ -1057,7 +1540,7 @@ testWoo.llm = (function () {
         " enPivot=" + (skipReason || "off") +
         " skipPass0=" + (skipPass0 ? "1" : "0"));
     } catch (eLog) { /* non-ACC */ }
-    var slotCandidates = testWoo.fragments.searchSlots(slots);
+    var slotCandidates = testWoo.fragments.searchSlots(slots, null, _catalogStatuses());
     slotCandidates = _attachLexiconCandidates(slotCandidates, pack);
     var empty = [];
     var emptySlots = [];
@@ -1092,7 +1575,7 @@ testWoo.llm = (function () {
           candidates: []
         };
         if (testWoo.fragments && testWoo.fragments.searchBySlot) {
-          try { cands = testWoo.fragments.searchBySlot(rest, 8) || []; }
+          try { cands = testWoo.fragments.searchBySlot(rest, 8, _catalogStatuses()) || []; }
           catch (eR) { cands = []; }
           rest.candidates = _filterIdentityCands(cands, rest);
         }
@@ -1141,6 +1624,34 @@ testWoo.llm = (function () {
         unresolved.push(decided.item);
         continue;
       }
+      if (decided.kind === "range") {
+        var cardRg = sc.candidates && sc.candidates[0];
+        if (cardRg) {
+          var spanRg = _trySpanRangeBind(sc, cardRg);
+          if (spanRg) {
+            _afterMatch(sc, cardRg, _matchedSlot(sc, cardRg, spanRg));
+            continue;
+          }
+        }
+        if (cardRg && _monthRangeAmbiguous(sc, cardRg)) {
+          unresolved.push(_unresolvedItem(sc, "ambiguous", {
+            fragment: String(cardRg.name || "")
+          }));
+          continue;
+        }
+        matchedSlots.push({
+          id: sc.id,
+          text: sc.text,
+          hintedCategory: sc.hintedCategory || "",
+          searchKeywords: sc.searchKeywords || [],
+          resolvedName: sc.resolvedName || (cardRg ? String(cardRg.name || "") : ""),
+          concept: sc.concept || null,
+          en_literal: sc.en_literal || "",
+          kind: sc.kind || "range",
+          candidates: sc.candidates
+        });
+        continue;
+      }
       if (decided.kind === "empty" && !sc.concept) {
         if (_isNoiseResidue(sc.text)) continue;
         if (testWoo.enPivot && testWoo.enPivot.isNonConditionSlot &&
@@ -1156,6 +1667,13 @@ testWoo.llm = (function () {
         continue;
       }
       if (tail.kind === "range") {
+        var cardR = sc.candidates && sc.candidates[0];
+        if (cardR && _monthRangeAmbiguous(sc, cardR)) {
+          unresolved.push(_unresolvedItem(sc, "ambiguous", {
+            fragment: String(cardR.name || "")
+          }));
+          continue;
+        }
         matchedSlots.push({
           id: sc.id,
           text: sc.text,
@@ -1193,6 +1711,8 @@ testWoo.llm = (function () {
         en_literal: sc.en_literal || ""
       });
     }
+    matchedSlots = _demoteFragPolarityConflict(matchedSlots, empty, emptySlots);
+    unresolved = _promoteFoundryUnresolved(unresolved, empty, emptySlots);
     if (unresolved.length) {
       return {
         grainKey: "",
@@ -1235,7 +1755,45 @@ testWoo.llm = (function () {
           enPivot: skipReason }
       };
     }
+    _pushSpanGapFoundry(nlRequest, pack, matchedSlots, slotCandidates, empty, emptySlots);
+    _trySpanHealExistingAxis(nlRequest, pack, empty, emptySlots);
+    if (empty.length) {
+      try {
+        if (typeof twDbg === "function")
+          twDbg("decide", "stage=span_gap unmatched=" + empty.join(" | "));
+      } catch (eSp) { /* skip */ }
+      return {
+        grainKey: "",
+        include: [],
+        exclude: [],
+        unmatched: empty,
+        unmatchedSlots: emptySlots,
+        matchedSlots: [],
+        _meta: { slots: slots, slotCandidates: slotCandidates, stage: "span_gap_foundry",
+          enPivot: skipReason }
+      };
+    }
     var plan = selectPlan(nlRequest, matchedSlots);
+    if (!_planBindsYearMonthSpan(plan, nlRequest)) {
+      _pushSpanGapFoundry(nlRequest, pack, matchedSlots, slotCandidates, empty, emptySlots);
+      _trySpanHealExistingAxis(nlRequest, pack, empty, emptySlots);
+      if (empty.length) {
+        try {
+          if (typeof twDbg === "function")
+            twDbg("decide", "stage=pass1_span_reject unmatched=" + empty.join(" | "));
+        } catch (ePr) { /* skip */ }
+        return {
+          grainKey: "",
+          include: [],
+          exclude: [],
+          unmatched: empty,
+          unmatchedSlots: emptySlots,
+          matchedSlots: matchedSlots,
+          _meta: { slots: slots, slotCandidates: slotCandidates, stage: "pass1_span_gap",
+            enPivot: skipReason }
+        };
+      }
+    }
     plan.matchedSlots = matchedSlots;
     plan.unmatchedSlots = [];
     plan.nl_request = String(nlRequest || "");
@@ -1256,6 +1814,7 @@ testWoo.llm = (function () {
     if (testWoo.compiler && testWoo.compiler.bindPlanParams)
       testWoo.compiler.bindPlanParams(plan, plan.nl_request);
     _applyPolarity(plan, matchedSlots);
+    _demoteBooleanFilterExclude(plan, matchedSlots);
     _collapseSameFragmentPlan(plan);
     _repairMissingParams(plan);
     _healPlanDomains(plan);
@@ -1274,7 +1833,7 @@ testWoo.llm = (function () {
     var cards = (pack && pack.cards) || [];
     var idLex = [];
     try {
-      idLex = testWoo.fragContract.collectLexicon(cards, { identityOnly: true }) || [];
+      idLex = testWoo.fragContract.collectLexicon(cards) || [];
     } catch (eL) { idLex = []; }
     var raw = [];
     var i;
@@ -1306,11 +1865,18 @@ testWoo.llm = (function () {
       if (item && item.fragment) names.push(String(item.fragment));
     });
     if (!names.length) return;
+    var slotByText = {};
+    var us = plan.unmatchedSlots || [];
+    var ui;
+    for (ui = 0; ui < us.length; ui++) {
+      if (us[ui] && us[ui].text) slotByText[String(us[ui].text)] = us[ui];
+    }
     var kept = [];
-    var i, j, phrase, f, bindable, domain;
+    var i, j, phrase, f, bindable, domain, slotObj, m;
     for (i = 0; i < plan.unmatched.length; i++) {
       phrase = String(plan.unmatched[i] || "");
       if (_isNoiseResidue(phrase)) continue;
+      slotObj = slotByText[phrase] || { text: phrase, en_literal: "" };
       bindable = false;
       for (j = 0; j < names.length && !bindable; j++) {
         f = null;
@@ -1318,8 +1884,13 @@ testWoo.llm = (function () {
         if (!f) continue;
         domain = testWoo.fragContract.normalizeParamDomain ?
           testWoo.fragContract.normalizeParamDomain(f.param_domain) : {};
-        if (domain && domain._source &&
-            testWoo.fragContract.domainMatchSlot &&
+        if (!domain || !domain._source) continue;
+        if (testWoo.fragContract.matchEnPivotSlot) {
+          m = testWoo.fragContract.matchEnPivotSlot(domain, slotObj);
+          if (m && m.layer && !m.ambiguous &&
+              (m.layer === "M1" || m.layer === "M2" || m.layer === "M2G"))
+            bindable = true;
+        } else if (testWoo.fragContract.domainMatchSlot &&
             testWoo.fragContract.domainMatchSlot(domain, phrase))
           bindable = true;
       }
@@ -2168,4 +2739,4 @@ testWoo.llm = (function () {
     _readResponseBody: _readResponseBody
   };
 })();
-testWoo.llm.__v = "187";
+testWoo.llm.__v = "200";

@@ -16,6 +16,7 @@ LG U+ Adobe Campaign **AI 대상자 추출 시스템**. 마케터 자연어 → 
 5. For Rhino constraints → [acc-rhino-constraints.md](acc-rhino-constraints.md)
 6. For **DB access / seed / no sqlExec** → [acc-data-access.md](acc-data-access.md)
 7. For architecture snapshot → [architecture.md](architecture.md)
+8. **After any bug fix** → [pipeline-downstream-review.md](pipeline-downstream-review.md) + `.cursor/rules/fix-downstream-review.mdc` (fix → trace hops → respond)
 
 ## Non-negotiable design
 
@@ -27,6 +28,7 @@ LG U+ Adobe Campaign **AI 대상자 추출 시스템**. 마케터 자연어 → 
 | Namespace `woo` | Files/schemas/forms: `testWoo*` camel; global JS object: `testWoo.*` (NOT `woo.*`) |
 | **No raw DB DML** | CRUD = `xtk.session.Write` + queryDef; seed = `testWooSampleSeed.js`; read SQL = `sqlSelect` only; **never sqlExec / INSERT SQL** |
 | Foundry ON (test env) | `testWooEnv.js` → `foundry.enabled: true` (log #85). 미매칭 슬롯 → 큐 → `WKF_testWooFoundry` 배치. 끄면 unmatched 오류 UI 로 되돌아간다 |
+| **No domain hardcoding** | 운영 스케일: 스키마·컬럼·값·조합 폭발 → JS에 컬럼당 2줄 = 수천 줄·부하·회귀. **도메인은 fragment 카탈로그만.** → `.cursor/rules/no-domain-hardcoding.mdc` |
 
 ## Pipeline (current)
 
@@ -59,6 +61,7 @@ NL → EnPivot (전체 NL 1콜 · 동일문장 캐시만 스킵) → Stage A
 
 When changing server JS or JSSP:
 
+- [ ] **Downstream review** — [pipeline-downstream-review.md](pipeline-downstream-review.md): fix 후 compile·gates·UI hop 같은 턴 검수
 - [ ] Rhino-safe: no `map`/`forEach`/`Promise`/`async`/`=>`/template literals
 - [ ] `HttpClientRequest.execute()` sync only — never reference `.wait`
 - [ ] `MemoryBuffer`: request `fromString(s,"utf-8")`; response `toString()` (int CODEPAGE)

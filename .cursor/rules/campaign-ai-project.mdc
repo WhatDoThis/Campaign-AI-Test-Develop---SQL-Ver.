@@ -30,5 +30,7 @@ LG U+ **Adobe Campaign Classic v7** — NL audience extraction via fragment libr
 
 - Module header: `.cursor/rules/module-header-docstring.mdc` (역할 / Main Functions / Dependencies · HUMAN READ)
 - ACC server JS: Rhino-safe — see `.cursor/skills/campaign-ai-studio/acc-rhino-constraints.md`
+- **No domain hardcoding** — see `.cursor/rules/no-domain-hardcoding.mdc` (운영: 스키마×컬럼×조합 폭발; JS는 엔진만)
 - Minimize diff; follow existing `testWoo*.js` patterns
 - New/edited code files: refresh header in the same turn
+- **Bug fix workflow**: `.cursor/rules/fix-downstream-review.mdc` — 단편 패치 후 완료 선언 금지; pipeline hop 검수 후 답변
