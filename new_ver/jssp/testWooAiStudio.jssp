@@ -14,14 +14,14 @@
  *
  * [Dependencies]
  * =========
- * - /woo/testWooAiStudioJs.jssp?v=193 — 클라이언트 IIFE (라벨 모달·Register nl)
+ * - /woo/testWooAiStudioJs.jssp?v=199 — 클라이언트 IIFE (aiStudioSql 주입)
  * - Option testWooAiMatchEnabled — 1/true만 ON
  * - input_form testWooExtendWorkflow — urlViewer height=630(embed 본문+70 정합)
  *
  * [Invariants]
  * ===========
  * - MSHTML: fetch/Promise/flex/CSS변수 금지 · 한글 HTML 엔티티
- * - litmus URL v=193 필수
+ * - litmus URL v=199 필수
  * - NL textarea·목록 고정 height(+70) — 단독 630 / embed 510
  */
 response.setContentType("text/html;charset=utf-8");
@@ -294,7 +294,7 @@ if (!_login) {
     body.embed pre.code{font-size:.7rem;padding:8px;max-height:120px;}
     body.embed #twRecentNl{display:block;font-size:.68rem;padding:4px 8px 6px;}
     body.embed #twDiag{display:block;font-size:.68rem;padding:4px 8px 8px;}
-    body.embed #twDiagLog{display:block;max-height:100px;}
+    body.embed #twDiagLog{max-height:100px;}
     body.embed .sql-item{padding:6px 44px 6px 6px;margin-bottom:6px;font-size:.78rem;border-radius:6px;}
     body.embed .shell-item{padding:6px;font-size:.78rem;}
   </style>
@@ -338,7 +338,7 @@ if (!_login) {
   <!-- 오류 시에만 표시(#136). 정상 시 숨기고 진단 패널에만 기록 -->
   <table id="twBootTable" width="100%" bgcolor="#FFFF00" border="0" cellspacing="0" cellpadding="3" class="tw-boot-show">
     <tr><td>
-      <font id="twBootFont" face="Tahoma" size="2" color="#000000">TW-BOOT v=197 | loading&#x2026;</font>
+      <font id="twBootFont" face="Tahoma" size="2" color="#000000">TW-BOOT v=199 | loading&#x2026;</font>
     </td></tr>
   </table>
   <div id="twBoot" class="tw-boot-show">Studio boot&#x2026;</div>
@@ -357,7 +357,7 @@ if (!_login) {
         r = amp < 0 ? rest : rest.substring(0, amp);
       }
     } catch (eR) {}
-    var msg = "TW-BOOT v=197 | documentMode=" + dm + " | embed=" + emb + " | match=" + (window.__TW_MATCH_ENABLED__ ? "1" : "0") + " | _r=" + (r || "-");
+    var msg = "TW-BOOT v=199 | documentMode=" + dm + " | embed=" + emb + " | match=" + (window.__TW_MATCH_ENABLED__ ? "1" : "0") + " | _r=" + (r || "-");
     var font = document.getElementById("twBootFont");
     if (font) font.innerHTML = msg;
     var el = document.getElementById("twBoot");
@@ -430,12 +430,12 @@ if (!_login) {
     </table>
 
     <div id="twRecentNl">
-      <div class="tw-rq-h">&#xC774;&#xBC88; &#xC9C8;&#xBB38; (&#xB2F9;&#xC0AC;&#xC790;)</div>
+      <div class="tw-rq-h">&#xC774;&#xC804; &#xC9C8;&#xBB38; (&#xCD5C;&#xB300; 10&#xAC1C;)</div>
       <div id="twRecentList"><div class="tw-rq-empty">&#xC544;&#xC9C1; &#xBCF4;&#xB0B8; &#xC9C8;&#xBB38;&#xC774; &#xC5C6;&#xC2B5;&#xB2C8;&#xB2E4;.</div></div>
     </div>
     <div id="twDiag">
-      <div id="twDiagSum" style="cursor:pointer;font-weight:600;margin-bottom:4px;">&#xC9C4;&#xB2E8; (IE / urlViewer) &#x2014; &#xD074;&#xB9AD;&#xD558;&#xC5EC; &#xC811;&#xAE30;</div>
-      <div id="twDiagLog" style="display:block;"></div>
+      <div id="twDiagSum" style="cursor:pointer;font-weight:600;margin-bottom:4px;">&#xC9C4;&#xB2E8;&#xB85C;&#xADF8; - &#xD074;&#xB9AD;&#xD558;&#xC5EC; &#xC5F4;&#xAE30;</div>
+      <div id="twDiagLog" style="display:none;"></div>
     </div>
     <div id="twLabelModal" class="tw-modal hidden">
       <div class="tw-modal-backdrop" id="twLabelModalBackdrop"></div>
@@ -451,8 +451,8 @@ if (!_login) {
     </div>
   </div>
 
-  <!-- v=197 · orphan SQL — draft 캐시 + Program 매핑 자동 진입 -->
-  <script type="text/javascript" src="/woo/testWooAiStudioJs.jssp?v=197"></script>
+  <!-- v=199 · aiStudioSql SQL 편집기 주입 -->
+  <script type="text/javascript" src="/woo/testWooAiStudioJs.jssp?v=199"></script>
 </body>
 </html>
 <%

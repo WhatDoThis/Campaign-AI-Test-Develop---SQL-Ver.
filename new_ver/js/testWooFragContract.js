@@ -4,19 +4,20 @@
  * Stage A / libraryLookup / Foundry publish / Dedup / Compiler가
  * 각자 복제하던 축·색인·커버·샘플바인딩을 한곳에서 제공한다.
  * 같은 tags/name 축 frag는 값 사전 공백이어도 재사용하고, 별칭은 검증 후 merge한다.
- * NL 매칭은 M1 원문⊂문장 → M2 en[] → M3 concept(axis 동치). {db,en} 바인딩은 db만. litmus __v=204.
+ * NL 매칭은 M1 원문⊂문장 → M2 en[] → M3 concept(axis 동치). {db,en} 바인딩은 db만. litmus __v=206.
  * 축 정합 = 카탈로그 _source.concept·xpath·conceptAliases·tags·name (도메인명 하드코딩 없음).
  * 모호 슬롯은 promptHints(합집합+멤버 ≤5). 클릭은 NL 보강. 감사시각은 슬롯당 GROUP BY 1회.
  * 닫힌 enum이 있으면 후보=enum만. 별칭 db가 enum에 없으면 별칭 키(라이브 값)를 씀.
- * N대는 번역 전 {ageMin:N,ageMax:N+10}. N대~M대는 {ageMin:N,ageMax:M+10}.
+ * N대는 {ageMin:N,ageMax:N+10}. N대~M대·N~M대·Ns to Ms 는 {ageMin:N,ageMax:M+10}.
  * N월은 도메인 YYYY-MM 중 그 월만 고른다. N월~M월(연도 없음)은 ambiguous→연도 칩(#176).
  * leftover는 및/and 슬롯의 다른 지정어만. 이미 매칭된 값(7월/10대)은 Foundry로 보내지 않는다.
  * leftover는 컬럼 identity·번역 토큰만 본다. 색인(sample/synonyms)에 섞인 다른 필터는 커버로 치지 않는다.
  * 한 슬롯에 서로 다른 축 카탈로그 값(또는 N월 형태)이 있으면 자른다. 원문(KO)만 본다. 도메인 예시 없음.
+ * LLM/lock이 형제 축을 골라도 surface·en_literal이 카탈로그 xpath·concept 전용 토큰과 맞으면 concept를 고친다. synonyms·nlMap 값은 쓰지 않는다.
  *
  * [Main Functions]
  * ===========
- * - axisFromSlot / axisFromCard / axesCompatible — concept·영문 힌트·정합
+ * - axisFromSlot / axisFromCard / axesCompatible / healSlotConceptFromCatalog — concept·영문 힌트·정합·형제축 heal
  * - buildIndexFields — publish용 synonyms·sample_questions. `_group` 별칭 포함
  * - matchProfile / likeFieldExprs / scoreWeights / coverFieldNames — Match 프로필
  * - keywordsFromSlot — Stage A 토큰(+축 태그). 조사 어간 없음
@@ -116,8 +117,11 @@ testWoo.fragContract = (function () {
 
   function _induceNDae(text) {
     var t = _trim(String(text || ""));
-    var m = /(\d{1,2})\uB300\s*[\~\u301C\uFF5E\-]\s*(\d{1,2})\uB300/.exec(t);
-    if (!m) m = /(\d{1,2})s\s*[\~\-]\s*(\d{1,2})s/i.exec(_norm(t));
+    var nrm = _norm(t);
+    var m = /(\d{1,2})\uB300\s*[\~\u301C\uFF5E\u2013\u2014\-]\s*(\d{1,2})\uB300/.exec(t);
+    if (!m) m = /(\d{1,2})\s*[\~\u301C\uFF5E\u2013\u2014\-]\s*(\d{1,2})\uB300/.exec(t);
+    if (!m) m = /(\d{1,2})s\s*[\~\u2013\u2014\-]\s*(\d{1,2})s/i.exec(t);
+    if (!m) m = /(\d{1,2})s(?:to|[\~\u2013\u2014\-])(\d{1,2})s/i.exec(nrm);
     if (m) {
       var a = Number(m[1]);
       var b = Number(m[2]);
@@ -130,7 +134,7 @@ testWoo.fragContract = (function () {
       return { ageMin: a, ageMax: b + 10 };
     }
     m = /^(\d{1,2})\uB300$/.exec(t);
-    if (!m) m = /^(\d{1,2})s$/.exec(_norm(t));
+    if (!m) m = /^(\d{1,2})s$/.exec(nrm);
     if (!m) return null;
     var n = Number(m[1]);
     if (isNaN(n) || n < 1 || n > 90) return null;
@@ -768,6 +772,113 @@ testWoo.fragContract = (function () {
     }
     if (!hasSlot) return true;
     return _conceptKeysOverlap(slotKeys, _cardConceptKeys(card));
+  }
+
+  function _axisIdentityTokens(card) {
+    var out = [];
+    var seen = {};
+    function addPart(raw) {
+      var bits = String(raw || "").toLowerCase().split(/[^0-9a-zA-Z가-힣]+/);
+      var bi, b;
+      for (bi = 0; bi < bits.length; bi++) {
+        b = _trim(bits[bi]);
+        if (b.length < 3 || seen[b]) continue;
+        if (GLUE_TOK[b] || _isGlueTok(b) || isNoiseToken(b)) continue;
+        seen[b] = 1;
+        out.push(b);
+      }
+    }
+    if (!card) return out;
+    var domain = normalizeParamDomain(card.param_domain);
+    var src = domain && domain._source;
+    if (src) {
+      addPart(src.concept);
+      addPart(_conceptFromXpath(src.xpath));
+      if (_isArray(src.conceptAliases)) {
+        var ai;
+        for (ai = 0; ai < src.conceptAliases.length; ai++) addPart(src.conceptAliases[ai]);
+      }
+    }
+    addPart(card.label);
+    addPart(axisFromCard(card));
+    var segs = String(card.name || "").split("__");
+    if (segs.length) addPart(segs[segs.length - 1]);
+    return out;
+  }
+
+  function _exclusiveIdentityEntries(cards) {
+    var tokenAxes = {};
+    var ci, card, axis, toks, ti, tok, ax;
+    for (ci = 0; ci < (cards || []).length; ci++) {
+      card = cards[ci];
+      if (!card) continue;
+      axis = axisFromCard(card);
+      if (!axis) continue;
+      toks = _axisIdentityTokens(card);
+      for (ti = 0; ti < toks.length; ti++) {
+        tok = toks[ti];
+        if (!tokenAxes[tok]) tokenAxes[tok] = {};
+        tokenAxes[tok][axis] = 1;
+      }
+    }
+    var out = [];
+    for (tok in tokenAxes) {
+      if (!tokenAxes.hasOwnProperty(tok)) continue;
+      var n = 0;
+      var only = "";
+      for (ax in tokenAxes[tok]) {
+        if (!tokenAxes[tok].hasOwnProperty(ax)) continue;
+        n++;
+        only = ax;
+      }
+      if (n === 1 && only) out.push({ key: tok, axis: only });
+    }
+    return out;
+  }
+
+  function _slotIdentityHaystack(slot) {
+    if (!slot || typeof slot !== "object") return String(slot || "");
+    return _trim(String(slot.surface || slot.text || "")) + " " +
+      _trim(String(slot.en_literal || ""));
+  }
+
+  function healSlotConceptFromCatalog(slot, cards) {
+    if (!slot || typeof slot !== "object") return slot;
+    if (!cards || !cards.length) return slot;
+    var hay = _slotIdentityHaystack(slot);
+    if (!_trim(hay)) return slot;
+    var entries = _exclusiveIdentityEntries(cards);
+    var hitAxes = {};
+    var ei, axis, card, winConcept, prev;
+    for (ei = 0; ei < entries.length; ei++) {
+      if (!_boundHas(hay, entries[ei].key)) continue;
+      axis = entries[ei].axis;
+      if (axis) hitAxes[axis] = 1;
+    }
+    var unique = [];
+    for (axis in hitAxes) {
+      if (hitAxes.hasOwnProperty(axis)) unique.push(axis);
+    }
+    if (unique.length !== 1) return slot;
+    axis = unique[0];
+    if (_conceptsAxisMatch(slot.concept, axis, slot.kind)) return slot;
+    winConcept = axis;
+    for (ei = 0; ei < cards.length; ei++) {
+      card = cards[ei];
+      if (!card || axisFromCard(card) !== axis) continue;
+      winConcept = conceptOf(card) || axisFromCard(card) || axis;
+      break;
+    }
+    prev = slot.concept ? String(slot.concept) : "";
+    slot.concept = winConcept;
+    if (prev && _canonicalAxis(prev) !== _canonicalAxis(winConcept)) {
+      try {
+        if (typeof twDbg === "function")
+          twDbg("conceptHeal", "«" + _trim(slot.surface || slot.text || "") +
+            "» " + prev + " → " + winConcept);
+      } catch (eH) { /* skip */ }
+    }
+    return slot;
   }
 
   function stemToken(raw) {
@@ -3502,6 +3613,7 @@ testWoo.fragContract = (function () {
     axisFromSlot: axisFromSlot,
     axisFromCard: axisFromCard,
     axesCompatible: axesCompatible,
+    healSlotConceptFromCatalog: healSlotConceptFromCatalog,
     stemToken: stemToken,
     isNoiseToken: isNoiseToken,
     isNoiseResidue: isNoiseResidue,
@@ -3552,4 +3664,4 @@ testWoo.fragContract = (function () {
     scoreCard: scoreCard
   };
 })();
-testWoo.fragContract.__v = "204";
+testWoo.fragContract.__v = "206";

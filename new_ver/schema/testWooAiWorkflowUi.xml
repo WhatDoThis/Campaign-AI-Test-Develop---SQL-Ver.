@@ -19,7 +19,7 @@ woo:testWooAiWorkflowUi (Test Woo AI Workflow UI · SOAP method host)
 [Dependencies]
 =========
 - XtkOption: testWooAiBindPick_<login>
-- 계약: ibankSqlDM / ai-sql-id
+- 계약: sqlDM @name=aiStudioSql · userScript + ai-sql-id
 -->
 <srcSchema _cs="Test Woo AI Workflow UI (woo)" name="testWooAiWorkflowUi" namespace="woo"
            label="Test Woo AI Workflow UI" labelSingular="Test Woo AI Workflow UI"
@@ -30,8 +30,8 @@ woo:testWooAiWorkflowUi (Test Woo AI Workflow UI · SOAP method host)
     <method name="ShellProbe" static="true" library="woo:testWooWorkflowUi.js"
             label="Probe first AI extract activity">
       <help>
-        Scans activities for ibankSqlDM (+ legacy customActivity).
-        Returns first @name. Empty canvas → hasActivity=false + guidance message.
+        Scans sqlDM @name=aiStudioSql (campaign template wfEmptyTemplate_AI).
+        Old customActivity still recognized. Empty canvas → hasActivity=false.
       </help>
       <parameters>
         <param name="activities" type="DOMElement" inout="in"
@@ -65,7 +65,7 @@ woo:testWooAiWorkflowUi (Test Woo AI Workflow UI · SOAP method host)
 
     <method name="ShellBind" static="true" library="woo:testWooWorkflowUi.js"
             label="Bind ai_sql_id to first AI activity">
-      <help>Writes ai-sql-id and registered sql_query into script on first ibankSqlDM. SQL is loaded server-side. No activityName argument.</help>
+      <help>Writes registered sql_query into sqlDM userScript (AI Studio SQL) plus ai-sql-id. SQL is loaded server-side.</help>
       <parameters>
         <param name="activities" type="DOMElement" inout="in"
                desc="Workflow activities element"/>

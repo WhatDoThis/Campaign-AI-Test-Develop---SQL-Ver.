@@ -1,69 +1,50 @@
 # Report Index
 
-`docs/report/` 하위 문서의 목록과 용도. 파일 생성·삭제 시 본 인덱스를 갱신한다.
+`docs/report/` 하위 문서 목록. upgrade_plan 통합(2026-08-26) 반영.
 
 | 파일 | 용도 |
 |---|---|
-| `00_ReportIndex.md` | 리포트 폴더 인덱스 (본 문서) |
-| `11_고도화_추적표.md` | 고도화 아이디어 전수 ID(66+SF) · 판정 · 구차수·**신규 차수 재배정** — 유실 방지 소스 |
-| `upgrade_plan/00_INDEX.md` | AI 라우팅 (키 → 가이드) |
+| `00_ReportIndex.md` | 본 인덱스 |
+| `11_고도화_추적표.md` | 고도화 ID 전수 · 판정 · 구/신 차수 매핑 |
+| `01_개발가이드.md` | Test Woo 배포·ACC 제약 |
+| `10_Fragment_생애주기_설계.md` | Fragment 승인·게이트 설계 |
+| `02`~`09_SQL생성추가*.md` | Foundry/Pass0/LLM 디버깅 이력 |
+
+## upgrade_plan (`00`~`14`)
+
+| 파일 | 용도 |
+|---|---|
+| `upgrade_plan/00_INDEX.md` | AI 라우팅 · 키→가이드 |
+| `upgrade_plan/01_진행판.md` | **진행 단일본** |
+| `upgrade_plan/02_[완료]_베이스라인_Studio진입.md` | 0~1차 · ACC 가드 · Tools/embed |
+| `upgrade_plan/03_[완료]_Program캠페인_WKF생성.md` | Program→Campaign→WKF · clone/lock |
+| `upgrade_plan/04_[완료]_Fragment_자동승인.md` | auto-active · dedup 필드 |
+| `upgrade_plan/05_[완료]_조건_SQL등록_주입.md` | Match dedup · ShellBind |
+| `upgrade_plan/06_[완료]_PoC_조사결론_반영.md` | PoC-M/S/V → 코드 반영 |
+| `upgrade_plan/07_[완료]_임베딩_DedupL2.md` | #155 embed OFF · dedup L2 |
+| `upgrade_plan/08_[완료]_운영회귀_SpanOrphan_StudioUX.md` | Span · Orphan · Studio UX |
+| `upgrade_plan/09_[완료]_SQLFirst_셸_여정.md` | ST0~ST6 · R0~R8 |
+| `upgrade_plan/10_[완료]_추출_파이프라인_164-174.md` | #164~#174 EN-Pivot |
+| `upgrade_plan/11_[완료]_값확장_프롬프트_상용UX.md` | #175 · #176 · UX-ST |
+| `upgrade_plan/12_[완료]_배포정합_완료선.md` | #160/161 · 완료선 · R8 |
+| `upgrade_plan/13_미구현_Match_임bedding_HUMAN.md` | C1~C6 · Match/embed ON · HUMAN |
+| `upgrade_plan/14_미구현_DEFERRED_로드맵.md` | #178 · S-1 · 금지·선택 |
 | `upgrade_plan/[별도]_고도화_개발아이디어_관리자작성본.md` | 관리자 원문 (삭제 금지) |
-| `upgrade_plan/01_진행판.md` | **진행 단일본** — 완료/진행중/잔여 한눈에 |
-| `upgrade_plan/02_`~`15_구차수_*` | 구 0~9차 (**SUPERSEDED BY 19/20/21** · `[완료]`=02~11 가이드 폐쇄) |
-| `upgrade_plan/05_`~`08_구차수_3a_*` | PoC-0/1~3·C·T 절차·RESULT |
-| `upgrade_plan/16_고도화_추적표_포인터.md` | → `11_고도화_추적표.md` |
-| `upgrade_plan/17_[완료]_PoC-M_매칭의미론.md` | #145 조사 |
-| `upgrade_plan/18_[완료]_PoC-S_SQLFirst타당성.md` | #145R 조사 |
-| `upgrade_plan/19_SQLFirst_여정정본.md` | ST0~ST6 정본 |
-| `upgrade_plan/20_전환_자산판정표.md` | 자산 판정 |
-| `upgrade_plan/21_SQLFirst_R차수_실행가이드.md` | R0~R8 실행 |
-| `upgrade_plan/22_매칭오탐_사고기록.md` | #152 P0 |
-| `upgrade_plan/23_SQLFirst_AI명령문.md` | Chat 복붙 명령 |
-| `upgrade_plan/24_[완료]_PoC-V_값인식매칭.md` | #153 조사 |
-| `upgrade_plan/25_[완료]_임베딩경로_실태점검.md` | #155 |
-| `upgrade_plan/26_Match_C1C6_HUMAN검증.md` | #154 DoD HUMAN |
-| `upgrade_plan/27_스펙드리프트.md` | D-1~ |
-| `upgrade_plan/28_배포정합_진단.md` | #160/#161 JSSP↔JSlib 배포 대조·HUMAN 체크리스트 |
-| `upgrade_plan/30_Foundry_슬롯삼킴_P0.md` | #164 P0 — Foundry 슬롯 삼킴(색인 오염·AND 게이트·큐 이어달리기) |
-| `upgrade_plan/31_Foundry_원자화_파라미터화.md` | #167 — frag=축1=컬럼1 · {{param}}·param_domain 값사전 · 재사용 |
-| `upgrade_plan/32_필드도메인_자동판정_168A.md` | #168-A — schema-agnostic classifyField·도메인 스냅샷 · #168-B 분리 |
-| `upgrade_plan/33_LibraryFirst_서가우선_169.md` | #169 — Triage 서가 우선·Toolkit invoke 캐시 · 2회차 툴0 |
-| `upgrade_plan/34_Pass0_슬롯원자분할_170.md` | #170 — Pass0 축1슬롯1 · **[x]** #174 흡수 닫힘 |
-| `upgrade_plan/35_Generate_값바인딩_168B.md` | #168-B — plan.params ← param_domain · **[x]** #174 흡수 닫힘 |
-| `upgrade_plan/36_FragContract_공유계약.md` | #172 — Slot↔Index↔Match↔Bind 공유 계약 · **[x]** #174 흡수 닫힘 |
-| `upgrade_plan/37_ENPivot_CanonicalLayer_174.md` | #174 — EN-Pivot 추출/매칭 · **[x]** V6 · 재개 닫힘 |
-| `upgrade_plan/38_값확장_GroupExpansion_175.md` | #175 — 상위어 다대일 · **[~]** G1/G2/G4/G5/G6 PASS · 5단계 |
-| `upgrade_plan/39_상용화_여정갭.md` | 추출≠제품 · C-1~C-7 · UX-ST1 / UX-ST0 / R6 |
-| `upgrade_plan/40_프롬프트검증_ClarifyChips_176.md` | **#176 P0** — 모호 NL을 입력창 위 칩으로 보강 · C1~C3 repo · C4 HUMAN |
-| `upgrade_plan/41_완성로드맵.md` | **남은 일 순서 정본** — 다음 AI 시작 · `[S]` 목록 · 파도 1~3 |
-| `10_Fragment_생애주기_설계.md` | Fragment 승인 모델 게이트→라벨 전환 설계 — 현행 enum 매핑 · 빈도 기반 검수 · 야간 게이트 재실행 · 킬스위치는 revoked 재사용 |
-| `09_SQL생성추가_디버깅3.md` | F-0~F-5 반영 검증 후 잔여 C-1·E-1·E-2·A-1 — sanitize/compress 순서·phase 예산 누수·tokenBudget·자격 검증·스모크 9c |
-| `08_SQL생성추가_디버깅2.md` | Foundry 생성 단계 근원 진단 F-0~F-5 — 출력 계약 부재·루프 종료 불일치·자가진단 알고리즘·dryRunSlot 계측기 |
-| `07_SQL생성추가_디버깅1.md` | Pass0 `max_tokens` 소진 근원 해결 R-1~R-4 + LLM 계열 검수 L-1~L-3 — `json_object` 반복 루프·length 진단 강화·스모크 LLM 스텝·단계별 토큰 상한 |
-| `06_SQL생성추가_추가5.md` | M-1~M-3 개정판 — 추가4 에 **방언 지원 정책**(PG 만 실동 검증) + 수정 D(미검증 DBMS 런타임 가드) · 수정 E(FDA 확장 주석) 추가. 번호 중복은 아래 참고 |
-| `06_SQL생성추가_추가4.md` | 잔여 결함 M-1~M-3 — limitSelect 방언 조립(DISTINCT TOP 순서·파생 테이블 ORDER BY)·스모크 검출력(6a/6b 분리·전역 부재 메시지) |
-| `05_SQL생성추가_추가3.md` | 신규 결함 N-1~N-6 + 스모크(S-1) — getIfExists 반환형·Schema toDocument·물리명 추정 금지·샘플 재현성·used_fragments 정확 비교 |
-| `04_SQL생성추가_추가2.md` | 코드 점검 결함 수정 요청 P0~P2 (sqlSelect 규약·sql right·큐 선점·E4X 전환) |
-| `03_SQL생성추가_추가1.md` | Feasibility Triage / 불가 보고 / GapLog (Foundry 보강) |
-| `02_SQL생성추가.md` | Fragment Foundry 통합 스펙 (툴킷·dedup·생애주기·큐) |
-| `01_개발가이드.md` | Test Woo 가이드 — 섹션1~7(7a soapCall·7b listSql 코드반영, 7d CA 남음), JSSP·ai_sql_id |
 
-> **번호 중복 안내**: `06_…추가4` 와 `06_…추가5` 가 접두 번호를 공유한다(추가5 는 추가4 의 개정판).
-> 명명 규칙(순번 접두)상 후자는 `07_` 이 되어야 하나, 문서 파일 개명은 요청 시에만 수행한다.
+> **구 16~44번** 개별 가이드는 2026-08-26 통합으로 **`02`~`14`에 흡수·삭제**됨.  
+> ID·판정 원본은 `11_고도화_추적표.md` 유지.
 
-## 로컬 점검 도구 (`tools/`)
+## tools/
 
 | 파일 | 용도 |
 |---|---|
-| `tools/checkRhinoSyntax.js` | ACC Rhino+E4X 구문 사전 점검 (괄호 균형 · E4X 보간 미종료) |
-| `tools/checkDialectSql.js` | 방언 3종 생성 SQL 문자열 대조 (DB 접속 불필요 · M-1 회귀 방지) |
+| `tools/checkRhinoSyntax.js` | Rhino+E4X 구문 점검 |
+| `tools/checkDialectSql.js` | 방언 SQL 문자열 대조 |
 
-## 관련 상위 문서 (docs/ 및 프로젝트 루트)
+## docs/main/
 
 | 파일 | 용도 |
 |---|---|
-| `docs/main/PRD.md` | **단일 PRD** (v1.6). 개발 가이드의 근거 문서. 구 `Rebuild/PRD.md` 이관·통합 |
-| `docs/main/Info_mask.md` | Campaign/LLM 접속 설정 마스킹 샘플 (커밋 대상) |
-| `docs/main/(민감)Info.md` | 실제 접속 정보 — **git 제외** |
-| `old_ver/ARCHITECTURE.md` | 이전 프로토타입 구조 분석 (참고/재사용 근거) |
-| `new_ver/` | 테스트 구현 스캐폴드. 파일/스키마/폼/sqltable `testWoo*` 카멜, ns `woo` |
+| `docs/main/PRD.md` | 단일 PRD |
+| `docs/main/Info_mask.md` | 설정 마스킹 샘플 |
+| `docs/main/(민감)Info.md` | 실제 접속 — git 제외 |

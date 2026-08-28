@@ -5,14 +5,14 @@
  * - 동일 문장 재입력만 해시 캐시(TTL 1일 · 키에 __v 포함, 배포 후 구추출 재사용 금지).
  * concept는 (schema+xpath)에 이미 있으면 LLM 제안을 덮어쓰지 않는다.
  * 컬럼 도메인 값은 1회 번역해 nlMap 키를 {db, en[]} 으로 확장한다(키 삭제 금지).
- * litmus __v=178 (debug 트레이스. 및/and 슬롯 분할).
+ * litmus __v=179 (형제 축 concept heal. 및/and 슬롯 분할).
  *
  * [Main Functions]
  * ===========
  * - extractSlots — 전체 NL 번역·추출 (캐시 히트만 0콜)
  * - translateAndExtract — 전체 NL 1회 번역·추출 JSON
  * - scanM1 — 원문 literal ⊂ NL (매칭용. 추출 스킵에 쓰지 않음)
- * - applyConceptLock — _source.concept 불변 · 다른 이름은 aliases
+ * - applyConceptLock — 카탈로그 전용 토큰으로 형제 축 교정 후 _source.concept 불변 · 다른 이름은 aliases
  * - toPipelineSlots — EnPivot slot → Pass0 형태 {id,text,searchKeywords}. 및/and면 2슬롯
  * - isNonConditionSlot — concept·resolvedName·en_literal 없으면 잔여. kind만으로는 조건 아님
  * - enrichDomainEn — 컬럼 distinct/enum/_bucket 1회 EN 사전화
@@ -20,7 +20,7 @@
  *
  * [Dependencies]
  * =========
- * - testWoo.fragContract.collectLexicon·splitByLexicon·isNoiseResidue·matchEnPivotSlot
+ * - testWoo.fragContract.collectLexicon·splitByLexicon·isNoiseResidue·matchEnPivotSlot·healSlotConceptFromCatalog
  * - testWoo.llm.chat·parseJson — 기존 어댑터만 (json_object·외부 번역 API 금지)
  * - generatePlan이 extractSlots를 Pass0 앞에 호출. loadLibrary는 Llm보다 앞
  *
@@ -212,6 +212,9 @@ testWoo.enPivot = (function () {
       card = cards[i];
       if (!card) continue;
       if (name && String(card.name) === name) return card;
+      if (fc && fc.axesCompatible && slot && slot.concept &&
+          !fc.axesCompatible(card, slot))
+        continue;
       if (fc && fc.matchEnPivotSlot) {
         hit = fc.matchEnPivotSlot(card.param_domain, slot);
         if (hit && hit.layer && !hit.ambiguous) return card;
@@ -241,6 +244,8 @@ testWoo.enPivot = (function () {
         hintedCategory: String(s.hintedCategory || ""),
         conceptAliases: s.conceptAliases ? s.conceptAliases.slice(0) : []
       };
+      if (testWoo.fragContract && testWoo.fragContract.healSlotConceptFromCatalog)
+        testWoo.fragContract.healSlotConceptFromCatalog(copy, candidateCards);
       card = _matchCard(copy, candidateCards);
       locked = _lockedConcept(card);
       if (card && !copy.resolvedName) copy.resolvedName = String(card.name || "");
@@ -376,6 +381,7 @@ testWoo.enPivot = (function () {
       "concept = English snake_case. Prefer a concept from CANDIDATE_CARDS.",
       "If no candidate fits, propose a new concept and set is_new:true.",
       "If a card already has concept, use that exact string. Do not invent a parallel axis.",
+      "If en_literal names a token from one card concept or xpath, use that card. Do not pick a sibling axis that only shares a family word.",
       "Emit ONLY targeting-condition axes (region, plan, age, gender, consent, join date, etc.).",
       "Do NOT emit slots for sentence glue: particles, copulas, verbs (live/use), or audience nouns with no filter value.",
       "If a real condition cannot be named, still emit it with a snake_case concept and is_new:true.",
@@ -704,4 +710,4 @@ testWoo.enPivot = (function () {
     putNlCache: putNlCache
   };
 })();
-testWoo.enPivot.__v = "178";
+testWoo.enPivot.__v = "179";

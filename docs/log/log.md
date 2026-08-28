@@ -1,6 +1,17 @@
 # Log
 
 ## Log Index
+377. 2026-08-28 푸시 동의 — 마케팅 축 오매칭 heal (fragContract 206)
+376. 2026-08-28 N~M대 — 20~30대는 20~40 (fragContract 205)
+375. 2026-08-27 sqlDM userScript — AI Studio SQL 주입 xpath (workflowUi 165)
+374. 2026-08-27 템플릿 교체 — OPEmptyTemplate_AI 28001 · wfEmptyTemplate_AI 41145
+373. 2026-08-26 aiStudioSql — 템플릿 customActivity 이름변경만 (workflowUi 164)
+372. 2026-08-26 aiStudioSql — 주입 대상·SQL 편집기 (workflowUi 163 / v=199)
+371. 2026-08-26 upgrade_plan 메타동기화 — 00~14 정본 · 구버전 삭제
+370. 2026-08-26 upgrade_plan 16~43 통합 — 09~12 [완료] · 13~14 미구현
+369. 2026-08-26 upgrade_plan 16~44 [완료] 통합 — 06~08 + 09 잔여
+368. 2026-08-26 upgrade_plan 동기화 — #44 Span/Orphan/UX · 필수 과정 정리
+367. 2026-08-26 Studio UX — 이전 질문 10개+시간 · 진단로그 기본 닫힘 (v=198)
 366. 2026-08-26 HUMAN PASS — orphan SQL E2E Register (WKF162 ai_sql_id=41472)
 365. 2026-08-26 HUMAN PASS — push+marketing consent Register E2E (WKF162 ai_sql_id=41471)
 364. 2026-08-26 HUMAN PASS — orphan SQL draft·Program 자동 진입 (v=197)
@@ -369,6 +380,91 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+377. 2026-08-28 푸시 동의 — 마케팅 축 오매칭 heal (fragContract 206)
+Purpose: «푸시 동의하고»+en consented to push 가 marketing_consent로 잠기던 것. 카탈로그 xpath/concept 전용 토큰으로 형제 축을 고친다.
+Changes:
+- healSlotConceptFromCatalog: synonyms·nlMap 제외. surface+en_literal만 본다
+- applyConceptLock 선 heal · _matchCard는 슬롯 concept와 안 맞는 카드 스킵
+- generatePlan Stage A 전 재heal. smoke 1b sibling consent
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooEnPivot.js, new_ver/js/testWooLlm.js, new_ver/tools/testWooSmoke.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+376. 2026-08-28 N~M대 — 20~30대는 20~40 (fragContract 205)
+Purpose: 20~30대를 30대만으로 자르지 않음. 형태 파서가 N대~M대만 보고 N~M대를 놓친 뒤 nlMap 30대에 붙은 것.
+Changes:
+- _induceNDae: 20~30대 · 20s to 30s → ageMin=20, ageMax=40
+- smoke 1g compact range. expectedByMod fragContract=205
+Changed files: new_ver/js/testWooFragContract.js, new_ver/tools/testWooSmoke.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+375. 2026-08-27 sqlDM userScript — AI Studio SQL 주입 xpath (workflowUi 165)
+Purpose: OOTB sqlDM 확장 스키마의 SQL 본문 필드명은 userScript. Register/Bind는 여기로 Write.
+Changes:
+- sqlDM → userScript CDATA. 구 customActivity 만 script
+- 계약 샘플 userScript. expectedByMod workflowUi=165
+Changed files: new_ver/js/testWooWorkflowUi.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiRegister.jssp, new_ver/schema/testWooAiWorkflowUi.xml, new_ver/workflow/testWooSampleCustomActivityContract.xml, docs/log/log.md
+
+374. 2026-08-27 템플릿 교체 — OPEmptyTemplate_AI 28001 · wfEmptyTemplate_AI 41145
+Purpose: 캠페인/WKF 템플릿 이름·id를 새 AI Studio 템플릿 XML에 맞춤. 주입 대상은 sqlDM @name=aiStudioSql.
+Changes:
+- 기본값 Campaign=OPEmptyTemplate_AI/28001 · WKF=wfEmptyTemplate_AI/41145
+- ACC Option에 남은 구 id 10002·17234·wfEmptyTemplate_CUSTOM 는 무시
+- 계약 샘플: sqlDM name=aiStudioSql · Start target=aiStudioSql
+Changed files: new_ver/js/testWooWorkflowClone.js, new_ver/js/testWooWorkflowUi.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/schema/testWooAiWorkflowUi.xml, new_ver/workflow/testWooSampleCustomActivityContract.xml, docs/log/log.md
+
+373. 2026-08-26 aiStudioSql — 템플릿 customActivity 이름변경만 (workflowUi 164)
+Purpose: 주입 대상은 캠페인 템플릿 액티비티뿐. @name이 customActivity→aiStudioSql로 바뀐 것. 템플릿 id 동일. ibankSqlDM은 대상이 아님.
+Changes:
+- 인식: @name aiStudioSql(현재) / customActivity(구 WKF). ibankSqlDM 제거
+- 계약 샘플: `<customActivity name="aiStudioSql"/>` + Start target=aiStudioSql
+Changed files: new_ver/js/testWooWorkflowUi.js, new_ver/workflow/testWooSampleCustomActivityContract.xml, new_ver/schema/testWooAiWorkflowUi.xml, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+372. 2026-08-26 aiStudioSql — 주입 대상·SQL 편집기 (workflowUi 163 / v=199)
+Purpose: Register/Bind 주입 대상을 customActivity·ibankSqlDM에서 aiStudioSql로 전환. 생성된 SQL은 해당 액티비티 SQL 코드 편집기(script)에 들어간다.
+Changes:
+- 주 액티비티 요소·@name=aiStudioSql. Start initial target=aiStudioSql
+- 레거시 customActivity/aiExtract @name 정규화 + 전이 retarget
+- WKF 생성 직후 normalizeAiActivity. 레거시 ibankSqlDM·customActivity는 계속 인식
+Changed files: new_ver/js/testWooWorkflowUi.js, new_ver/js/testWooWorkflowClone.js, new_ver/schema/testWooAiWorkflowUi.xml, new_ver/input_form/testWooExtendWorkflow.xml, new_ver/workflow/testWooSampleCustomActivityContract.xml, new_ver/jssp/testWooAiRegister.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
+
+367. 2026-08-26 Studio UX — 이전 질문 10개+시간 · 진단로그 기본 닫힘 (v=198)
+Purpose: 진단 패널 기본 닫힘·라벨 정리 · 이전 질문 제목·최대 10개·(입력시간) 표시.
+Changes:
+- twDiagSum — 「진단로그 - 클릭하여 열기/접기」 · #twDiagLog display:none 기본
+- twRecentNl — 「이전 질문 (최대 10개)」 · (HH:MM) 또는 (MM-DD HH:MM) + 질문
+- testWooAiValidate — Option testWooAiNlRecent_{login} · {text,at} JSON · max 10
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiValidate.jssp, docs/log/log.md
+
+371. 2026-08-26 upgrade_plan 메타동기화 — 00~14 정본 · 구버전 삭제
+Purpose: INDEX·진행판·ReportIndex·추적표를 00~14 통합본에 맞춤 · 흡수된 구 16~43 개별 가이드 잔존 파일 제거.
+Changes:
+- 00_INDEX · 01_진행판 · 00_ReportIndex — 라우팅·카탈로그 00~14 정본
+- 11_고도화_추적표 v1.2 — 차수→문서 매핑 09~14
+- upgrade_plan 구 02~15·16~43 개별 파일 삭제 (00~14+[별도] 16개만 유지)
+Changed files: docs/report/upgrade_plan/00_INDEX.md, 01_진행판.md, docs/report/00_ReportIndex.md, docs/report/11_고도화_추적표.md, docs/report/upgrade_plan/[별도]_고도화_개발아이디어_관리자작성본.md, docs/log/log.md
+
+370. 2026-08-26 upgrade_plan 16~43 통합 — 09~12 [완료] · 13~14 미구현
+Purpose: 16~43 실반영만 4개 [완료]로 취합 · 미구현/DEFERRED 2개로 분리 · 구 09 잔여 흡수.
+Changes:
+- 09 SQLFirst · 10 추출164-174 · 11 값확장/UX · 12 배포/완료선 [완료]
+- 13 Match/HUMAN · 14 DEFERRED 미구현
+- 16~43·구09_미구현 원본 삭제 (00~08·06~08 범위 밖 미변경)
+Changed files: docs/report/upgrade_plan/09~14_*.md, docs/log/log.md
+
+369. 2026-08-26 upgrade_plan 16~44 [완료] 통합 — 06~08 + 09 잔여
+Purpose: [완료] 5건(17/18/24/25/44) 실반영만 06~08로 취합 · 미구현은 09 분리.
+Changes:
+- 06 PoC-M/S/V 반영 · 07 임bedding DedupL2 · 08 Span/Orphan/UX
+- 09_미구현_잔여목록.md 신규
+- 원본 17/18/24/25/44 삭제 (16·19~43 비[완료] 미변경)
+Changed files: docs/report/upgrade_plan/06~09_*.md, docs/log/log.md
+
+368. 2026-08-26 upgrade_plan 동기화 — #44 Span/Orphan/UX · 필수 과정 정리
+Purpose: upgrade_plan 완료 표시·번호 불일치 정리 — log #358~#367 구현을 문서 #44로 흡수.
+Changes:
+- 44_[완료]_운영회귀_SpanOrphan_StudioUX.md 신규
+- 01_진행판 §0 필수 남은 과정 · §0-b/c 구현/미구현 분리
+- 00_INDEX · 41 · 40 · 00_ReportIndex 갱신
+Changed files: docs/report/upgrade_plan/44_*.md, 01_진행판.md, 00_INDEX.md, 41_완성로드맵.md, 40_*.md, docs/report/00_ReportIndex.md, docs/log/log.md
 
 366. 2026-08-26 HUMAN PASS — orphan SQL E2E Register (WKF162 ai_sql_id=41472)
 Purpose: orphan origin(getSql→validate→putDraft→Program) → WKF Register 전 구간 HUMAN.

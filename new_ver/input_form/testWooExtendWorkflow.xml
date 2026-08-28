@@ -94,7 +94,7 @@ schema testWooAiWorkflowUi → JS testWooWorkflowUi.js → 이 폼 (동시, Shel
             <error>Studio SQL 이력에서 항목을 클릭하거나 등록한 뒤 Apply 하세요.</error>
           </check>
           <check expr="[/tmp/@testWooHasAiActivity] = 'true'">
-            <error>캔버스에 AI 대상자 추출(ibankSqlDM)이 없습니다. 팔레트에서 추가한 뒤 다시 여세요.</error>
+            <error>캔버스에 AI 대상자 추출(aiStudioSql)이 없습니다. 팔레트에서 추가한 뒤 다시 여세요.</error>
           </check>
           <soapCall name="ShellBind" service="woo:testWooAiWorkflowUi">
             <param exprIn="[activities]" type="DOMElement"/>

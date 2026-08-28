@@ -11,7 +11,7 @@ response.setContentType("application/json;charset=utf-8");
  * - compile+runAll — gates 실패 시 registered 없이 results 반환 (twPlanForCompile·nl_request)
  * - findAiSqlBySqlHash — 동일 WKF·SQL 해시면 신규 행 없이 그 id로 주입
  * - 2클릭 덮어쓰기 — 다른 저장본(해시 중복·비현재)일 때만. 새 SQL은 1클릭 넣기
- * - commitInject — 첫 AI 액티비티 script+ai-sql-id (confirm_overwrite)
+ * - commitInject — sqlDM userScript+ai-sql-id (confirm_overwrite)
  * - saveAiSql — 주입 성공 후에만 Insert (선할당 id, param_key)
  * - markAiSqlInjected — 주입 성공 후 현재 반영 스탬프 (created/dup 공통)
  *

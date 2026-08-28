@@ -1,41 +1,33 @@
 <!--
-  testWooSampleCustomActivityContract.xml (AI 대상자 추출 액티비티 계약 샘플 · B안)
+  testWooSampleCustomActivityContract.xml (캠페인 템플릿 AI 액티비티 계약)
   ==================================================================================
-  R6 INJ-8-2: registered sql_query 를 코드편집기(script)에 넣고 ai-sql-id 도 남긴다.
-  런타임은 환경에 따라 본문 또는 woo:testWooAiSql 조회. 액티비티 자동 생성은 하지 않는다.
+  OPEmptyTemplate_AI (id=28001) 동반 WKF wfEmptyTemplate_AI (id=41145).
+  OOTB sqlDM 확장: XML 태그 sqlDM, @name=aiStudioSql, SQL 본문=userScript.
 
-  [Contract — current · INJ-8-2]
-  - WF XML 요소: ibankSqlDM (주) · 레거시 팔레트 xpath 환경은 customActivity
-  - Input: 자식 ai-sql-id (long) + script (CDATA, xpath=script · OOTB sqlDM/ibankSqlDM2 와 동일)
-  - Canvas bind: ShellBind — 서버가 registered 행을 읽어 script Write (SQL을 SOAP 인자로 안 보냄)
-  - Studio 커밋: Register → commitInject (락→주입→saveAiSql→해제)
-  - Forbidden: 게이트 미통과·임의 클라이언트 SQL · Spawn · J-9-5-2
-
-  [Contract — discarded]
-  - B안 ID-only (이력만, 편집기 공란) — R6에서 폐기
-  - OOTB SQL Data Management (sql) 노드는 Inspect/Bind 대상이 아님
+  [Contract]
+  - Start: <initial target="aiStudioSql"/>
+  - 대상: <sqlDM name="aiStudioSql"/>
+  - Input: userScript (CDATA, 스키마 memo · AI Studio SQL) + ai-sql-id
+  - 구 WKF customActivity 는 script
+  - Forbidden: 게이트 미통과·임의 클라이언트 SQL · Spawn · 이름 없는 OOTB sqlDM 바인드
 -->
 <activities>
-  <!-- LGU 운영 요소명 -->
-  <ibankSqlDM name="aiExtract" label="AI 대상자 추출"
-              img="xtk:activities/execsql.png"
-              x="240" y="88">
-    <!-- Runtime: editor script and/or woo:testWooAiSql where @id = ai-sql-id -->
+  <start collision="0" img="xtk:activities/start.png" label="Start" mask="0"
+         name="start" onError="0" runOnSimulation="true" timezone="_inherit_"
+         x="44" y="80">
+    <transitions>
+      <initial enabled="true" name="initial" target="aiStudioSql"/>
+    </transitions>
+  </start>
+
+  <sqlDM andJoin="true" autoCreate="false" collision="0"
+         img="xtk:activities/execsql.png" label="SQL Data Management" mask="0"
+         name="aiStudioSql" onError="0" useEntity="false"
+         x="200" y="80">
     <ai-sql-id>0</ai-sql-id>
-    <script><![CDATA[]]></script>
+    <userScript><![CDATA[]]></userScript>
     <transitions>
       <done enabled="true" label="Ok" name="done" target="changeDataSource"/>
     </transitions>
-  </ibankSqlDM>
-
-  <!--
-    레거시 팔레트 xpath=customActivity 환경용 참고 노드 (둘 중 하나만 캔버스에 두면 됨).
-    Inspect/Bind 는 ibankSqlDM 과 customActivity 모두 인식한다.
-  -->
-  <!--
-  <customActivity name="customActivity" label="AI 대상자 추출 (legacy xpath)"
-                  img="xtk:activities/execsql.png">
-    <ai-sql-id>0</ai-sql-id>
-  </customActivity>
-  -->
+  </sqlDM>
 </activities>

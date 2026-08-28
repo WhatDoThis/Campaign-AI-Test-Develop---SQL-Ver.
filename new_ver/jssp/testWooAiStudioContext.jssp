@@ -13,7 +13,7 @@ response.setContentType("application/json;charset=utf-8");
  * - listWkfs / createWkf — Campaign 하위 WKF(Max 15, sqlCount=반영 SQL 건수)
  * - listRegisteredSql — 최근 반영 SQL + WKF/Program 점프 메타 · orphan(resolve 실패)
  * - selectWkf / releaseLock — soft-lock 획득·해제(CSRF)
- * - libVersions — 로드된 testWoo.* 모듈 __v JSON (expectedByMod: llm=198 … match=160)
+ * - libVersions — 로드된 testWoo.* 모듈 __v JSON (expectedByMod: fragContract=206 · llm=201 · enPivot=179 · workflowUi=165)
  *
  * [Dependencies]
  * =========
@@ -93,13 +93,13 @@ try {
     _twTryLoad("woo:testWooWorkflowClone.js");
     // 모듈별 기대 __v. 기본 159. heal 경로만 올림(전체 강제 재배포 방지).
     var expectedByMod = {
-      llm: "200", toolkit: "164", enPivot: "178",
-      fragContract: "204", fragments: "166", compiler: "168",
+      llm: "201", toolkit: "164", enPivot: "179",
+      fragContract: "206", fragments: "166", compiler: "168",
       foundry: "179", dedup: "160", feasibility: "166", gates: "164",
       match: "160",
       env: "160", cfg: "160", common: "160",
-      repo: "164", workflowUi: "162",
-      studioContext: "160"
+      repo: "164", workflowUi: "165",
+      studioContext: "160", wfClone: "161"
     };
     var expectedDefault = "159";
     function _twLibV(mod) {
@@ -204,6 +204,7 @@ try {
       canCreateWkf: wkfRes.canCreateWkf,
       template: testWoo.wfClone.getTemplateName(),
       template_id: testWoo.wfClone.getWkfTemplateId(),
+      campaign_template: testWoo.wfClone.getCampaignTemplateName(),
       campaign_template_id: testWoo.wfClone.getCampaignTemplateId(),
       open_mode: "fallback"
     });

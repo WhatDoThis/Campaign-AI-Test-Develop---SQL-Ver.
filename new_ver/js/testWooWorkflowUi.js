@@ -1,24 +1,25 @@
 /*
  * testWooWorkflowUi.js (WF 캔버스 ↔ Studio SOAP · R6 주입)
  * ==================================================
- * litmus 동기 __v=162. E4X length/toXMLString 가드 제거. 이름 조회(PoC-2) 우선.
- * SOAP ShellProbe/Pick/Bind. Register 커밋은 commitInject — 락 밖에서 호출.
+ * litmus 동기 __v=165. 템플릿 sqlDM @name=aiStudioSql → userScript (스키마 memo).
+ * 구 WKF customActivity 는 script. SOAP ShellProbe/Pick/Bind.
  * 본문은 SOAP 인자로 받지 않고 registered testWooAiSql.@sql_query 만 Write.
  *
  * [Main Functions]
  * ===========
  * - woo_testWooAiWorkflowUi_ShellProbe — AI 액티비티 존재·첫 @name
  * - woo_testWooAiWorkflowUi_ShellPick — bind-pick + tick 캐시버스트
- * - woo_testWooAiWorkflowUi_ShellBind — 첫 AI 액티비티에 ai-sql-id + script
- * - testWoo.workflowUi.probeOccupied — 첫 AI 액티비티에 본문/ID 있는지
+ * - woo_testWooAiWorkflowUi_ShellBind — sqlDM userScript+ai-sql-id
+ * - testWoo.workflowUi.probeOccupied — 대상 액티비티에 본문/ID 있는지
  * - testWoo.workflowUi.commitInject — WF data Write (덮어쓰기 가드·백업)
  * - testWoo.workflowUi.restoreInject — 직전 스냅샷으로 본문+ID 복원
+ * - testWoo.workflowUi.normalizeAiActivity — 구 @name customActivity→aiStudioSql + Start target
  *
  * [Dependencies]
  * =========
  * - testWooExtendWorkflow.xml — iframe·SOAP soapCall
- * - ibankSqlDM·customActivity — AI 액티비티 요소명
- * - ai-sql-id + script — OOTB sqlDM/ibankSqlDM2 JstEdit xpath=script
+ * - sqlDM @name=aiStudioSql · 스키마 자식 userScript (AI Studio SQL)
+ * - 구 customActivity 는 script. ai-sql-id 병행
  * - testWoo.repo.getAiSqlById — 주입 SQL 출처 (status=registered)
  * - xtk:workflow data — commitInject queryDef+Write (Spawn 금지)
  * - XtkOption testWooAiInjectBackup — 마지막 본문+ID 스냅샷
@@ -26,12 +27,13 @@
 
 if (typeof testWoo === "undefined") testWoo = {};
 if (!testWoo.workflowUi) testWoo.workflowUi = {};
-testWoo.workflowUi.__v = "162";
+testWoo.workflowUi.__v = "165";
 
-var TESTWOO_AI_ACTIVITY_EL = "ibankSqlDM";
-var TESTWOO_AI_ACTIVITY_EL_LEGACY = "customActivity";
+var TESTWOO_AI_ACTIVITY_NAME = "aiStudioSql";
+var TESTWOO_AI_ACTIVITY_NAME_OLD = "customActivity";
 var TESTWOO_AI_SQL_ID_EL = "ai-sql-id";
-var TESTWOO_AI_SQL_SCRIPT_EL = "script";
+var TESTWOO_AI_SQL_BODY_EL = "userScript";
+var TESTWOO_AI_SQL_BODY_EL_LEGACY = "script";
 var TESTWOO_AI_INJECT_BACKUP_OPT = "testWooAiInjectBackup";
 
 var _twWfLastSnap = null;
@@ -40,9 +42,93 @@ function _twWfTrim(s) {
   return String(s == null ? "" : s).replace(/^\s+|\s+$/g, "");
 }
 
-function _twWfIsAiActivityEl(elName) {
-  var n = String(elName || "");
-  return n === TESTWOO_AI_ACTIVITY_EL || n === TESTWOO_AI_ACTIVITY_EL_LEGACY;
+function _twWfIsAiActivity(elName, actName) {
+  var nm = String(actName || "");
+  var el = String(elName || "");
+  if (nm === TESTWOO_AI_ACTIVITY_NAME || nm === TESTWOO_AI_ACTIVITY_NAME_OLD) return true;
+  return el === TESTWOO_AI_ACTIVITY_NAME || el === TESTWOO_AI_ACTIVITY_NAME_OLD;
+}
+
+function _twWfAiRank(item) {
+  var nm = String(item.name || "");
+  if (nm === TESTWOO_AI_ACTIVITY_NAME) return 0;
+  if (nm === TESTWOO_AI_ACTIVITY_NAME_OLD) return 1;
+  var el = String(item.elName || "");
+  if (el === TESTWOO_AI_ACTIVITY_NAME) return 0;
+  if (el === TESTWOO_AI_ACTIVITY_NAME_OLD) return 1;
+  return 2;
+}
+
+function _twWfPickAiActivity(list) {
+  if (!list || list.length === 0) return null;
+  var best = list[0];
+  var bestRank = _twWfAiRank(best);
+  var i;
+  for (i = 1; i < list.length; i++) {
+    var r = _twWfAiRank(list[i]);
+    if (r < bestRank) {
+      best = list[i];
+      bestRank = r;
+    }
+  }
+  return best;
+}
+
+function _twWfNeedsAiNameNormalize(actName) {
+  var n = _twWfTrim(actName);
+  return !n || n === TESTWOO_AI_ACTIVITY_NAME_OLD;
+}
+
+function _twWfRetargetTransitions(acts, oldName, newName) {
+  var from = _twWfTrim(oldName);
+  var to = _twWfTrim(newName);
+  if (!from || !to || from === to) return;
+  try {
+    var children = acts.children();
+    var n = children.length();
+    var i;
+    var j;
+    for (i = 0; i < n; i++) {
+      var ch = children[i];
+      var transRoot = null;
+      try {
+        if (ch.transitions && ch.transitions.length() > 0) {
+          transRoot = ch.transitions[0];
+        }
+      } catch (eT) {}
+      if (!transRoot) continue;
+      var trs = transRoot.children();
+      var m = trs.length();
+      for (j = 0; j < m; j++) {
+        var tr = trs[j];
+        if (_twWfTrim(String(tr.@target || "")) === from) {
+          tr.@target = to;
+        }
+      }
+    }
+  } catch (eR) {
+    logWarning("[testWoo.WorkflowUi._twWfRetargetTransitions] " + eR);
+  }
+}
+
+function _twWfNormalizeAiName(acts, target) {
+  if (!target || !target.node) return target;
+  var oldName = _twWfTrim(target.name);
+  if (!_twWfNeedsAiNameNormalize(oldName)) return target;
+  var newName = TESTWOO_AI_ACTIVITY_NAME;
+  try {
+    target.node.@name = newName;
+  } catch (eN) {
+    logWarning("[testWoo.WorkflowUi._twWfNormalizeAiName] set @name: " + eN);
+    return target;
+  }
+  _twWfRetargetTransitions(acts, oldName || TESTWOO_AI_ACTIVITY_NAME_OLD, newName);
+  target.name = newName;
+  logInfo(
+    "[testWoo.WorkflowUi] rename activity @name " +
+    (oldName || "(empty)") + " -> " + newName
+  );
+  return target;
 }
 
 function _twWfAsXml(node) {
@@ -93,11 +179,12 @@ function _twWfListAiActivities(activitiesXml) {
     for (var i = 0; i < n; i++) {
       var ch = children[i];
       var elName = String(ch.name());
-      if (!_twWfIsAiActivityEl(elName)) {
+      var actName = _twWfTrim(String(ch.@name || ""));
+      if (!_twWfIsAiActivity(elName, actName)) {
         continue;
       }
       out.push({
-        name: _twWfTrim(String(ch.@name || "")),
+        name: actName,
         label: _twWfTrim(String(ch.@label || "")),
         elName: elName,
         node: ch
@@ -156,27 +243,39 @@ function _twWfReadAiSqlId(node) {
   return "";
 }
 
-function _twWfReadScript(node) {
+function _twWfSqlBodyEl(elName) {
+  if (String(elName || "") === "sqlDM") return TESTWOO_AI_SQL_BODY_EL;
+  return TESTWOO_AI_SQL_BODY_EL_LEGACY;
+}
+
+function _twWfReadChildText(node, elName) {
   try {
-    if (node[TESTWOO_AI_SQL_SCRIPT_EL] && node[TESTWOO_AI_SQL_SCRIPT_EL].length() > 0) {
-      return _twWfTrim(String(node[TESTWOO_AI_SQL_SCRIPT_EL][0]));
+    if (node[elName] && node[elName].length() > 0) {
+      return _twWfTrim(String(node[elName][0]));
     }
   } catch (e1) {}
   return "";
 }
 
-function _twWfSetScript(node, sqlText) {
+function _twWfReadScript(node) {
+  var body = _twWfReadChildText(node, TESTWOO_AI_SQL_BODY_EL);
+  if (body) return body;
+  return _twWfReadChildText(node, TESTWOO_AI_SQL_BODY_EL_LEGACY);
+}
+
+function _twWfSetSqlBody(node, elName, sqlText) {
+  var tag = _twWfSqlBodyEl(elName);
   var body = String(sqlText == null ? "" : sqlText);
   try {
-    if (node[TESTWOO_AI_SQL_SCRIPT_EL] && node[TESTWOO_AI_SQL_SCRIPT_EL].length() > 0) {
-      delete node[TESTWOO_AI_SQL_SCRIPT_EL];
+    if (node[tag] && node[tag].length() > 0) {
+      delete node[tag];
     }
   } catch (eDel) {}
   var safe = body.split("]]>").join("]]]]><![CDATA[>");
   try {
-    node.appendChild(new XML("<script><![CDATA[" + safe + "]]></script>"));
+    node.appendChild(new XML("<" + tag + "><![CDATA[" + safe + "]]></" + tag + ">"));
   } catch (eCdata) {
-    node[TESTWOO_AI_SQL_SCRIPT_EL] = body;
+    node[tag] = body;
   }
 }
 
@@ -504,9 +603,9 @@ function _twWfDataNode(wf) {
   return null;
 }
 
-function _twWfInjectOnNode(node, aiSqlId, sqlText) {
+function _twWfInjectOnNode(node, aiSqlId, sqlText, elName) {
   _twWfSetAiSqlId(node, aiSqlId);
-  if (sqlText) _twWfSetScript(node, sqlText);
+  if (sqlText) _twWfSetSqlBody(node, elName, sqlText);
 }
 
 /**
@@ -516,12 +615,13 @@ function _twWfInjectOnNode(node, aiSqlId, sqlText) {
 function woo_testWooAiWorkflowUi_ShellProbe(activitiesXml) {
   var list = _twWfListAiActivities(activitiesXml);
   var count = list.length;
-  var firstName = count > 0 ? (list[0].name || "#0") : "";
+  var picked = _twWfPickAiActivity(list);
+  var firstName = picked ? (picked.name || "#0") : "";
   var hasStr = count > 0 ? "true" : "false";
   var message;
   if (count === 0) {
     message =
-      "[안내] 캔버스에 AI 대상자 추출(ibankSqlDM)이 없습니다. " +
+      "[안내] 캔버스에 AI 대상자 추출(aiStudioSql)이 없습니다. " +
       "팔레트에서 추가한 뒤 이 창을 다시 여세요. " +
       "(OOTB SQL Data Management 는 대상이 아닙니다)";
   } else if (count === 1) {
@@ -530,8 +630,8 @@ function woo_testWooAiWorkflowUi_ShellProbe(activitiesXml) {
       ". Studio에서 SQL을 선택한 뒤 Apply 하세요.";
   } else {
     message =
-      "Apply 대상(첫 액티비티): " + firstName +
-      " — 캔버스에 AI 액티비티 " + count + "개. 첫 것만 사용합니다.";
+      "Apply 대상: " + firstName +
+      " — 캔버스에 AI 액티비티 " + count + "개. aiStudioSql 우선.";
   }
   logInfo(
     "[testWoo.WorkflowUi.ShellProbe] count=" + count + " first=" + firstName
@@ -583,19 +683,19 @@ function woo_testWooAiWorkflowUi_ShellBind(activitiesXml, aiSqlId, workflowName)
   var list = _twWfListAiActivities(acts);
   if (list.length === 0) {
     throw new Error(
-      "No ibankSqlDM on canvas. Add 'AI 대상자 추출' from the palette, then reopen AI Studio."
+      "No aiStudioSql on canvas. Add 'AI 대상자 추출' from the palette, then reopen AI Studio."
     );
   }
   if (list.length > 1) {
     logWarning(
       "[testWoo.WorkflowUi.ShellBind] multiple=" + list.length +
-      " — first only: " + (list[0].name || "#0")
+      " — prefer aiStudioSql"
     );
   }
 
-  var target = list[0];
+  var target = _twWfNormalizeAiName(acts, _twWfPickAiActivity(list));
   var sqlText = _twWfLoadRegisteredSql(idStr);
-  _twWfInjectOnNode(target.node, idStr, sqlText);
+  _twWfInjectOnNode(target.node, idStr, sqlText, target.elName);
   logInfo(
     "[testWoo.WorkflowUi.ShellBind] el=" + target.elName +
     " name=" + target.name + " ai_sql_id=" + idStr +
@@ -634,13 +734,14 @@ function _twWfProbeOccupied(workflowId, workflowName) {
       ok: false,
       occupied: false,
       error:
-        "캔버스에 AI 대상자 추출(ibankSqlDM)이 없습니다. 팔레트에서 추가한 뒤 다시 반영하세요."
+        "캔버스에 AI 대상자 추출(aiStudioSql)이 없습니다. 팔레트에서 추가한 뒤 다시 반영하세요."
     };
   }
+  var probed = _twWfPickAiActivity(list);
   return {
     ok: true,
-    occupied: _twWfOccupied(list[0].node),
-    activityName: list[0].name || "#0",
+    occupied: _twWfOccupied(probed.node),
+    activityName: probed.name || "#0",
     workflowId: String(wf.@id || workflowId),
     workflowName: _twWfTrim(String(wf.@internalName || workflowName))
   };
@@ -697,17 +798,17 @@ function _twWfCommitInject(opts) {
       ok: false,
       needsOverwrite: false,
       error:
-        "캔버스에 AI 대상자 추출(ibankSqlDM)이 없습니다. 팔레트에서 추가한 뒤 다시 반영하세요."
+        "캔버스에 AI 대상자 추출(aiStudioSql)이 없습니다. 팔레트에서 추가한 뒤 다시 반영하세요."
     };
   }
   if (list.length > 1) {
     logWarning(
       "[testWoo.WorkflowUi.commitInject] multiple=" + list.length +
-      " — first only: " + (list[0].name || "#0")
+      " — prefer aiStudioSql"
     );
   }
 
-  var target = list[0];
+  var target = _twWfNormalizeAiName(acts, _twWfPickAiActivity(list));
   var occupied = _twWfOccupied(target.node);
   if (occupied && !confirmOw) {
     return {
@@ -728,7 +829,7 @@ function _twWfCommitInject(opts) {
   };
   _twWfSaveBackup(snap);
 
-  _twWfInjectOnNode(target.node, idStr, sqlText);
+  _twWfInjectOnNode(target.node, idStr, sqlText, target.elName);
   try {
     if (dataNode && dataNode !== wf) wf.data = dataNode;
   } catch (ePut) {}
@@ -775,7 +876,7 @@ function _twWfRestoreInject(workflowId, workflowName) {
   if (!dataNode) return false;
   var list = _twWfListAiActivities(dataNode);
   if (list.length === 0) return false;
-  var target = list[0];
+  var target = _twWfPickAiActivity(list);
   var i;
   if (snap.activityName) {
     for (i = 0; i < list.length; i++) {
@@ -785,7 +886,7 @@ function _twWfRestoreInject(workflowId, workflowName) {
       }
     }
   }
-  _twWfInjectOnNode(target.node, snap.aiSqlId || "0", snap.script || "");
+  _twWfInjectOnNode(target.node, snap.aiSqlId || "0", snap.script || "", target.elName);
   try {
     wf.@xtkschema = "xtk:workflow";
     wf.@_operation = "update";
@@ -798,7 +899,69 @@ function _twWfRestoreInject(workflowId, workflowName) {
   }
 }
 
+function _twWfNormalizeAiActivity(workflowId, workflowName) {
+  var wf;
+  try {
+    wf = _twWfLoadWorkflow(workflowId, workflowName);
+  } catch (eL) {
+    return { ok: false, changed: false, error: String(eL && eL.message ? eL.message : eL) };
+  }
+  var dataNode = _twWfDataNode(wf);
+  if (!dataNode) {
+    return { ok: false, changed: false, error: "workflow data XML missing" };
+  }
+  var acts = _twWfActivitiesRoot(dataNode);
+  if (!acts || String(acts.name()) !== "activities") {
+    return { ok: false, changed: false, error: "workflow data.activities missing" };
+  }
+  var list = _twWfListAiActivities(acts);
+  if (list.length === 0) {
+    return {
+      ok: false,
+      changed: false,
+      error: "캔버스에 AI 대상자 추출(aiStudioSql)이 없습니다. 팔레트에서 추가한 뒤 다시 반영하세요."
+    };
+  }
+  var target = _twWfPickAiActivity(list);
+  var before = target.name;
+  target = _twWfNormalizeAiName(acts, target);
+  if (before === target.name) {
+    return {
+      ok: true,
+      changed: false,
+      activityName: target.name || "#0",
+      workflowId: String(wf.@id || workflowId)
+    };
+  }
+  try {
+    if (dataNode && dataNode !== wf) wf.data = dataNode;
+  } catch (ePut) {}
+  try {
+    wf.@xtkschema = "xtk:workflow";
+    wf.@_operation = "update";
+    xtk.session.Write(wf);
+  } catch (eW) {
+    return {
+      ok: false,
+      changed: false,
+      error: "workflow Write failed: " + String(eW && eW.message ? eW.message : eW)
+    };
+  }
+  logInfo(
+    "[testWoo.WorkflowUi.normalizeAiActivity] wf=" +
+    String(wf.@internalName || workflowName) +
+    " name=" + (target.name || TESTWOO_AI_ACTIVITY_NAME)
+  );
+  return {
+    ok: true,
+    changed: true,
+    activityName: target.name || TESTWOO_AI_ACTIVITY_NAME,
+    workflowId: String(wf.@id || workflowId)
+  };
+}
+
 testWoo.workflowUi.commitInject = _twWfCommitInject;
 testWoo.workflowUi.restoreInject = _twWfRestoreInject;
 testWoo.workflowUi.probeOccupied = _twWfProbeOccupied;
 testWoo.workflowUi.lookupIdByName = _twWfLookupIdByName;
+testWoo.workflowUi.normalizeAiActivity = _twWfNormalizeAiActivity;

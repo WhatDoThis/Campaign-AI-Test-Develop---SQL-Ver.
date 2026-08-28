@@ -23,7 +23,7 @@ LG U+ Adobe Campaign **AI 대상자 추출 시스템**. 마케터 자연어 → 
 | Rule | Detail |
 |------|--------|
 | AI does NOT write SQL | LLM → CNF `plan_json` only; `testWoo.compiler` assembles SQL |
-| No WF XML inject | Register returns `ai_sql_id`; `ibankSqlDM` loads `woo:testWooAiSql` via `ai-sql-id` (no `<script>` SQL) |
+| Register inject | Register → `sqlDM` `@name=aiStudioSql` → `userScript` + `ai-sql-id`. Start `target="aiStudioSql"` |
 | LLM server-side only | JSSP + `HttpClientRequest`; never browser direct API key |
 | Namespace `woo` | Files/schemas/forms: `testWoo*` camel; global JS object: `testWoo.*` (NOT `woo.*`) |
 | **No raw DB DML** | CRUD = `xtk.session.Write` + queryDef; seed = `testWooSampleSeed.js`; read SQL = `sqlSelect` only; **never sqlExec / INSERT SQL** |

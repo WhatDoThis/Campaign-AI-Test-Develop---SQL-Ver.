@@ -1,7 +1,7 @@
 /*
  * testWooLlm.js (LLM Pass0·Pass1 파이프라인)
  * ==================================================
- * litmus 동기 __v=200 (span gap inline heal · library_cache_hit 후 재시도).
+ * litmus 동기 __v=201 (형제 축 conceptHeal · span gap inline heal).
  * EnPivot(전체 문장 1콜, 캐시만 스킵) 후 Pass1. 추출 실패 시 재입력(Pass0 우회 금지).
  * 최종 SQL은 쓰지 않음. 동기 HttpClientRequest만 사용.
  *
@@ -23,7 +23,7 @@
  * - testWoo.cfg.getConfig — apiKey·model·endpoint·provider
  * - testWoo.enPivot.extractSlots·toPipelineSlots — 전체 NL 번역 (load 선행)
  * - testWoo.fragments.searchSlots·listLexiconCards·healDomain·saveParamDomain
- * - testWoo.fragContract.matchEnPivotSlot·splitCoordSlots·slotCoverParts — 매칭·및/and 분할·leftover
+ * - testWoo.fragContract.matchEnPivotSlot·healSlotConceptFromCatalog·splitCoordSlots·slotCoverParts — 매칭·형제축 heal·및/and 분할·leftover
  * - HttpClientRequest + MemoryBuffer — serverConf urlPermission 필요
  * - Foundry `_normalizeSlots` — normalizeAtomicSlots 재사용
  *
@@ -1534,6 +1534,12 @@ testWoo.llm = (function () {
       }
       slots = keptSlots;
     }
+    if (testWoo.fragContract && testWoo.fragContract.healSlotConceptFromCatalog &&
+        pack && pack.cards) {
+      var hi;
+      for (hi = 0; slots && hi < slots.length; hi++)
+        testWoo.fragContract.healSlotConceptFromCatalog(slots[hi], pack.cards);
+    }
     try {
       logInfo("[testWoo.llm.generatePlan] lexicon=" + lexSlots.length +
         " llm=" + llmSlots.length + " merged=" + slots.length +
@@ -2739,4 +2745,4 @@ testWoo.llm = (function () {
     _readResponseBody: _readResponseBody
   };
 })();
-testWoo.llm.__v = "200";
+testWoo.llm.__v = "201";

@@ -81,9 +81,10 @@ Other tuning: `testWooEnv.js`. Data/seed: [acc-data-access.md](acc-data-access.m
 
 ## Custom activity runtime (B)
 
-WF element `ibankSqlDM` (legacy palette xpath may still be `customActivity`)  
-→ child `ai-sql-id` → load `woo:testWooAiSql.@sql_query` → execute → transition `tableName/schema/recCount`.
+Campaign template `OPEmptyTemplate_AI` (id **28001**) · WKF template `wfEmptyTemplate_AI` (id **41145**).  
+Inject target: **`sqlDM` `@name=aiStudioSql`** → schema child **`userScript`** (AI Studio SQL) + `ai-sql-id`.  
+Start `target="aiStudioSql"`. Old WKF `customActivity` still writes `script`. Generic unnamed OOTB `sqlDM` is not a bind target.
 
-Do **not** write SQL into `<script>`. OOTB SQL Data Management is not a bind target.
+OOTB SQL Data Management (`sql`) is not a bind target.
 
 See `new_ver/workflow/testWooSampleCustomActivityContract.xml`.

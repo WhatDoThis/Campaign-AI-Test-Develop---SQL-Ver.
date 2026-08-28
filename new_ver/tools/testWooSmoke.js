@@ -8,7 +8,7 @@
  * [Main Functions]
  * ===========
  * - 1. 라이브러리 전역 정의 확인 (testWoo.* · fragContract 포함)
- * - 1b. FragContract — 축 identity·validateBind·렉시콘·다축 분할·`_group`·남는 명사 미삼킴·promptHints
+ * - 1b. FragContract — 축 identity·형제축 conceptHeal·validateBind·렉시콘·다축 분할·`_group`·남는 명사 미삼킴·promptHints
  * - 1h. Compiler exclude-only — FROM universe + EXCEPT (NOT IN 금지, 픽스처 테이블)
  * - 1c. normalizeAtomicSlots — EnPivot 슬롯 통과 · KO 축 분할 없음
  * - 1d. parseFragmentJson — JSON 2개 → 첫 채택 + extraSlots (V0, 비과금)
@@ -320,6 +320,40 @@ function twStepFragContract() {
       text: "푸시 수신동의한", concept: "push_consent"
     })) {
       twFail("1b.fragContract", "marketing frag must not axes-match push_consent slot");
+      return false;
+    }
+    if (!fc.healSlotConceptFromCatalog) {
+      twFail("1b.fragContract", "healSlotConceptFromCatalog missing");
+      return false;
+    }
+    var siblingPush = {
+      text: "푸시 동의하고",
+      concept: "marketing_consent",
+      en_literal: "consented to push"
+    };
+    fc.healSlotConceptFromCatalog(siblingPush, [consentCard, mktCard]);
+    if (String(siblingPush.concept) !== "push_consent") {
+      twFail("1b.fragContract", "sibling consent must heal to push_consent, got " +
+        String(siblingPush.concept));
+      return false;
+    }
+    if (fc.axesCompatible(mktCard, siblingPush)) {
+      twFail("1b.fragContract", "healed push slot must not match marketing frag");
+      return false;
+    }
+    if (!fc.axesCompatible(consentCard, siblingPush)) {
+      twFail("1b.fragContract", "healed push slot must match push frag");
+      return false;
+    }
+    var keepMkt = {
+      text: "마케팅 수신동의하지 않고",
+      concept: "marketing_consent",
+      en_literal: "did not consent to marketing communications"
+    };
+    fc.healSlotConceptFromCatalog(keepMkt, [consentCard, mktCard]);
+    if (String(keepMkt.concept) !== "marketing_consent") {
+      twFail("1b.fragContract", "marketing slot must stay marketing_consent, got " +
+        String(keepMkt.concept));
       return false;
     }
     if (fc.libraryHitPredicate(consentCard, {
@@ -1573,6 +1607,24 @@ function twStepEnMatch() {
     if (!nRes || Number(nRes.ageMin) !== 10 || Number(nRes.ageMax) !== 40) {
       twFail("1g.enMatch", "resolveNlParams 10대~30대 must be 10~40, got " +
         JSON.stringify(nRes));
+      return false;
+    }
+    var nCompact = fc.matchEnPivotSlot(ageDom, {
+      text: "20~30대", surface: "20~30대", en_literal: "20s to 30s",
+      concept: "age_group", kind: "range"
+    });
+    if (!nCompact || !nCompact.value ||
+        Number(nCompact.value.ageMin) !== 20 || Number(nCompact.value.ageMax) !== 40) {
+      twFail("1g.enMatch", "20~30대 must bind 20~40, not last decade, got " +
+        JSON.stringify(nCompact));
+      return false;
+    }
+    var nCompactRes = fc.resolveNlParams(ageDom, "푸시 동의하고 iOS 사용하는 20~30대 고객",
+      { ageMin: 1, ageMax: 1 });
+    if (!nCompactRes || Number(nCompactRes.ageMin) !== 20 ||
+        Number(nCompactRes.ageMax) !== 40) {
+      twFail("1g.enMatch", "resolveNlParams 20~30대 must be 20~40, got " +
+        JSON.stringify(nCompactRes));
       return false;
     }
     var now = new Date().getTime();

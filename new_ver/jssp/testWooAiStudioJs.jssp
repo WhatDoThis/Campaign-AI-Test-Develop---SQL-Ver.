@@ -1,6 +1,6 @@
 <%/*
  * testWooAiStudioJs.jssp (Studio 클라이언트 JS 서빙)
- * new_ver/html/testWooAiStudio.js 와 동기 유지 · v=197 · orphan SQL draft+Program 매핑 진입.
+ * new_ver/html/testWooAiStudio.js 와 동기 유지 · v=199 · aiStudioSql SQL 편집기 주입.
  */
 response.setContentType("text/javascript;charset=utf-8");
 try {
@@ -828,6 +828,45 @@ try {
   }
 
   var _recentNl = [];
+  var RECENT_NL_MAX = 10;
+
+  function _normalizeRecentItem(it) {
+    if (it && typeof it === "object" && it.text != null) {
+      return { text: String(it.text), at: it.at != null ? Number(it.at) : 0 };
+    }
+    if (typeof it === "string" && it) {
+      return { text: it, at: 0 };
+    }
+    return null;
+  }
+
+  function _formatRecentNlTime(ts) {
+    if (!ts) return "";
+    var d = new Date(Number(ts));
+    if (isNaN(d.getTime())) return "";
+    var now = new Date();
+    var hh = d.getHours();
+    var mm = d.getMinutes();
+    var pad = function (n) {
+      return n < 10 ? "0" + String(n) : String(n);
+    };
+    var time = pad(hh) + ":" + pad(mm);
+    if (
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate()
+    ) {
+      return time;
+    }
+    return pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + time;
+  }
+
+  function _recentNlLabel(item) {
+    if (!item || !item.text) return "";
+    var t = _formatRecentNlTime(item.at);
+    if (t) return "(" + t + ") " + item.text;
+    return item.text;
+  }
 
   function _clipNl(s, maxLen) {
     s = _trim(s);
@@ -853,11 +892,12 @@ try {
       a = document.createElement("a");
       a.href = "#";
       a.className = "tw-rq";
-      a.appendChild(document.createTextNode(_recentNl[i]));
+      a.appendChild(document.createTextNode(_recentNlLabel(_recentNl[i])));
       a.onclick = (function (idx) {
         return function () {
           var t = $("nl");
-          if (t) t.value = _recentNl[idx];
+          var row = _recentNl[idx];
+          if (t && row && row.text) t.value = row.text;
           return false;
         };
       })(i);
@@ -867,8 +907,15 @@ try {
 
   function _loadRecentNl() {
     post("testWooAiValidate.jssp", { action: "listRecentNl" }, function (res) {
-      if (res && res.ok && res.items && res.items.length)
-        _recentNl = res.items;
+      var list = [];
+      var j, norm;
+      if (res && res.ok && res.items && res.items.length) {
+        for (j = 0; j < res.items.length && list.length < RECENT_NL_MAX; j++) {
+          norm = _normalizeRecentItem(res.items[j]);
+          if (norm) list.push(norm);
+        }
+      }
+      _recentNl = list;
       _renderRecentNl();
     });
   }
@@ -876,18 +923,30 @@ try {
   function _pushRecentNl(text) {
     var q = _clipNl(text, 240);
     if (!q) return;
-    if (_recentNl.length && _recentNl[0] === q) {
+    if (_recentNl.length && _recentNl[0].text === q) {
       _renderRecentNl();
       return;
     }
-    var next = [q];
+    var now = new Date().getTime();
+    var next = [{ text: q, at: now }];
     var i;
-    for (i = 0; i < _recentNl.length && next.length < 8; i++) {
-      if (_recentNl[i] !== q) next.push(_recentNl[i]);
+    for (i = 0; i < _recentNl.length && next.length < RECENT_NL_MAX; i++) {
+      if (_recentNl[i].text !== q) next.push(_recentNl[i]);
     }
     _recentNl = next;
     _renderRecentNl();
-    post("testWooAiValidate.jssp", { action: "pushRecentNl", text: q }, function () {});
+    post("testWooAiValidate.jssp", { action: "pushRecentNl", text: q }, function (res) {
+      if (res && res.ok && res.items && res.items.length) {
+        var list = [];
+        var j, norm;
+        for (j = 0; j < res.items.length && list.length < RECENT_NL_MAX; j++) {
+          norm = _normalizeRecentItem(res.items[j]);
+          if (norm) list.push(norm);
+        }
+        _recentNl = list;
+        _renderRecentNl();
+      }
+    });
   }
 
   function applyNlPatch(orig, surface, patch) {
@@ -3587,7 +3646,7 @@ try {
           renderSql(state.sql);
           renderSummaryHint(
             "Loaded ai_sql_id=" + it.id +
-            " \u2014 ibankSqlDM ai_sql-id=" + it.id +
+            " \u2014 aiStudioSql SQL \uD3B8\uC9D1\uAE30\uC5D0 \uBC18\uC601 (ai_sql_id=" + it.id + ")" +
             (state.summary ? (" · " + state.summary) : "")
           );
           loadSqlList();
@@ -3603,7 +3662,7 @@ try {
       $("hint").className = "banner ok";
       $("hint").textContent =
         "Loaded ai_sql_id=" + it.id +
-        " \u2014 ibankSqlDM \uC758 ai-sql-id \uC5D0 \uC774 \uAC12\uC744 \uB123\uC73C\uC138\uC694 (script SQL \uAE08\uC9C0).";
+        " \u2014 \uB4F1\uB85D \uC2DC aiStudioSql SQL \uD3B8\uC9D1\uAE30\uC5D0 \uB4E3\uC5B4\uAC11\uB2C8\uB2E4.";
       loadSqlList();
     }, function (e) {
       showErr(String(e && e.message ? e.message : e));
@@ -3925,15 +3984,24 @@ try {
     }
   }
 
-  // IE 는 <details> 미지원 — #twDiagSum 클릭 토글. embed 한시적 기본 펼침 (#139)
+  // IE 는 <details> 미지원 — #twDiagSum 클릭 토글. 기본 닫힘
+  function _setDiagOpen(open) {
+    var sum = $("twDiagSum");
+    var log = $("twDiagLog");
+    if (!sum || !log) return;
+    log.style.display = open ? "block" : "none";
+    sum.textContent = open
+      ? "\uC9C4\uB2E8\uB85C\uADF8 - \uD074\uB9AD\uD558\uC5EC \uC811\uAE30"
+      : "\uC9C4\uB2E8\uB85C\uADF8 - \uD074\uB9AD\uD558\uC5EC \uC5F4\uAE30";
+  }
+
   function _wireDiagToggle() {
     var sum = $("twDiagSum");
     var log = $("twDiagLog");
     if (!sum || !log) return;
-    if (EMBED) log.style.display = "block";
-    else if (!log.style.display) log.style.display = "none";
+    _setDiagOpen(false);
     sum.onclick = function () {
-      log.style.display = (log.style.display === "none") ? "block" : "none";
+      _setDiagOpen(log.style.display === "none");
       return false;
     };
   }
@@ -3947,7 +4015,7 @@ try {
       _wireDiagToggle();
       try {
         var dm0 = (typeof document.documentMode !== "undefined") ? String(document.documentMode) : "n/a(non-IE)";
-          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | match=" + (MATCH_ENABLED ? "1" : "0") + " | phase=" + ctx.phase + " | v=197";
+          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | match=" + (MATCH_ENABLED ? "1" : "0") + " | phase=" + ctx.phase + " | v=199";
         var bootReached = !!(window.__TW_BOOT_MSG__);
         if (bootReached) _diag(String(window.__TW_BOOT_MSG__));
         _diag(okMsg);

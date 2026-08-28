@@ -31,7 +31,7 @@ Before implementing:
 
 1. **LLM does not emit final SQL** — only CNF `plan_json` via Pass0/Pass1
 2. **LLM calls only from JSSP/server JS** — no browser API keys
-3. **No workflow XML write** — Register stores history; activity reads `ai_sql_id`
+3. **Register inject** — writes registered SQL into `aiStudioSql` editor (`script`) + `ai-sql-id`; Start `target="aiStudioSql"`
 4. **Global object `testWoo.*`** — not `woo.*` (schema namespace collision)
 5. **Rhino-safe server JS** — no ES6 array methods, no `wait`, no Promise
 6. **SOAP** — only `ShellProbe`/`ShellPick`/`ShellBind` (never old Inspect/Bind names). Redeploy schema+JS+form together
@@ -54,7 +54,7 @@ Before implementing:
 - Funnel COUNT, EXPLAIN scale gates
 - `testWooWorkflowIo` (deprecated)
 - WF canvas fallback B/C (AI tab / campaign WebApp) — only if 7a soapCall path fails on env
-- `ibankSqlDM` runtime (`ai-sql-id` → `testWooAiSql` load) — section 7d (uplus library outside repo)
+- `aiStudioSql` runtime beyond script inject (uplus library outside repo)
 - LLM free-form SQL fallback (PRD Phase 2)
 
 ## Verification after changes

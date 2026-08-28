@@ -1,22 +1,22 @@
 /*
  * testWooWorkflowClone.js (Campaign·WKF 템플릿·잠금)
  * ==================================================
- * litmus 동기 __v=159 (#160 배포정합).
- * Program(@isAiFolder)→Campaign→WKF 계층 생성·목록·soft-lock.
- * Spawn/Start 금지. 캠페인당 WKF Max=15.
+ * litmus 동기 __v=161. Program(@isAiFolder)→Campaign→WKF 계층 생성·목록·soft-lock.
+ * 템플릿: OPEmptyTemplate_AI(28001) · wfEmptyTemplate_AI(41145). Spawn/Start 금지.
  *
  * [Main Functions]
  * ===========
- * - getTemplateName — WKF 템플릿 표시명
- * - getCampaignTemplateId — 캠페인 템플릿 id
- * - getWkfTemplateId — WKF 템플릿 id
+ * - getTemplateName — WKF 템플릿 internalName (wfEmptyTemplate_AI)
+ * - getCampaignTemplateName — 캠페인 템플릿 internalName (OPEmptyTemplate_AI)
+ * - getCampaignTemplateId — 캠페인 템플릿 id (28001)
+ * - getWkfTemplateId — WKF 템플릿 id (41145)
  * - getMaxWkfPerCampaign — 캠페인당 WKF 상한
  * - getProgramFullName — Program id→fullName
  * - listCampaignsByProgram — Program 하위 Campaign 목록
  * - createCampaign — CreateOperationFromModelId+Write
  * - listWkfsByCampaign — Campaign 하위 WKF 목록
  * - listWkfsByProgram — Program 하위 WKF 목록
- * - createWkfFromTemplate — CreateInstanceFromModel
+ * - createWkfFromTemplate — CreateInstanceFromModel + aiStudioSql 정규화
  * - resolveWorkflowsByName — 전역 WKF·캠페인·Program 메타
  * - acquireLock — WKF soft-lock 획득
  * - releaseLock — soft-lock 해제
@@ -25,7 +25,9 @@
  * [Dependencies]
  * =========
  * - nms:operation·xtk:workflow·woo:testWooAiWkfLock — schema·Write
- * - testWooAiCampaignTemplateId·testWooAiWkfTemplateId·testWooAiWkfTemplateName·testWooAiWkfMaxPerCampaign Option
+ * - testWoo.workflowUi.normalizeAiActivity — 생성 후 Start target=aiStudioSql
+ * - Option testWooAiCampaignTemplateId·testWooAiWkfTemplateId·testWooAiWkfTemplateName
+ * - 기본값 OPEmptyTemplate_AI=28001 · wfEmptyTemplate_AI=41145. 구 10002/17234 Option은 무시
  */
 
 if (typeof testWoo === "undefined") testWoo = {};
@@ -39,9 +41,13 @@ testWoo.wfClone = (function () {
   var OPT_WKF_TPL_ID = "testWooAiWkfTemplateId";
   var OPT_TEMPLATE = "testWooAiWkfTemplateName";
   var OPT_MAX_WKF = "testWooAiWkfMaxPerCampaign";
-  var DEFAULT_CAMP_TPL_ID = 10002;
-  var DEFAULT_WKF_TPL_ID = 17234;
-  var DEFAULT_TEMPLATE = "wfEmptyTemplate_CUSTOM";
+  var DEFAULT_CAMP_TPL_ID = 28001;
+  var DEFAULT_CAMP_TPL_NAME = "OPEmptyTemplate_AI";
+  var DEFAULT_WKF_TPL_ID = 41145;
+  var DEFAULT_TEMPLATE = "wfEmptyTemplate_AI";
+  var RETIRED_CAMP_TPL_ID = 10002;
+  var RETIRED_WKF_TPL_ID = 17234;
+  var RETIRED_TEMPLATE = "wfEmptyTemplate_CUSTOM";
   var DEFAULT_MAX_WKF = 15;
   var HARD_MAX_WKF = 20;
   var DEFAULT_LIMIT = 200;
@@ -81,32 +87,28 @@ testWoo.wfClone = (function () {
     } catch (eO) {
       n = "";
     }
-    return _trim(n) || DEFAULT_TEMPLATE;
+    n = _trim(n);
+    if (!n || n === RETIRED_TEMPLATE) return DEFAULT_TEMPLATE;
+    return n;
   }
 
-  // 1a2. 캠페인 템플릿 id (CreateOperationFromModelId)
-  function getCampaignTemplateId() {
+  function _idFromOption(optKey, retiredId) {
     var id = 0;
     try {
-      var raw = getOption(OPT_CAMP_TPL_ID);
+      var raw = getOption(optKey);
       if (raw != null && String(raw) !== "") id = parseInt(raw, 10);
     } catch (eO) {}
-    if (!isNaN(id) && id > 0) return id;
-    return DEFAULT_CAMP_TPL_ID;
+    if (isNaN(id) || id <= 0) return 0;
+    if (retiredId && id === retiredId) return 0;
+    return id;
   }
 
-  // 1a3. WKF 템플릿 id (CreateInstanceFromModel)
-  function getWkfTemplateId() {
-    var id = 0;
+  function _resolveModelId(schema, internalName) {
+    var nm = _trim(internalName);
+    if (!nm) return 0;
     try {
-      var raw = getOption(OPT_WKF_TPL_ID);
-      if (raw != null && String(raw) !== "") id = parseInt(raw, 10);
-    } catch (eO) {}
-    if (!isNaN(id) && id > 0) return id;
-    try {
-      var nm = getTemplateName();
       var q = xtk.queryDef.create(
-        <queryDef schema={WF_SCHEMA} operation="get">
+        <queryDef schema={schema} operation="get">
           <select>
             <node expr="@id"/>
             <node expr="@internalName"/>
@@ -124,10 +126,32 @@ testWoo.wfClone = (function () {
       }
     } catch (eR) {
       try {
-        logWarning("[testWoo.wfClone.getWkfTemplateId] resolve by name: " + eR);
+        logWarning("[testWoo.wfClone._resolveModelId] " + schema + " " + nm + ": " + eR);
       } catch (eL) {}
     }
+    return 0;
+  }
+
+  // 1a2. 캠페인 템플릿 id (CreateOperationFromModelId)
+  function getCampaignTemplateId() {
+    var id = _idFromOption(OPT_CAMP_TPL_ID, RETIRED_CAMP_TPL_ID);
+    if (id) return id;
+    id = _resolveModelId(OP_SCHEMA, DEFAULT_CAMP_TPL_NAME);
+    if (id) return id;
+    return DEFAULT_CAMP_TPL_ID;
+  }
+
+  // 1a3. WKF 템플릿 id (CreateInstanceFromModel)
+  function getWkfTemplateId() {
+    var id = _idFromOption(OPT_WKF_TPL_ID, RETIRED_WKF_TPL_ID);
+    if (id) return id;
+    id = _resolveModelId(WF_SCHEMA, getTemplateName());
+    if (id) return id;
     return DEFAULT_WKF_TPL_ID;
+  }
+
+  function getCampaignTemplateName() {
+    return DEFAULT_CAMP_TPL_NAME;
   }
 
   // 1b. 캠페인당 WKF 상한 (기본 15)
@@ -596,6 +620,21 @@ testWoo.wfClone = (function () {
         logWarning("[testWoo.wfClone.createWkfFromTemplate] lock after create: " + eLock);
       } catch (eL2) {}
     }
+
+    try {
+      loadLibrary("woo:testWooWorkflowUi.js");
+      if (typeof testWoo !== "undefined" && testWoo.workflowUi &&
+          testWoo.workflowUi.normalizeAiActivity) {
+        var norm = testWoo.workflowUi.normalizeAiActivity(out.id, out.name);
+        if (norm && norm.ok) {
+          out.ai_activity = String(norm.activityName || "aiStudioSql");
+        }
+      }
+    } catch (eNorm) {
+      try {
+        logWarning("[testWoo.wfClone.createWkfFromTemplate] normalizeAi: " + eNorm);
+      } catch (eL3) {}
+    }
     return out;
   }
 
@@ -742,6 +781,7 @@ testWoo.wfClone = (function () {
 
   return {
     getTemplateName: getTemplateName,
+    getCampaignTemplateName: getCampaignTemplateName,
     getCampaignTemplateId: getCampaignTemplateId,
     getWkfTemplateId: getWkfTemplateId,
     getMaxWkfPerCampaign: getMaxWkfPerCampaign,
@@ -757,4 +797,4 @@ testWoo.wfClone = (function () {
     getLock: getLock
   };
 })();
-testWoo.wfClone.__v = "159";
+testWoo.wfClone.__v = "161";

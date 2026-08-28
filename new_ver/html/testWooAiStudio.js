@@ -19,7 +19,7 @@
  * - _appendNewSqlRow — 임시 조건 [새 SQL 쓰기]. 넣기=신규 행, 같은 SQL 해시는 행 재사용
  * - putDraft / _cacheListDrafts — R2 미반영 SQL 캐시(twStudioCache)
  * - renderChips / _chipDisplay — 칩은 params 값. `_group`이면 별칭 → 값. 미확인은 [맞음]
- * - _loadRecentNl / _pushRecentNl / _renderRecentNl — 로그인별 최근 NL 질문(답변 없음)
+ * - _loadRecentNl / _pushRecentNl / _renderRecentNl — 로그인별 이전 질문(최대 10·입력시간)
  *
  * [Dependencies]
  * =========
@@ -34,7 +34,7 @@
  * - intent create/reuse UI 폐기 — 분기는 목록 데이터(R4+)
  * - ST0 최초 진입 시 NL 즉시 활성(폴더 선지정 게이트 없음)
  * - Draft는 saveAiSql/DB 금지 — Register 성공 시만 DB
- * - Mirror of /woo/testWooAiStudioJs.jssp?v=197 · R8 funnel dead 제거
+ * - Mirror of /woo/testWooAiStudioJs.jssp?v=199 · aiStudioSql SQL 편집기
  * - Foundry done 자동 재생성은 after_foundry(재큐잉 금지)
  */
 (function () {
@@ -764,6 +764,45 @@
   }
 
   var _recentNl = [];
+  var RECENT_NL_MAX = 10;
+
+  function _normalizeRecentItem(it) {
+    if (it && typeof it === "object" && it.text != null) {
+      return { text: String(it.text), at: it.at != null ? Number(it.at) : 0 };
+    }
+    if (typeof it === "string" && it) {
+      return { text: it, at: 0 };
+    }
+    return null;
+  }
+
+  function _formatRecentNlTime(ts) {
+    if (!ts) return "";
+    var d = new Date(Number(ts));
+    if (isNaN(d.getTime())) return "";
+    var now = new Date();
+    var hh = d.getHours();
+    var mm = d.getMinutes();
+    var pad = function (n) {
+      return n < 10 ? "0" + String(n) : String(n);
+    };
+    var time = pad(hh) + ":" + pad(mm);
+    if (
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate()
+    ) {
+      return time;
+    }
+    return pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + time;
+  }
+
+  function _recentNlLabel(item) {
+    if (!item || !item.text) return "";
+    var t = _formatRecentNlTime(item.at);
+    if (t) return "(" + t + ") " + item.text;
+    return item.text;
+  }
 
   function _clipNl(s, maxLen) {
     s = _trim(s);
@@ -789,11 +828,12 @@
       a = document.createElement("a");
       a.href = "#";
       a.className = "tw-rq";
-      a.appendChild(document.createTextNode(_recentNl[i]));
+      a.appendChild(document.createTextNode(_recentNlLabel(_recentNl[i])));
       a.onclick = (function (idx) {
         return function () {
           var t = $("nl");
-          if (t) t.value = _recentNl[idx];
+          var row = _recentNl[idx];
+          if (t && row && row.text) t.value = row.text;
           return false;
         };
       })(i);
@@ -803,8 +843,15 @@
 
   function _loadRecentNl() {
     post("testWooAiValidate.jssp", { action: "listRecentNl" }, function (res) {
-      if (res && res.ok && res.items && res.items.length)
-        _recentNl = res.items;
+      var list = [];
+      var j, norm;
+      if (res && res.ok && res.items && res.items.length) {
+        for (j = 0; j < res.items.length && list.length < RECENT_NL_MAX; j++) {
+          norm = _normalizeRecentItem(res.items[j]);
+          if (norm) list.push(norm);
+        }
+      }
+      _recentNl = list;
       _renderRecentNl();
     });
   }
@@ -812,18 +859,30 @@
   function _pushRecentNl(text) {
     var q = _clipNl(text, 240);
     if (!q) return;
-    if (_recentNl.length && _recentNl[0] === q) {
+    if (_recentNl.length && _recentNl[0].text === q) {
       _renderRecentNl();
       return;
     }
-    var next = [q];
+    var now = new Date().getTime();
+    var next = [{ text: q, at: now }];
     var i;
-    for (i = 0; i < _recentNl.length && next.length < 8; i++) {
-      if (_recentNl[i] !== q) next.push(_recentNl[i]);
+    for (i = 0; i < _recentNl.length && next.length < RECENT_NL_MAX; i++) {
+      if (_recentNl[i].text !== q) next.push(_recentNl[i]);
     }
     _recentNl = next;
     _renderRecentNl();
-    post("testWooAiValidate.jssp", { action: "pushRecentNl", text: q }, function () {});
+    post("testWooAiValidate.jssp", { action: "pushRecentNl", text: q }, function (res) {
+      if (res && res.ok && res.items && res.items.length) {
+        var list = [];
+        var j, norm;
+        for (j = 0; j < res.items.length && list.length < RECENT_NL_MAX; j++) {
+          norm = _normalizeRecentItem(res.items[j]);
+          if (norm) list.push(norm);
+        }
+        _recentNl = list;
+        _renderRecentNl();
+      }
+    });
   }
 
   function applyNlPatch(orig, surface, patch) {
@@ -3498,7 +3557,7 @@
           renderSql(state.sql);
           renderSummaryHint(
             "Loaded ai_sql_id=" + it.id +
-            " \u2014 ibankSqlDM ai_sql-id=" + it.id +
+            " \u2014 aiStudioSql SQL \uD3B8\uC9D1\uAE30\uC5D0 \uBC18\uC601 (ai_sql_id=" + it.id + ")" +
             (state.summary ? (" · " + state.summary) : "")
           );
           loadSqlList();
@@ -3514,7 +3573,7 @@
       $("hint").className = "banner ok";
       $("hint").textContent =
         "Loaded ai_sql_id=" + it.id +
-        " \u2014 ibankSqlDM \uC758 ai-sql-id \uC5D0 \uC774 \uAC12\uC744 \uB123\uC73C\uC138\uC694 (script SQL \uAE08\uC9C0).";
+        " \u2014 \uB4F1\uB85D \uC2DC aiStudioSql SQL \uD3B8\uC9D1\uAE30\uC5D0 \uB4E3\uC5B4\uAC11\uB2C8\uB2E4.";
       loadSqlList();
     }, function (e) {
       showErr(String(e && e.message ? e.message : e));
@@ -3841,15 +3900,24 @@
     }
   }
 
-  // IE 는 <details> 미지원 — #twDiagSum 클릭 토글. embed 한시적 기본 펼침 (#139)
+  // IE 는 <details> 미지원 — #twDiagSum 클릭 토글. 기본 닫힘
+  function _setDiagOpen(open) {
+    var sum = $("twDiagSum");
+    var log = $("twDiagLog");
+    if (!sum || !log) return;
+    log.style.display = open ? "block" : "none";
+    sum.textContent = open
+      ? "\uC9C4\uB2E8\uB85C\uADF8 - \uD074\uB9AD\uD558\uC5EC \uC811\uAE30"
+      : "\uC9C4\uB2E8\uB85C\uADF8 - \uD074\uB9AD\uD558\uC5EC \uC5F4\uAE30";
+  }
+
   function _wireDiagToggle() {
     var sum = $("twDiagSum");
     var log = $("twDiagLog");
     if (!sum || !log) return;
-    if (EMBED) log.style.display = "block";
-    else if (!log.style.display) log.style.display = "none";
+    _setDiagOpen(false);
     sum.onclick = function () {
-      log.style.display = (log.style.display === "none") ? "block" : "none";
+      _setDiagOpen(log.style.display === "none");
       return false;
     };
   }
@@ -3863,7 +3931,7 @@
       _wireDiagToggle();
       try {
         var dm0 = (typeof document.documentMode !== "undefined") ? String(document.documentMode) : "n/a(non-IE)";
-          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | match=" + (MATCH_ENABLED ? "1" : "0") + " | phase=" + ctx.phase + " | v=197";
+          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | match=" + (MATCH_ENABLED ? "1" : "0") + " | phase=" + ctx.phase + " | v=199";
         var bootReached = !!(window.__TW_BOOT_MSG__);
         if (bootReached) _diag(String(window.__TW_BOOT_MSG__));
         _diag(okMsg);

@@ -25,7 +25,7 @@ Not "AI that writes SQL well" — a **pipeline that blocks bad SQL from register
 |-------------------------------|-------------------------------|
 | `uplus:ai_fragment` + `expr` WHERE snippets | `woo:testWooAiFragment` + full `sql_text` SELECT |
 | `ir_json` IR | `plan_json` CNF |
-| WF XML `<script>` inject + md5 | **Register → `ai_sql_id` → `ibankSqlDM`/`ai-sql-id`** only |
+| WF XML `<script>` inject + md5 | **Register → `aiStudioSql` SQL 편집기(`script`) + `ai-sql-id`** |
 | request_queue on unmatched | **Implemented** — async queue + WKF (Foundry enabled) |
 | Funnel COUNT | **DEFERRED** |
 | Pass0/StageA/Pass1 for ~100k fragments | **Implemented** |
