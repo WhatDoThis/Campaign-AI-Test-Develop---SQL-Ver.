@@ -1,8 +1,3 @@
-<!--
-woo:testWooAiRequestQueue (Foundry 큐 입력 폼)
-listdet 하단 잘림 방지: form type=notebook + navtree type=list(더블클릭 Open)
-ACC Input forms 에 본 XML 전체 재등록(type=notebook 줄 확인)
--->
 <form _cs="Test Woo AI Request Queue" entity-schema="woo:testWooAiRequestQueue" img="xtk:form.png"
       label="Test Woo AI Request Queue" name="testWooAiRequestQueue" namespace="woo" type="notebook"
       xtkschema="xtk:form">
@@ -11,9 +6,11 @@ ACC Input forms 에 본 XML 전체 재등록(type=notebook 줄 확인)
     <input xpath="@status"/>
     <input xpath="@attempt_count"/>
     <input xpath="@last_error"/>
+    <input xpath="@err_id"/>
     <input xpath="@missing_slots_json"/>
     <input xpath="@created_by"/>
     <input xpath="@workflow_name"/>
+    <input xpath="@tokens_used"/>
     <input xpath="@created_at"/>
     <input xpath="@updated_at"/>
   </container>

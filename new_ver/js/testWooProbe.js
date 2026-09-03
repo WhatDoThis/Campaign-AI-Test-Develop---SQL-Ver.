@@ -1,7 +1,7 @@
 /*
  * testWooProbe.js (읽기 전용 SQL 프로브)
  * ==================================================
- * litmus 동기 __v=159 (#160 배포정합).
+ * litmus 동기 __v=161. Env probe.sampleLimit · timeoutMs (_probeTimeoutMs).
  * Foundry·게이트·dedup L3용 SELECT-only 실행. sqlExec 금지.
  * 방언별 LIMIT/TOP/FETCH 래핑은 limitSelect 단일 지점.
  *
@@ -23,8 +23,31 @@ var testWoo = testWoo || {};
 testWoo.probe = (function () {
   "use strict";
 
-  var PROBE_TIMEOUT_MS = 30000;
-  var DEFAULT_SAMPLE = 20;
+  function _sampleLimit() {
+    try {
+      if (testWoo.cfg && testWoo.cfg.getConfig) {
+        var n = Number(testWoo.cfg.getConfig().probe.sampleLimit);
+        if (!isNaN(n) && n > 0) return n;
+      }
+    } catch (eC) {}
+    try {
+      if (testWoo.env && testWoo.env.getEnv) {
+        var p = testWoo.env.getEnv().probe;
+        if (p && p.sampleLimit) return Number(p.sampleLimit);
+      }
+    } catch (eE) {}
+    return 20;
+  }
+
+  function _probeTimeoutMs() {
+    try {
+      if (testWoo.env && testWoo.env.getEnv) {
+        var p = testWoo.env.getEnv().probe;
+        if (p && p.timeoutMs) return Number(p.timeoutMs);
+      }
+    } catch (eT) {}
+    return 30000;
+  }
 
   function _trim(s) {
     return String(s == null ? "" : s).replace(/^\s+|\s+$/g, "");
@@ -48,7 +71,7 @@ testWoo.probe = (function () {
     // orderBy: null 이면 ORDER BY 를 생략한다(파생 테이블·집합연산 내부 래핑용).
     //   MSSQL 은 파생 테이블/서브쿼리 안의 ORDER BY 를 거부한다.
     function limitSelect(selectList, fromClause, whereSql, n, opts) {
-      var lim = Number(n) || DEFAULT_SAMPLE;
+      var lim = Number(n) || _sampleLimit();
       var o = opts || {};
       var dis = o.distinct ? "DISTINCT " : "";
       var ob = (o.orderBy === null) ? "" : String(o.orderBy || "1");
@@ -107,8 +130,8 @@ testWoo.probe = (function () {
     try {
       var xml = sqlSelect(String(format || "row"), String(query));
       var elapsed = new Date().getTime() - t0;
-      if (elapsed > PROBE_TIMEOUT_MS)
-        return { ok: false, stage: "timeout", error: "probe exceeded " + PROBE_TIMEOUT_MS + "ms" };
+      if (elapsed > _probeTimeoutMs())
+        return { ok: false, stage: "timeout", error: "probe exceeded " + _probeTimeoutMs() + "ms" };
       return { ok: true, xml: xml };
     } catch (e) {
       var msg = (e && e.message != null) ? String(e.message) : String(e);
@@ -164,8 +187,8 @@ testWoo.probe = (function () {
     try {
       var n = sqlGetInt(String(query));
       var elapsed = new Date().getTime() - t0;
-      if (elapsed > PROBE_TIMEOUT_MS)
-        return { ok: false, stage: "timeout", error: "probe count exceeded " + PROBE_TIMEOUT_MS + "ms" };
+      if (elapsed > _probeTimeoutMs())
+        return { ok: false, stage: "timeout", error: "probe count exceeded " + _probeTimeoutMs() + "ms" };
       return { ok: true, value: Number(n) };
     } catch (e) {
       var msg = (e && e.message != null) ? String(e.message) : String(e);
@@ -199,8 +222,8 @@ testWoo.probe = (function () {
       "SELECT COUNT(*) FROM (" + inner + ") tw_null WHERE " + kc + " IS NULL");
     if (!nullR.ok) return { ok: false, stage: nullR.stage || "nullkey", error: nullR.error };
 
-    var lim = sampleLimit != null ? Number(sampleLimit) : DEFAULT_SAMPLE;
-    if (isNaN(lim) || lim < 1) lim = DEFAULT_SAMPLE;
+    var lim = sampleLimit != null ? Number(sampleLimit) : _sampleLimit();
+    if (isNaN(lim) || lim < 1) lim = _sampleLimit();
     if (lim > 100) lim = 100;
 
     // 샘플: 컬럼 별칭을 tw_key 로 고정해 format 과 1:1 대응시킨다.
@@ -235,4 +258,4 @@ testWoo.probe = (function () {
     validKeyColumn: _validKeyColumn
   };
 })();
-testWoo.probe.__v = "159";
+testWoo.probe.__v = "161";

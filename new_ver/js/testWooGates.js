@@ -1,7 +1,7 @@
 /*
  * testWooGates.js (Plan·Fragment 검증 게이트)
  * ==================================================
- * litmus 동기 __v=164 (span absolute NL — joinDaysWithin plan gate skip).
+ * litmus 동기 __v=168 (specForParamKey — xpath↔Code param enum 병합).
  * CNF plan·fragment sql_text·param_domain 최소 검증.
  * Stage A 후보 밖 fragment 거절은 LLM Pass1 전용.
  * enum은 nlMap db와 합친다. {db,en} 는 db만. snake↔camel 별칭. 배열 params는 원소별.
@@ -19,7 +19,8 @@
  * [Dependencies]
  * =========
  * - testWoo.fragments.getByName — active fragment 존재 확인
- * - testWoo.fragContract.spanRangeSqlText — relative sql + calendar NL gate (#350)
+ * - testWoo.toolkit.refreshDomain — gates plan 검증 직전 live enum merge (#453)
+ * - testWoo.fragContract.specForParamKey — {{param}}↔xpath attr enum·nlMap 병합 (#454)
  */
 var testWoo = testWoo || {};
 testWoo.gates = (function () {
@@ -144,13 +145,27 @@ testWoo.gates = (function () {
     if (!domainParse.ok) return _fail("PLAN", path + ": param_domain JSON invalid: " + item.fragment);
     var domain = domainParse.value || {};
     var params = item.params || {};
-    var nlHay = plan && plan.nl_request ? String(plan.nl_request) : "";
+    var nlHay = "";
+    if (testWoo.fragContract && testWoo.fragContract.planHaystack)
+      nlHay = testWoo.fragContract.planHaystack(plan);
+    else if (plan && plan.nl_request)
+      nlHay = String(plan.nl_request);
+    if (testWoo.toolkit && testWoo.toolkit.refreshDomain) {
+      try {
+        var rrDom = testWoo.toolkit.refreshDomain(domain);
+        if (rrDom && rrDom.ok && rrDom.domain) domain = rrDom.domain;
+      } catch (eRd) { /* stale snapshot */ }
+    }
     // sql_text {{}} 만 검사. 도메인 키는 planCode↔plan_code 별칭으로 합친다.
     var need = {};
     var sql = String(f.sql_text || "");
     var re = /\{\{(\w+)\}\}/g;
     var m;
     while ((m = re.exec(sql)) != null) need[m[1]] = 1;
+    if (testWoo.fragContract && testWoo.fragContract.fillSqlParamGaps) {
+      params = testWoo.fragContract.fillSqlParamGaps(domain, need, params, nlHay);
+      item.params = params;
+    }
     for (var pk in need) {
       if (!need.hasOwnProperty(pk)) continue;
       var spec = _specForParam(domain, pk);
@@ -161,8 +176,11 @@ testWoo.gates = (function () {
         return _fail("PLAN", "required param missing: " + item.fragment + "." + pk);
       }
       if (missing) continue;
-      var tv = _checkTypeEnumRange(val, spec, item.fragment + "." + pk);
+      var tv = _checkTypeEnumRange(val, spec, item.fragment + "." + pk, nlHay, domain, pk);
       if (!tv.ok) return tv;
+      if (tv.normalized != null && params[pk] != null &&
+          String(tv.normalized) !== String(params[pk]))
+        params[pk] = tv.normalized;
     }
     return _ok("PLAN");
   }
@@ -209,12 +227,15 @@ testWoo.gates = (function () {
       for (nk in spec.nlMap) {
         if (!spec.nlMap.hasOwnProperty(nk)) continue;
         _addEnum(enumList, spec.nlMap[nk]);
+        _addEnum(enumList, nk);
       }
     }
     return enumList;
   }
 
   function _specForParam(domain, pk) {
+    if (testWoo.fragContract && testWoo.fragContract.specForParamKey)
+      return testWoo.fragContract.specForParamKey(domain, pk);
     var spec = (domain && domain[pk]) || null;
     var alt = _aliasParamKey(pk);
     var altSpec = (alt && alt !== pk && domain && domain[alt]) ? domain[alt] : null;
@@ -236,51 +257,55 @@ testWoo.gates = (function () {
     return out;
   }
 
-  function _checkTypeEnumRange(val, spec, path) {
+  function _checkTypeEnumRange(val, spec, path, haystack, domain, pk) {
     if (_isArray(val)) {
       if (!val.length) return _fail("PLAN", "empty array param: " + path);
       var ai;
       for (ai = 0; ai < val.length; ai++) {
-        var rA = _checkTypeEnumRange(val[ai], spec, path + "[" + ai + "]");
+        var rA = _checkTypeEnumRange(val[ai], spec, path + "[" + ai + "]", haystack, domain, pk);
         if (!rA.ok) return rA;
       }
       return _ok("PLAN");
     }
+    var normVal = val;
+    if (testWoo.fragContract && testWoo.fragContract.normalizeParamForCatalog)
+      normVal = testWoo.fragContract.normalizeParamForCatalog(spec, val, haystack || "");
     var enumList = _collectEnum(spec);
     if (enumList.length) {
       var ok = false;
       for (var i = 0; i < enumList.length; i++) {
-        if (String(enumList[i]) === String(val)) { ok = true; break; }
+        if (String(enumList[i]) === String(normVal)) { ok = true; break; }
       }
+      if (!ok && testWoo.fragContract && testWoo.fragContract.catalogProvesParamValue)
+        ok = testWoo.fragContract.catalogProvesParamValue(
+          spec, normVal, haystack || "", domain, pk);
       if (!ok) return _fail("PLAN", "param not in enum: " + path + "=" + val);
     }
     var t = String(spec.type || "").toLowerCase();
     if (t === "number" || t === "int" || t === "integer" || t === "long") {
-      if (typeof val !== "number" && !/^-?\d+(\.\d+)?$/.test(String(val)))
+      if (typeof normVal !== "number" && !/^-?\d+(\.\d+)?$/.test(String(normVal)))
         return _fail("PLAN", "param type number expected: " + path);
-      var num = typeof val === "number" ? val : parseFloat(String(val), 10);
+      var num = typeof normVal === "number" ? normVal : parseFloat(String(normVal), 10);
       if (spec.min != null && num < Number(spec.min))
         return _fail("PLAN", "param below min: " + path);
       if (spec.max != null && num > Number(spec.max))
         return _fail("PLAN", "param above max: " + path);
     }
     if (t === "boolean") {
-      if (val !== true && val !== false && val !== 0 && val !== 1 &&
-          val !== "0" && val !== "1" && val !== "true" && val !== "false")
+      if (normVal !== true && normVal !== false && normVal !== 0 && normVal !== 1 &&
+          normVal !== "0" && normVal !== "1" && normVal !== "true" && normVal !== "false")
         return _fail("PLAN", "param type boolean expected: " + path);
     }
     if (spec.min != null && t !== "number" && t !== "int" && t !== "integer" && t !== "long") {
-      if (typeof val === "number" && val < Number(spec.min))
+      if (typeof normVal === "number" && normVal < Number(spec.min))
         return _fail("PLAN", "param below min: " + path);
     }
     if (spec.max != null && t !== "number" && t !== "int" && t !== "integer" && t !== "long") {
-      if (typeof val === "number" && val > Number(spec.max))
+      if (typeof normVal === "number" && normVal > Number(spec.max))
         return _fail("PLAN", "param above max: " + path);
     }
-    return _ok("PLAN");
+    return { gate: "PLAN", ok: true, data: null, normalized: normVal };
   }
-
-  // 최종 SQL SELECT 리스트 (단일 grain 언급)
   function _checkOutput(sql, grain) {
     var s = _stripSqlNoise(String(sql || ""));
     var m = s.match(/^\s*SELECT\s+([\s\S]+?)\s+FROM\s/i);
@@ -480,4 +505,4 @@ testWoo.gates = (function () {
     checkScopePlan: checkScopePlan
   };
 })();
-testWoo.gates.__v = "164";
+testWoo.gates.__v = "168";

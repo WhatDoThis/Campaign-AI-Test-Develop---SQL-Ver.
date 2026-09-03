@@ -1,6 +1,6 @@
 <%/*
  * testWooAiStudioJs.jssp (Studio 클라이언트 JS 서빙)
- * new_ver/html/testWooAiStudio.js 와 동기 유지 · v=199 · aiStudioSql SQL 편집기 주입.
+ * new_ver/html/testWooAiStudio.js 와 동기 유지 · v=231 · fillSqlParamGaps gate fail diag.
  */
 response.setContentType("text/javascript;charset=utf-8");
 try {
@@ -32,11 +32,11 @@ try {
  * - renderGates / _inferTimeBasis — R7 absolute·relative 배지 (compiler 동결)
  * - renderChips / _chipDisplay — 칩은 params 값. `_group`이면 별칭 → 값. 미확인은 [맞음]
  * - _loadRecentNl / _pushRecentNl / _renderRecentNl — 로그인별 최근 NL 질문(답변 없음)
+ * - showErr / clearErr / _setHintBanner — #err·#hint 경고·에러를 #twDiagLog에 기록
  *
  * [Dependencies]
  * =========
  * - /woo/testWooAiGenerate|Validate|Register|Match|QueueStatus|StudioContext.jssp
- * - window.__TW_MATCH_ENABLED__ — Studio.jssp Option 주입
  * - sessionStorage(twStudioCache) 또는 JS 메모리 — localStorage 금지
  * - ES5 only — fetch/Promise/classList/forEach/const/let/=> 금지
  *
@@ -62,6 +62,7 @@ try {
   var OVERWRITE_MS = 8000;
   var _overwriteArmed = false;
   var _overwriteTimer = null;
+  var _wkfCreateInflight = false;
 
   // ACC urlViewer 구엔진에 URLSearchParams 없을 수 있음 — 수동 파싱
   function _qs(name) {
@@ -445,11 +446,11 @@ try {
       var text = "onerror: " + parts.join(" | ");
       _diag(text);
       try {
-        var h = $("hint");
-        if (h) {
-          h.className = "banner err";
-          h.textContent = "Studio JS error: " + String(msg) + " @" + String(line);
-        }
+        _setHintBanner(
+          "banner err",
+          "Studio JS error: " + String(msg) + " @" + String(line),
+          { skipDiag: true }
+        );
       } catch (e0) {}
       return false;
     };
@@ -488,7 +489,9 @@ try {
         _diag("XHR status " + endpoint + " → " + xhr.status);
         var t = _trim(String(xhr.responseText || "").replace(/^\uFEFF/, ""));
         if (!t) {
-          if (onErr) onErr(new Error(endpoint + " empty response (HTTP " + xhr.status + ")"));
+          var emptyMsg = endpoint + " empty response (HTTP " + xhr.status + ")";
+          _diag("XHR err " + emptyMsg);
+          if (onErr) onErr(new Error(emptyMsg));
           return;
         }
         var data;
@@ -498,7 +501,9 @@ try {
         } catch (eParse) {
           _diag("JSON parse fail " + endpoint);
           var preview = t.length > 800 ? t.substring(0, 800) + "..." : t;
-          if (onErr) onErr(new Error(endpoint + " non-JSON (HTTP " + xhr.status + "): " + preview));
+          var parseMsg = endpoint + " non-JSON (HTTP " + xhr.status + "): " + preview;
+          _diag("XHR err " + parseMsg.substring(0, 320));
+          if (onErr) onErr(new Error(parseMsg));
           return;
         }
         if (data && data.code === "AUTH" && data.logonUrl) {
@@ -537,9 +542,9 @@ try {
           var parts = [];
           var keys = [
             "common", "env", "cfg", "fragContract", "fragments", "llm", "enPivot",
-            "compiler", "gates", "repo", "lifecycle", "embedding", "foundry", "match",
+            "compiler", "gates", "repo", "lifecycle", "foundry", "match",
             "probe", "dedup", "toolkit", "feasibility", "studioContext", "wfClone",
-            "workflowUi"
+            "workflowUi", "opPrefs"
           ];
           var ki;
           for (ki = 0; ki < keys.length; ki++) {
@@ -574,8 +579,7 @@ try {
               ") \u2014 ACC \uCF58\uC194 JavaScript codes \uC7AC\uB4F1\uB85D \uD544\uC694. TW-BOOT v= \uB9CC\uC73C\uB85C\uB294 \uBCF4\uC99D\uB418\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.";
             var hint = $("hint");
             if (hint) {
-              hint.className = "banner warn";
-              hint.innerHTML = "<strong>[LIB]</strong> " + esc(warn);
+              _setHintBanner("banner warn", "<strong>[LIB]</strong> " + esc(warn), { html: true });
             }
             _diag("libs MISMATCH: " + mm.join(","));
           } else {
@@ -599,7 +603,37 @@ try {
     );
   }
 
+  var _lastUiErr = "";
+
+  function _hintPlain(content, isHtml) {
+    var s = String(content == null ? "" : content);
+    if (isHtml) s = s.replace(/<[^>]+>/g, " ");
+    s = _trim(s.replace(/\s+/g, " "));
+    if (s.length > 320) s = s.substring(0, 317) + "...";
+    return s;
+  }
+
+  /* err/warn 배너(#hint) — 진단로그에 남겨 깜빡임도 추적 */
+  function _setHintBanner(cls, content, opts) {
+    opts = opts || {};
+    var el = $("hint");
+    if (!el) return;
+    cls = _trim(cls || "banner");
+    el.className = cls;
+    if (opts.html) el.innerHTML = String(content == null ? "" : content);
+    else el.textContent = String(content == null ? "" : content);
+    if (opts.skipDiag) return;
+    var isErr = cls.indexOf("err") >= 0;
+    var isWarn = cls.indexOf("warn") >= 0;
+    if (isErr || isWarn) {
+      _diag("UI hint " + (isErr ? "err" : "warn") + ": " + _hintPlain(content, !!opts.html));
+    }
+  }
+
   function showErr(msg) {
+    msg = String(msg == null ? "" : msg);
+    _lastUiErr = msg;
+    _diag("UI err: " + msg);
     var e = $("err");
     if (!e) return;
     e.textContent = msg;
@@ -608,6 +642,10 @@ try {
   function clearErr() {
     var e = $("err");
     if (!e) return;
+    if (_lastUiErr) {
+      _diag("UI err cleared: " + _lastUiErr);
+      _lastUiErr = "";
+    }
     _addCls(e, "hidden");
   }
 
@@ -714,18 +752,20 @@ try {
       return;
     }
     if (status === "infeasible" || status === "partially_infeasible") {
-      el.className = "banner warn";
-      el.textContent = _queueStatusLabel(status) + " \u2014 \uC544\uB798 \uC0C1\uC138\uB97C \uD655\uC778\uD558\uC138\uC694.";
+      _setHintBanner(
+        "banner warn",
+        _queueStatusLabel(status) + " \u2014 \uC544\uB798 \uC0C1\uC138\uB97C \uD655\uC778\uD558\uC138\uC694."
+      );
       return;
     }
     if (status === "failed" || status === "needs_human_design" || status === "throttled") {
-      el.className = "banner err";
-      el.textContent = _queueStatusLabel(status) + idPart +
-        (lastError ? " \u2014 " + lastError : "");
+      _setHintBanner(
+        "banner err",
+        _queueStatusLabel(status) + idPart + (lastError ? " \u2014 " + lastError : "")
+      );
       return;
     }
-    el.className = "banner warn";
-    el.textContent = "Foundry \uD050: " + _queueStatusLabel(status) + idPart;
+    _setHintBanner("banner warn", "Foundry \uD050: " + _queueStatusLabel(status) + idPart);
   }
 
   function pollQueue(queueId, reviewUrl) {
@@ -830,6 +870,38 @@ try {
   var _recentNl = [];
   var RECENT_NL_MAX = 10;
 
+  function _recentNlStoreKey() {
+    var login = "";
+    try { login = String(window.__TW_LOGIN__ || ""); } catch (eL) { login = ""; }
+    return "twRecentNl_" + login;
+  }
+
+  function _persistRecentNlSession(list) {
+    if (typeof sessionStorage === "undefined" || !sessionStorage) return;
+    try {
+      sessionStorage.setItem(_recentNlStoreKey(), JSON.stringify(list || []));
+    } catch (eS) { /* quota/private */ }
+  }
+
+  function _loadRecentNlSession() {
+    if (typeof sessionStorage === "undefined" || !sessionStorage) return [];
+    try {
+      var raw = sessionStorage.getItem(_recentNlStoreKey());
+      if (!raw) return [];
+      var parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed.length !== "number") return [];
+      var out = [];
+      var i, norm;
+      for (i = 0; i < parsed.length && out.length < RECENT_NL_MAX; i++) {
+        norm = _normalizeRecentItem(parsed[i]);
+        if (norm) out.push(norm);
+      }
+      return out;
+    } catch (eP) {
+      return [];
+    }
+  }
+
   function _normalizeRecentItem(it) {
     if (it && typeof it === "object" && it.text != null) {
       return { text: String(it.text), at: it.at != null ? Number(it.at) : 0 };
@@ -840,9 +912,18 @@ try {
     return null;
   }
 
+  function _normalizeRecentNlTs(ts) {
+    var n = Number(ts);
+    if (isNaN(n) || n <= 0) return 0;
+    if (n >= 1000000000000) return n;
+    if (n >= 1700000000) return n * 1000;
+    return 0;
+  }
+
   function _formatRecentNlTime(ts) {
-    if (!ts) return "";
-    var d = new Date(Number(ts));
+    var ms = _normalizeRecentNlTs(ts);
+    if (!ms) return "";
+    var d = new Date(ms);
     if (isNaN(d.getTime())) return "";
     var now = new Date();
     var hh = d.getHours();
@@ -905,6 +986,12 @@ try {
     }
   }
 
+  function _warnOpPrefs(tag, msg) {
+    var line = "[opPrefs:" + tag + "] " + String(msg || "");
+    _diag(line);
+    _setHintBanner("banner warn", line, { skipDiag: true });
+  }
+
   function _loadRecentNl() {
     post("testWooAiValidate.jssp", { action: "listRecentNl" }, function (res) {
       var list = [];
@@ -914,8 +1001,24 @@ try {
           norm = _normalizeRecentItem(res.items[j]);
           if (norm) list.push(norm);
         }
+        _diag("recentNl server items=" + list.length +
+          (res.login ? " login=" + String(res.login) : "") +
+          (res.rowId ? " rowId=" + String(res.rowId) : "") +
+          (res.fetchSource ? " src=" + String(res.fetchSource) : ""));
+      } else if (res && res.ok) {
+        _diag("recentNl server items=0" +
+          (res.login ? " login=" + String(res.login) : "") +
+          (res.rowId ? " rowId=" + String(res.rowId) : "") +
+          (res.fetchSource ? " src=" + String(res.fetchSource) : ""));
+      } else if (res && !res.ok) {
+        _warnOpPrefs("list", _errText(res));
       }
+      if (!list.length) list = _loadRecentNlSession();
       _recentNl = list;
+      _renderRecentNl();
+    }, function (err) {
+      _recentNl = _loadRecentNlSession();
+      _diag("recentNl list xhr fail " + String(err && err.message ? err.message : err));
       _renderRecentNl();
     });
   }
@@ -928,12 +1031,14 @@ try {
       return;
     }
     var now = new Date().getTime();
+    if (now > 10000000000) now = Math.floor(now / 1000);
     var next = [{ text: q, at: now }];
     var i;
     for (i = 0; i < _recentNl.length && next.length < RECENT_NL_MAX; i++) {
       if (_recentNl[i].text !== q) next.push(_recentNl[i]);
     }
     _recentNl = next;
+    _persistRecentNlSession(_recentNl);
     _renderRecentNl();
     post("testWooAiValidate.jssp", { action: "pushRecentNl", text: q }, function (res) {
       if (res && res.ok && res.items && res.items.length) {
@@ -944,8 +1049,15 @@ try {
           if (norm) list.push(norm);
         }
         _recentNl = list;
+        _persistRecentNlSession(_recentNl);
         _renderRecentNl();
+        _diag("recentNl saved rowId=" + String(res.rowId || "") +
+          " login=" + String(res.login || ""));
+      } else {
+        _warnOpPrefs("push", _errText(res));
       }
+    }, function (err) {
+      _warnOpPrefs("push", String(err && err.message ? err.message : err));
     });
   }
 
@@ -1071,7 +1183,16 @@ try {
               if (res.promptHints && res.promptHints.length) renderNlHints(res.promptHints);
               else clearNlHints();
             } else if (res.retryInput) {
-              $("hint").textContent = res.unmatched.join(" ");
+              var _epR = String(res.enPivotReason || "");
+              var _hintMsg = res.unmatched.join(" ");
+              if (_epR === "llm_unavailable") {
+                _hintMsg = "LLM 설정을 확인하세요 (testWooAiLlmApiKey·testWooEnv.js·testWooConfig.js 재배포).";
+              } else if (_epR === "llm_fail") {
+                _hintMsg = "EnPivot LLM 호출 실패 — ACC 로그·API Key·네트워크를 확인하세요.";
+              } else if (_epR === "llm") {
+                _hintMsg = "조건 슬롯을 추출하지 못했습니다. 문장을 더 구체적으로 입력해 주세요.";
+              }
+              $("hint").textContent = _hintMsg;
               clearNlHints();
             } else if (afterFoundry || res.afterFoundry) {
               $("hint").textContent =
@@ -1082,6 +1203,10 @@ try {
               $("hint").textContent =
                 "\uB9E4\uCE6D \uC2E4\uD328(\uCC3D\uC791 \uC5C6\uC74C): \uB77C\uC774\uBE0C\uB7EC\uB9AC\uC5D0 \uD574\uB2F9 fragment\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. " +
                 "\uC2AC\uB86F: " + res.unmatched.join(" | ");
+            }
+            var _hUn = $("hint");
+            if (_hUn && _trim(_hUn.textContent || "")) {
+              _diag("UI hint warn: " + _trim(_hUn.textContent).substring(0, 320));
             }
             hideResultCards();
           } else {
@@ -1106,6 +1231,14 @@ try {
         _syncRegButton();
         if (!state.passed) {
           showErr(res.error || "validation failed");
+          if (res.results) {
+            var gfi, gfr;
+            for (gfi = 0; gfi < res.results.length; gfi++) {
+              gfr = res.results[gfi];
+              if (gfr && gfr.ok === false && gfr.reason)
+                _diag("gate fail: " + String(gfr.gate || "?") + " " + String(gfr.reason));
+            }
+          }
           renderSummaryHint(res.summary, false);
         } else {
           renderSummaryHint(res.summary, true);
@@ -1243,7 +1376,7 @@ try {
     setBusy(true); clearErr();
     var title = String(state.nl || "").substring(0, TITLE_MAX);
     _diag("register start overwrite=" + (_overwriteArmed ? "1" : "0"));
-    post("testWooAiRegister.jssp", {
+    post("testWooAiSqlRegister.jssp", {
       plan: state.plan,
       workflow_name: _activeWorkflowName(),
       workflow_id: _activeWorkflowId(),
@@ -1665,9 +1798,13 @@ try {
       function (res) {
         ctx.registeredSql = (res && res.ok && res.items) ? res.items : [];
         if (ctx.listMode === "SQL") renderListPane();
+        if (!res || !res.ok) {
+          _diag("_loadRegisteredSql fail " + _errText(res));
+        }
       },
-      function () {
+      function (err) {
         ctx.registeredSql = ctx.registeredSql || [];
+        _diag("_loadRegisteredSql err " + String(err && err.message ? err.message : err));
       }
     );
   }
@@ -1876,8 +2013,15 @@ try {
       action: "setBindPick",
       workflow_name: wf,
       ai_sql_id: aiSqlId
-    }, function () {}, function () {
-      /* Apply 는 폼 ShellPick — pick 실패해도 Studio 사용은 유지 */
+    }, function (res) {
+      if (res && res.ok) {
+        _diag("bindPick ok wf=" + wf + " id=" + String(aiSqlId));
+        _loadRecentWkfBtn();
+      } else {
+        _warnOpPrefs("bind", _errText(res));
+      }
+    }, function (err) {
+      _warnOpPrefs("bind", String(err && err.message ? err.message : err));
     });
   }
 
@@ -2089,12 +2233,136 @@ try {
     });
   }
 
+  var _recentWkfName = "";
+
+  function _loadRecentWkfBtn() {
+    if (!SHELL_MODE) return;
+    var btn = $("btnTwRecentWkf");
+    if (!btn) return;
+    post("testWooAiValidate.jssp", { action: "getBindPick" }, function (res) {
+      var wn = res && res.workflow_name ? String(res.workflow_name) : "";
+      _recentWkfName = wn;
+      if (wn) {
+        _rmCls(btn, "hidden");
+        btn.disabled = false;
+        btn.textContent = "\uCD5C\uADFC " + wn;
+      } else {
+        _addCls(btn, "hidden");
+        btn.disabled = true;
+        btn.textContent = "\uCD5C\uADFC WKF";
+      }
+    }, function () {
+      _recentWkfName = "";
+      if (btn) {
+        _addCls(btn, "hidden");
+        btn.disabled = true;
+      }
+    });
+  }
+
+  function startWkfFirstFlow() {
+    if (!SHELL_MODE) return;
+    _releaseCurrentLock(function () {
+      if (ctx.listMode === "SQL") {
+        _pushStack();
+      }
+      ctx.phase = "ST3";
+      ctx.listMode = "FOLDER";
+      ctx.bareLevel = "program";
+      ctx.folder = null;
+      ctx.campaign = null;
+      _leaveWkfContext();
+      _showSqlSide(false);
+      setInputEnabled(true);
+      renderBreadcrumb();
+      loadAiFolders();
+      _syncRegButton();
+      var h = $("hint");
+      if (h) {
+        h.className = "banner ok";
+        h.textContent =
+          "Program \u2192 Campaign \u2192 WKF \uC21C\uC73C\uB85C \uACE0\uB978 \uB4A4, \uC544\uB798\uC5D0 \uC870\uAC74\uC744 \uC785\uB825\uD558\uC138\uC694.";
+      }
+      clearErr();
+    });
+  }
+
+  function jumpRecentWkf() {
+    if (!SHELL_MODE || !_recentWkfName) return;
+    setBusy(true);
+    clearErr();
+    post(
+      "testWooAiStudioContext.jssp",
+      { action: "resolveWkfByName", workflow_name: _recentWkfName },
+      function (res) {
+        setBusy(false);
+        if (!res || !res.ok || !res.workflow) {
+          showErr(_errText(res) || "WKF\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.");
+          _loadRecentWkfBtn();
+          return;
+        }
+        var m = res.workflow;
+        if (m.locked) {
+          showErr(
+            "\uB2E4\uB978 \uC0AC\uC6A9\uC790\uAC00 \uC774 WKF\uB97C \uC0AC\uC6A9 \uC911\uC785\uB2C8\uB2E4 (" +
+              String(m.locked_by || "") +
+              ")."
+          );
+          return;
+        }
+        _applyMatchContext(m);
+        ctx.phase = "ST5";
+        ctx.listMode = "WKF";
+        ctx.matchMode = "";
+        ctx.matchShown = false;
+        _pushStack();
+        setInfoBar(_folderInfoText());
+        renderBreadcrumb();
+        loadWkfs(function () {
+          selectWkf({
+            id: String(m.id || ""),
+            name: String(m.name || _recentWkfName),
+            label: String(m.label || m.name || _recentWkfName)
+          });
+        });
+      },
+      function (err) {
+        setBusy(false);
+        showErr(String(err && err.message ? err.message : err));
+      }
+    );
+  }
+
   function _refreshOpenButtons() {
-    var on = !!(ctx.workflow && ctx.workflow.id && _wfSchemaBound());
+    var shell = SHELL_MODE;
+    var b0 = $("btnTwRecentWkf");
     var b1 = $("btnTwOpenWkf");
     var b2 = $("btnTwGotoWkf");
-    if (b1) b1.disabled = !on;
-    if (b2) b2.disabled = !on;
+    if (b0) {
+      if (shell && _recentWkfName) {
+        _rmCls(b0, "hidden");
+        b0.disabled = false;
+      } else if (shell) {
+        /* getBindPick async — hidden until _loadRecentWkfBtn */
+      } else {
+        _addCls(b0, "hidden");
+        b0.disabled = true;
+      }
+    }
+    if (b1) {
+      if (shell) {
+        _rmCls(b1, "hidden");
+        b1.disabled = false;
+      } else {
+        _addCls(b1, "hidden");
+        b1.disabled = true;
+      }
+    }
+    if (b2) {
+      b2.disabled = !(
+        ctx.workflow && ctx.workflow.id && _wfSchemaBound()
+      );
+    }
     _syncOtherWkfBtn();
   }
 
@@ -2948,7 +3216,8 @@ try {
     );
   }
 
-  function loadWkfs(done) {
+  function loadWkfs(done, opts) {
+    opts = opts || {};
     if (!SHELL_MODE || !ctx.campaign || !ctx.campaign.id) {
       if (done) done();
       return;
@@ -2973,7 +3242,7 @@ try {
           if (done) done();
           return;
         }
-        clearErr();
+        if (!opts.keepErr) clearErr();
         ctx.wkfs = res.items || [];
         if (res.wkfMax != null) ctx.wkfMax = res.wkfMax;
         if (res.canCreateWkf != null) ctx.canCreateWkf = !!res.canCreateWkf;
@@ -3007,8 +3276,13 @@ try {
     } else if (state.passed && _trim(state.sql)) {
       $("hint").className = "banner ok";
       $("hint").textContent =
-        "WKF \uC120\uD0DD\uB428. [WKF\uC5D0 \uB123\uAE30]\uB97C \uB204\uB974\uBA74 \uC774 \uC870\uAC74\uC744 \uC800\uC7A5\uD569\uB2C8\uB2E4.";
+        "WKF \uC120\uD0DD\uB428. [\uC774 \uC870\uAC74 \uC4F0\uAE30]\uB97C \uB204\uB974\uBA74 \uC774 \uC870\uAC74\uC744 \uC800\uC7A5\uD569\uB2C8\uB2E4.";
+    } else {
+      $("hint").className = "banner ok";
+      $("hint").textContent =
+        "WKF\uAC00 \uC120\uD0DD\uB410\uC2B5\uB2C8\uB2E4. \uC544\uB798\uC5D0 \uC870\uAC74\uC744 \uC785\uB825\uD55C \uB4A4 [\uB300\uC0C1 \uB9CC\uB4E4\uAE30]\uB97C \uB204\uB974\uC138\uC694.";
     }
+    _loadRecentWkfBtn();
     _syncRegButton();
     loadSqlList({ selectCurrent: true });
   }
@@ -3046,6 +3320,32 @@ try {
           return;
         }
         clearErr();
+        if (res.template_diagnostics) {
+          try {
+            var td = res.template_diagnostics;
+            var c = td.campaign || {};
+            _diag("createCampaign template campId=" + String(c.resolved_id || "") +
+              " src=" + String(c.resolved_source || "") +
+              " contract=" + String(c.contract_name || "") +
+              " optId=" + String(c.option_id || "") +
+              " optName=" + String(c.option_internalName || "") +
+              (c.mismatch ? " MISMATCH" : "") +
+              (c.warning ? (" warn=" + String(c.warning)) : ""));
+            var camp = res.campaign || {};
+            _diag("createCampaign wkf afterClone=" + String(camp.wkfCountAfterClone != null ? camp.wkfCountAfterClone : "?") +
+              " afterWrite=" + String(camp.wkfCountAfterProgramWrite != null ? camp.wkfCountAfterProgramWrite : "?") +
+              " final=" + String(camp.wkfCount != null ? camp.wkfCount : "?") +
+              " tplIsModel=" + String(camp.template_isModel != null ? camp.template_isModel : "?"));
+            if (camp.default_wkf) {
+              var dw = camp.default_wkf;
+              if (dw.created) {
+                _diag("createCampaign defaultWkf id=" + String(dw.wkfId || "") +
+                  " src=" + String(dw.source || "") +
+                  " modelId=" + String(dw.wkfModelId || ""));
+              }
+            }
+          } catch (eTd) {}
+        }
         _enterCampaign(res.campaign, false);
       },
       function (err) {
@@ -3084,6 +3384,10 @@ try {
   }
 
   function createWkf() {
+    if (_wkfCreateInflight) {
+      _diag("createWkf ignored: inflight");
+      return;
+    }
     if (!ctx.campaign || !ctx.campaign.id) {
       showErr("\uCEA0\uD398\uC778\uC744 \uBA3C\uC800 \uC120\uD0DD\uD558\uC138\uC694.");
       return;
@@ -3107,8 +3411,46 @@ try {
     });
   }
 
+  function _logWkfCreateDiag(diag) {
+    if (!diag) return;
+    var parts = [];
+    parts.push("campaign=" + String(diag.campaign_id || ""));
+    parts.push("label=" + String(diag.label || ""));
+    parts.push("before=" + String(diag.wkf_count_before != null ? diag.wkf_count_before : "?"));
+    parts.push("after=" + String(diag.wkf_count_after != null ? diag.wkf_count_after : "?"));
+    parts.push("verified=" + String(diag.verified_count != null ? diag.verified_count : "?"));
+    parts.push("blind=" + String(diag.blind_count != null ? diag.blind_count : "?"));
+    if (diag.success) {
+      parts.push("ok id=" + String(diag.result_id || "") + " src=" + String(diag.result_source || ""));
+    } else {
+      parts.push("fail");
+    }
+    if (diag.orphans_deleted && diag.orphans_deleted.length) {
+      parts.push("orphans_deleted=" + diag.orphans_deleted.join(","));
+    }
+    _diag("createWkf diag: " + parts.join(" "));
+    if (diag.attempts && diag.attempts.length) {
+      var ai, aline = [];
+      for (ai = 0; ai < diag.attempts.length; ai++) {
+        var a = diag.attempts[ai];
+        aline.push(
+          String(a.source || "?") + ":" + String(a.ref_id || "") + "=" +
+          String(a.status || "?") +
+          (a.detail ? "(" + String(a.detail) + ")" : "")
+        );
+      }
+      _diag("createWkf attempts: " + aline.join(" | "));
+    }
+  }
+
   function _submitCreateWkf(label) {
+    if (_wkfCreateInflight) {
+      _diag("createWkf submit ignored: inflight");
+      return;
+    }
+    _wkfCreateInflight = true;
     setBusy(true);
+    clearErr();
     state.commitOk = false;
     state.aiSqlId = null;
     _resetInjectFlags();
@@ -3122,27 +3464,56 @@ try {
         label: label
       },
       function (res) {
+        _wkfCreateInflight = false;
         setBusy(false);
+        if (res && res.create_diagnostics) {
+          _logWkfCreateDiag(res.create_diagnostics);
+        }
         if (!res || !res.ok || !res.workflow) {
+          if (res && res.reference_attempts && res.reference_attempts.length) {
+            _diag("createWkf refAttempts: " + res.reference_attempts.join(" | "));
+          }
+          if (res && res.wkf_id) {
+            _diag("createWkf orphan_wkf_id=" + String(res.wkf_id));
+          }
           showErr(_errText(res) || "createWkf failed");
-          _refreshMatchOrList();
+          _refreshMatchOrList({ keepErr: true });
           return;
         }
-        clearErr();
-        ctx.workflow = null;
-        _pushStack();
-        ctx.workflow = {
+        var wfRow = {
           id: String(res.workflow.id || ""),
           name: String(res.workflow.name || ""),
-          label: String(res.workflow.label || "")
+          label: String(res.workflow.label || res.workflow.name || "")
         };
-        if (!EMBED) WORKFLOW_NAME = String(res.workflow.name || "");
-        ctx.openHint = String(res.open_hint || "");
+        var wi, found = false;
+        for (wi = 0; wi < (ctx.wkfs || []).length; wi++) {
+          if (String(ctx.wkfs[wi].id) === wfRow.id) {
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          if (!ctx.wkfs) ctx.wkfs = [];
+          ctx.wkfs.unshift({
+            id: wfRow.id,
+            name: wfRow.name,
+            label: wfRow.label,
+            sqlCount: 0
+          });
+          renderListPane();
+        }
         loadWkfs(function () {
-          _afterWkfBound(res);
+          if (res.workflow && res.workflow.create_source) {
+            _diag("createWkf source=" + String(res.workflow.create_source) +
+              (res.workflow.reference_id
+                ? " ref=" + String(res.workflow.reference_id)
+                : ""));
+          }
+          selectWkf(wfRow);
         });
       },
       function (err) {
+        _wkfCreateInflight = false;
         setBusy(false);
         showErr(String(err && err.message ? err.message : err));
         _refreshMatchOrList();
@@ -3151,7 +3522,8 @@ try {
   }
 
   /* discover 모드만 Match 재조회 · #152 Match OFF 시 항상 비움 */
-  function _refreshMatchOrList() {
+  function _refreshMatchOrList(opts) {
+    opts = opts || {};
     if (MATCH_ENABLED && ctx.matchMode === "discover" && state.plan) {
       runMatch(null, "discover");
       return;
@@ -3159,7 +3531,7 @@ try {
     ctx.matchShown = false;
     ctx.matchMode = "";
     if (ctx.campaign && ctx.campaign.id) {
-      loadWkfs();
+      loadWkfs(null, opts);
       return;
     }
     ctx.wkfs = [];
@@ -3203,7 +3575,9 @@ try {
       {
         action: "selectWkf",
         workflow_id: String(row.id),
-        workflow_name: String(row.name || "")
+        workflow_name: String(row.name || ""),
+        program_id: ctx.folder ? String(ctx.folder.id || "") : "",
+        campaign_id: ctx.campaign ? String(ctx.campaign.id || "") : ""
       },
       function (res) {
         setBusy(false);
@@ -3554,11 +3928,11 @@ try {
         empty.textContent = String(e && e.message ? e.message : e);
       }
       try {
-        var h = $("hint");
-        if (h) {
-          h.className = "banner err";
-          h.textContent = "SQL list error: " + String(e && e.message ? e.message : e);
-        }
+        _setHintBanner(
+          "banner err",
+          "SQL list error: " + String(e && e.message ? e.message : e),
+          { skipDiag: true }
+        );
       } catch (e2) {}
       _diag("loadSqlList err: " + String(e && e.message ? e.message : e));
     });
@@ -4015,7 +4389,7 @@ try {
       _wireDiagToggle();
       try {
         var dm0 = (typeof document.documentMode !== "undefined") ? String(document.documentMode) : "n/a(non-IE)";
-          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | match=" + (MATCH_ENABLED ? "1" : "0") + " | phase=" + ctx.phase + " | v=199";
+          var okMsg = "js ok | documentMode=" + dm0 + " | embed=" + (EMBED ? "1" : "0") + " | match=" + (MATCH_ENABLED ? "1" : "0") + " | phase=" + ctx.phase + " | v=216";
         var bootReached = !!(window.__TW_BOOT_MSG__);
         if (bootReached) _diag(String(window.__TW_BOOT_MSG__));
         _diag(okMsg);
@@ -4047,15 +4421,18 @@ try {
       renderBreadcrumb();
       var btnBack = $("btnTwBack");
       var btnReset = $("btnTwReset");
+      var btnRecent = $("btnTwRecentWkf");
       var btnOpen = $("btnTwOpenWkf");
       var btnGoto = $("btnTwGotoWkf");
       var btnOther = $("btnTwOtherWkf");
       if (btnBack) btnBack.onclick = function () { goBack(); return false; };
       if (btnReset) btnReset.onclick = function () { resetCtx(); return false; };
-      if (btnOpen) btnOpen.onclick = function () { showOpenHint(); return false; };
+      if (btnRecent) btnRecent.onclick = function () { jumpRecentWkf(); return false; };
+      if (btnOpen) btnOpen.onclick = function () { startWkfFirstFlow(); return false; };
       if (btnGoto) btnGoto.onclick = function () { showOpenHint(); return false; };
       if (btnOther) btnOther.onclick = function () { applyToOtherWkf(); return false; };
       _refreshOpenButtons();
+      _loadRecentWkfBtn();
       var btnGen = $("btnGen");
       var btnReg = $("btnReg");
       var nl = $("nl");
@@ -4104,7 +4481,7 @@ try {
         if (hint0) {
           hint0.className = "banner warn";
           hint0.textContent =
-            "\uC870\uAC74\uC744 \uC785\uB825\uD55C \uB4A4 [\uB300\uC0C1 \uB9CC\uB4E4\uAE30]\uB97C \uB204\uB974\uC138\uC694. \uC624\uB978\uCABD\uC5D0\uC11C \uC608\uC804 \uC870\uAC74\uC744 \uACE0\uB974\uAC70\uB098 \uCC3E\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4.";
+            "\uC870\uAC74\uC744 \uC785\uB825\uD55C \uB4A4 [\uB300\uC0C1 \uB9CC\uB4E4\uAE30]\uB97C \uB204\uB974\uAC70\uB098, \uC0C1\uB2E8 [WKF\uBD80\uD130 \uC5F4\uAE30]\uB85C WKF\uB97C \uBA3C\uC800 \uACE0\uB974\uC138\uC694.";
         }
         setTimeout(function () {
           try {
@@ -4121,22 +4498,16 @@ try {
         setTimeout(function () {
           try { loadSqlList(); }
           catch (eL) {
-            var h2 = $("hint");
-            if (h2) {
-              h2.className = "banner err";
-              h2.textContent = "loadSqlList: " + String(eL && eL.message ? eL.message : eL);
-            }
+            var errMsg = "loadSqlList: " + String(eL && eL.message ? eL.message : eL);
+            _setHintBanner("banner err", errMsg, { skipDiag: true });
             _diag("loadSqlList throw: " + String(eL && eL.message ? eL.message : eL));
           }
         }, 0);
       }
     } catch (eInit) {
       try {
-        var h = $("hint");
-        if (h) {
-          h.className = "banner err";
-          h.textContent = "Studio init: " + String(eInit && eInit.message ? eInit.message : eInit);
-        }
+        var initErr = "Studio init: " + String(eInit && eInit.message ? eInit.message : eInit);
+        _setHintBanner("banner err", initErr, { skipDiag: true });
       } catch (e2) {}
       _diag("init throw: " + String(eInit && eInit.message ? eInit.message : eInit));
     }

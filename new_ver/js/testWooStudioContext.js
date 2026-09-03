@@ -1,7 +1,7 @@
 /*
  * testWooStudioContext.js (Studio 컨텍스트 조회)
  * ==================================================
- * litmus 동기 __v=160 (folder label sanitize).
+ * litmus 동기 __v=161. Env ui.listLimit · listAiFolders.
  * AI Studio 2차: @isAiFolder=1 Program/폴더만 queryDef 조회.
  * Write·삭제 없음. WKF 클론은 testWooWorkflowClone.js.
  *
@@ -19,14 +19,25 @@ if (typeof testWoo === "undefined") testWoo = {};
 
 testWoo.studioContext = (function () {
   var FOLDER_SCHEMA = "xtk:folder";
-  var DEFAULT_LIMIT = 200;
-  var MAX_LIMIT = 500;
+
+  function _uiLimits() {
+    try {
+      if (testWoo.cfg && testWoo.cfg.getConfig) return testWoo.cfg.getConfig().ui;
+    } catch (eC) {}
+    try {
+      if (testWoo.env && testWoo.env.getEnv) return testWoo.env.getEnv().ui;
+    } catch (eE) {}
+    return { listLimit: 200, listLimitMax: 500 };
+  }
 
   // 1. @isAiFolder=1 폴더 목록
   function listAiFolders(limit) {
+    var ui = _uiLimits();
+    var defLim = Number(ui.listLimit) || 200;
+    var maxLim = Number(ui.listLimitMax) || 500;
     var lim = parseInt(limit, 10);
-    if (isNaN(lim) || lim <= 0) lim = DEFAULT_LIMIT;
-    if (lim > MAX_LIMIT) lim = MAX_LIMIT;
+    if (isNaN(lim) || lim <= 0) lim = defLim;
+    if (lim > maxLim) lim = maxLim;
 
     var items = [];
     try {
@@ -76,4 +87,4 @@ testWoo.studioContext = (function () {
     listAiFolders: listAiFolders
   };
 })();
-testWoo.studioContext.__v = "160";
+testWoo.studioContext.__v = "161";

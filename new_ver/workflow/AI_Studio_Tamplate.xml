@@ -1,0 +1,93 @@
+<operation _cs="[LGU+] AI Studio Template (OPEmptyTemplate_AI)" budget-id="0" fcpGroup-id="0"
+           id="30030" internalName="OPEmptyTemplate_AI" isModel="1" label="[LGU+] AI Studio Template"
+           linkedOperation-id="0" messageType="127" owner-id="26440" periodCovered="0"
+           status="0" type="0" xtkschema="nms:operation">
+  <process>
+    <target priority="0"/>
+    <messagePreparation forecasted="0" priority="0"/>
+  </process>
+  <controlGroup type="3">
+    <where filteringSchema=""/>
+  </controlGroup>
+  <seedList insertMode="0">
+    <where filteringSchema="nms:seedMember"/>
+  </seedList>
+  <parameter assignEdition="0" disableNotification="0" externalValidation="0" sandboxMode="0"
+             useBudget="0" useBudgetValidation="0" useContentValidation="1" useExtractionValidation="1"
+             useFCPEmailValidation="1" useFCPPaperValidation="0" useFCPPhoneValidation="0"
+             useFCPSMSValidation="1" useFCPValidation="3" useLinkedDeliveryValidation="0"
+             useTargetValidation="1" useWorkflow="1" validationMode="0">
+    <target>
+      <validation delay="259200" type="0"/>
+    </target>
+    <content>
+      <validation delay="259200" type="0"/>
+    </content>
+    <budget>
+      <validation delay="259200" type="0"/>
+    </budget>
+    <extraction>
+      <validation delay="259200" type="0"/>
+    </extraction>
+    <forecast>
+      <validation delay="259200" type="0"/>
+    </forecast>
+    <starting>
+      <validation delay="259200" type="0"/>
+    </starting>
+    <edition>
+      <validation delay="259200" type="0"/>
+    </edition>
+    <external>
+      <validation delay="259200" type="0"/>
+    </external>
+  </parameter>
+  <budgetParameters budgetStatus="0" commitmentLevel="0" computationState="0" computedCost="0"
+                    estimatedCost="0" fixedCost="0" lastComputed="" realCost="0"/>
+  <program fullName="/Resources/Templates/Campaign templates/"/>
+  <owner _cs="우해인 (hiwoo)" id="26440" type="0"/>
+  <workflow _cs="Default Workflow (wfEmptyTemplate_AI)" aggregate-id="0" background="xtk:backgrounds/neolane.png"
+            builtIn="0" created="2026-08-27 07:14:42.329Z" createdBy-id="26440" disabled="0"
+            errorLimit="0" expiration="" failed="0" folder-id="1103" folderProcess-id="1104"
+            form="" history="30" hostname="" id="42102" inProcess="0" internalName="wfEmptyTemplate_AI"
+            isModel="1" label="Default Workflow" lastModified="2026-08-27 07:15:39.960Z"
+            lastStart="" modelName="newOpEmpty" modifiedBy-id="26440" nextProcessingAfn=""
+            nextProcessingDate="" nextProcessingHost="" onError="0" operation-id="30030"
+            order="0" port="0" processDate="" processId="0" production="0" recurrentMdl="0"
+            routingOperation-id="0" scenario-cs="Notification of the workflow supervisor (notifySupervisor)"
+            scenario-id="1757" schema="nms:recipient" state="0" status="0" supervisor-id="0"
+            timezone="_inherit_" unlockedCount="0">
+    <activities>
+      <start collision="0" img="xtk:activities/start.png" label="Start" mask="0"
+             name="start" onError="0" runOnSimulation="true" timezone="_inherit_"
+             x="76" y="100">
+        <transitions>
+          <initial enabled="true" name="initial" target="aiStudioSql"/>
+        </transitions>
+      </start>
+      <sqlDM andJoin="true" autoCreate="false" collision="0" defaultExtAccountName="fda"
+             extAccount-cs="fda" extAccount-id="16600" img="xtk:activities/execsql.png"
+             joinPk="sCustomer_id" joinTable="testWooSampleCustomer" label="AI Studio SQL"
+             mask="0" name="aiStudioSql" onError="0" schema="woo:testWooSampleCustomer"
+             timezone="_inherit_" useEntity="false" x="240" y="96">
+        <initScript>logInfo("[aiStudioSql] tableName=" + activity.tableName);</initScript>
+        <transitions>
+          <done enabled="true" label="Ok" name="done"/>
+        </transitions>
+        <extAccount/>
+        <script>CREATE TABLE &lt;%= activity.tableName %&gt; AS SELECT c.iTestWooSampleCustomerId AS iId, c.sCustomer_id, c.sName, c.iAge, c.sGender, c.tsBirth_date, c.sRegion, c.iMarketing_consent, c.iSms_consent, c.sEmail, c.sStatus, c.tsCreated_date FROM (&lt;%= activity.userScript %&gt;) t JOIN &lt;%= activity.joinTable %&gt; c ON c.&lt;%= activity.joinPk %&gt; = t.&lt;%= activity.joinPk %&gt;</script>
+      </sqlDM>
+    </activities>
+    <desc><![CDATA[Empty template to create a workflow in a marketing campaign]]></desc>
+    <visualState><![CDATA[]]></visualState>
+    <process forecasted="0" login="" priority="0" processState="0" startState="0"/>
+    <createdBy _cs="우해인 (hiwoo)"/>
+    <modifiedBy _cs="우해인 (hiwoo)"/>
+    <folder _cs="Campaign workflow templates"/>
+    <folderProcess _cs="Campaign workflows"/>
+    <operation _cs="[LGU+] AI Studio Template (OPEmptyTemplate_AI)"/>
+  </workflow>
+  <fcpSeed>
+    <where filteringSchema="nms:seedMember"/>
+  </fcpSeed>
+</operation>

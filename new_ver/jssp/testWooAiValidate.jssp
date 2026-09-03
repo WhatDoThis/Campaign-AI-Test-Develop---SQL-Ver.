@@ -4,21 +4,21 @@ response.setContentType("application/json;charset=utf-8");
  * testWooAiValidate.jssp (검증·SQL 이력 API)
  * ==================================================
  * plan gates 재실행·fragment catalog·WKF별 SQL CRUD.
- * setBindPick/getBindPick으로 폼 Apply용 ai_sql_id를 Option에 저장.
+ * BindPick·NL recent는 woo:testWooAiOperatorPrefs schema (#405–406).
  *
  * [Main Functions]
  * ===========
  * - validate — compile+runAll gates 결과
  * - catalog — active fragment 목록
  * - listSql / getSql / deleteSql — WKF SQL 이력(CSRF: delete)
- * - setBindPick / getBindPick — workflow별 선택 id Option
- * - listRecentNl / pushRecentNl — 로그인별 최근 NL 질문(최대 10·입력시간)
+ * - setBindPick / getBindPick — WF Apply용 ai_sql_id (schema)
+ * - listRecentNl / pushRecentNl — schema 저장·login/rowId 진단 필드
  *
  * [Dependencies]
  * =========
  * - woo:testWooCommon.js (+ Config/Fragments/Compiler/Gates/Repository by action)
+ * - woo:testWooOperatorPrefs.js — bind/recent 4 action only lazy load
  * - right testWooAiSqlGenerate · schema woo:testWooAiSql, woo:testWooAiFragment
- * - Option testWooAiBindPick_{login} · testWooAiNlRecent_{login}
  * - action별 loadLibrary 직후 twRequireLib (#160)
  */
 try {
@@ -61,112 +61,70 @@ try {
   handleApiError(e);
 }
 
-function _twRecentNlOptionName() {
-  var login = "anon";
-  try {
-    if (application.operator && application.operator.login)
-      login = String(application.operator.login);
-  } catch (eLogin) {}
-  return "testWooAiNlRecent_" + login;
-}
-
-var RECENT_NL_MAX = 10;
-
-function _parseRecentNl(raw) {
-  var arr = [];
-  try { arr = JSON.parse(String(raw || "[]")); } catch (eP) { arr = []; }
-  if (!arr || typeof arr.length !== "number") return [];
-  var out = [];
-  var i, s, row, at;
-  for (i = 0; i < arr.length && out.length < RECENT_NL_MAX; i++) {
-    row = arr[i];
-    if (row && typeof row === "object" && row.text != null) {
-      s = String(row.text).replace(/^\s+|\s+$/g, "");
-      at = row.at != null ? Number(row.at) : 0;
-      if (isNaN(at)) at = 0;
-    } else {
-      s = String(row == null ? "" : row).replace(/^\s+|\s+$/g, "");
-      at = 0;
-    }
-    if (s.length > 240) s = s.substring(0, 240);
-    if (s) out.push({ text: s, at: at });
-  }
-  return out;
+function _twLoadOpPrefs() {
+  loadLibrary("woo:testWooOperatorPrefs.js");
+  twRequireLib(
+    "woo:testWooOperatorPrefs.js",
+    (typeof testWoo !== "undefined") && testWoo.opPrefs
+  );
+  try { twBindOperator(); } catch (eB) { /* requireRight 선행 */ }
 }
 
 function _runListRecentNl() {
-  var key = _twRecentNlOptionName();
-  var raw = "";
-  try { raw = String(getOption(key) || ""); } catch (eGet) { raw = ""; }
-  jsonOut({ ok: true, items: _parseRecentNl(raw), option: key });
+  _twLoadOpPrefs();
+  var login = "";
+  try { login = currentLogin(); } catch (eL) { login = ""; }
+  var items = testWoo.opPrefs.listRecentNl();
+  jsonOut({
+    ok: true,
+    items: items,
+    login: login,
+    rowId: testWoo.opPrefs.peekRowId(),
+    fetchSource: testWoo.opPrefs.peekFetchSource()
+  });
 }
 
 function _runPushRecentNl(p) {
+  _twLoadOpPrefs();
   var q = String(p.text != null ? p.text : (p.nl || "")).replace(/^\s+|\s+$/g, "");
   if (q.length > 240) q = q.substring(0, 240);
-  var key = _twRecentNlOptionName();
   if (!q) {
-    jsonOut({ ok: true, items: [], option: key });
+    jsonOut({ ok: true, items: [] });
     return;
   }
-  var raw = "";
-  try { raw = String(getOption(key) || ""); } catch (eGet) { raw = ""; }
-  var cur = _parseRecentNl(raw);
-  var now = new Date().getTime();
-  var next = [{ text: q, at: now }];
-  var i, ct;
-  for (i = 0; i < cur.length && next.length < RECENT_NL_MAX; i++) {
-    ct = cur[i] && cur[i].text ? String(cur[i].text) : "";
-    if (ct && ct !== q) next.push(cur[i]);
+  var r = testWoo.opPrefs.pushRecentNl(q);
+  if (!r || !r.ok) {
+    throw new Error("pushRecentNl failed: " + (r && r.error ? r.error : "unknown"));
   }
-  try { setOption(key, JSON.stringify(next)); } catch (eSet) {
-    throw new Error("pushRecentNl failed: " + eSet);
-  }
-  jsonOut({ ok: true, items: next, option: key });
-}
-
-function _twBindPickOptionName() {
-  var login = "anon";
-  try {
-    if (application.operator && application.operator.login) {
-      login = String(application.operator.login);
-    }
-  } catch (eLogin) {}
-  return "testWooAiBindPick_" + login;
+  var login = "";
+  try { login = currentLogin(); } catch (eL) { login = ""; }
+  jsonOut({
+    ok: true,
+    items: testWoo.opPrefs.listRecentNl(),
+    login: login,
+    rowId: r.id || ""
+  });
 }
 
 function _runSetBindPick(p) {
+  _twLoadOpPrefs();
   var wf = String(p.workflow_name || p.workflowName || "").replace(/^\s+|\s+$/g, "");
   var id = String(p.ai_sql_id != null ? p.ai_sql_id : (p.id != null ? p.id : "")).replace(/^\s+|\s+$/g, "");
   if (!wf) throw new Error("workflow_name missing");
   if (!id || id === "0" || !/^[0-9]+$/.test(id)) throw new Error("ai_sql_id missing");
-  var key = _twBindPickOptionName();
-  try {
-    setOption(key, wf + "\t" + id);
-  } catch (eSet) {
-    throw new Error("setBindPick failed: " + eSet);
+  var r = testWoo.opPrefs.setBindPick(wf, id);
+  if (!r || !r.ok) {
+    throw new Error("setBindPick failed: " + (r && r.error ? r.error : "unknown"));
   }
-  jsonOut({ ok: true, workflow_name: wf, ai_sql_id: id, option: key });
+  jsonOut({ ok: true, workflow_name: wf, ai_sql_id: id });
 }
 
 function _runGetBindPick(p) {
+  _twLoadOpPrefs();
   var wf = String(p.workflow_name || p.workflowName || "").replace(/^\s+|\s+$/g, "");
-  var key = _twBindPickOptionName();
-  var raw = "";
-  try {
-    raw = String(getOption(key) || "");
-  } catch (eGet) {
-    raw = "";
-  }
-  var id = "";
-  var storedWf = "";
-  if (raw) {
-    var tab = raw.indexOf("\t");
-    if (tab >= 0) {
-      storedWf = raw.substring(0, tab);
-      id = raw.substring(tab + 1);
-    }
-  }
+  var pick = testWoo.opPrefs.getBindPick();
+  var storedWf = pick && pick.wkf_name ? String(pick.wkf_name) : "";
+  var id = pick && pick.ai_sql_id ? String(pick.ai_sql_id) : "";
   if (wf && storedWf && storedWf !== wf) {
     id = "";
   }
@@ -174,7 +132,7 @@ function _runGetBindPick(p) {
     ok: true,
     workflow_name: wf || storedWf,
     ai_sql_id: id,
-    hasPick: id !== ""
+    hasPick: id !== "" || storedWf !== ""
   });
 }
 

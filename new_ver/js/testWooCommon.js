@@ -2,7 +2,7 @@
  * testWooCommon.js (JSSP 공통 헬퍼)
  * ==================================================
  * Studio·Foundry JSSP API의 JSON 응답·요청 파싱·인증·권한 검사.
- * TW_* 바인드 후 loadLibrary로 로드한다. __v=160 (debugTrace 부착).
+ * TW_* 바인드 후 loadLibrary로 로드한다. __v=160 (Cookie __sessiontoken 바인드).
  *
  * [Main Functions]
  * ===========
@@ -11,9 +11,9 @@
  * - handleApiError — 예외를 errOut으로 변환 (code=LIB 메시지 그대로)
  * - twRequireLib — loadLibrary 직후 전역 모듈 존재 검사
  * - readPayload — payload 파라미터·body JSON 파싱
- * - twSessionTokenFromRequest — Cookie에서 세션 토큰 추출
+ * - twSessionTokenFromRequest — Cookie __sessiontoken 추출
  * - twLogonWithToken — logonWithToken으로 오퍼레이터 바인드
- * - twBindOperator — 세션 토큰 또는 logon 폴백 바인드
+ * - twBindOperator — Cookie 세션 토큰 바인드
  * - twCheckRemoteAddr — allowedCidr IP 게이트
  * - currentLogin — 현재 로그인 ID 반환
  * - requireRight — named right 검사(fail-closed)
@@ -149,6 +149,22 @@ function handleApiError(e) {
     errOut(msg, "LIB", { errId: errId, detail: detail });
     return;
   }
+  if (code === "WKF_NO_AI_ACTIVITY" || code === "WKF_MAX") {
+    var wkfExtra = {
+      errId: errId,
+      detail: detail,
+      wkf_id: (e && e.wkf_id) ? String(e.wkf_id) : "",
+      reference_attempts: (e && e.reference_attempts) ? e.reference_attempts : []
+    };
+    try {
+      if (typeof testWoo !== "undefined" && testWoo.wfClone &&
+          testWoo.wfClone.getLastWkfCreateDiag) {
+        wkfExtra.create_diagnostics = testWoo.wfClone.getLastWkfCreateDiag();
+      }
+    } catch (eWkfDiag) {}
+    errOut(msg, code, wkfExtra);
+    return;
+  }
   if (code === "FORBIDDEN" || msg.indexOf("missing right:") === 0 ||
       msg.indexOf("CSRF:") === 0 || msg.indexOf("FORBIDDEN:") === 0) {
     errOut("권한 또는 요청 검증 실패", "FORBIDDEN", { errId: errId, detail: detail });
@@ -204,7 +220,7 @@ function currentLogin() {
   catch (e) { return ""; }
 }
 
-// 5. Cookie __sessiontoken — Cookie 헤더 우선 (request.cookies 빈 배열 환경)
+// 5. Cookie __sessiontoken (Cookie 헤더 우선 · request.cookies 보조)
 function twSessionTokenFromRequest() {
   var req = _twReq();
   try {

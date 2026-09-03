@@ -18,7 +18,7 @@ response.setContentType("application/json;charset=utf-8");
  *
  * [Dependencies]
  * =========
- * - woo:testWooCommon.js, Config, FragContract, Fragments, Probe, Toolkit, EnPivot, Llm, Compiler, Gates, Repository
+ * - woo:testWooCommon.js, Config, FragContract, Fragments, Probe, Toolkit, Feasibility, EnPivot, Llm, Compiler, Gates, Repository
  * - right testWooAiSqlGenerate · Option testWooAiFoundryEnabled
  *
  * [Invariants]
@@ -29,7 +29,7 @@ response.setContentType("application/json;charset=utf-8");
  * - unmatched+Foundry OFF → passed:false, 큐 없음
  * - after_foundry/no_enqueue → 재큐잉 금지(대기 UI 루프 방지)
  * - catch 메시지에 [Generate] 접두(타 API plan missing와 구분)
- * - loadLibrary 직후 twRequireLib — repo/fragments/toolkit/enPivot/llm/compiler/gates
+ * - loadLibrary 직후 twRequireLib — repo/fragments/toolkit/feasibility/enPivot/llm/compiler/gates
  * - #170: missing_slots_json 은 축 원자 슬롯 객체(가능 시)
  */
 try {
@@ -42,6 +42,7 @@ try {
   loadLibrary("woo:testWooFragments.js");
   loadLibrary("woo:testWooProbe.js");
   loadLibrary("woo:testWooToolkit.js");
+  loadLibrary("woo:testWooFeasibility.js");
   loadLibrary("woo:testWooEnPivot.js");
   loadLibrary("woo:testWooLlm.js");
   loadLibrary("woo:testWooCompiler.js");
@@ -51,6 +52,7 @@ try {
   twRequireLib("woo:testWooFragContract.js", (typeof testWoo !== "undefined") && testWoo.fragContract);
   twRequireLib("woo:testWooFragments.js", (typeof testWoo !== "undefined") && testWoo.fragments);
   twRequireLib("woo:testWooToolkit.js", (typeof testWoo !== "undefined") && testWoo.toolkit);
+  twRequireLib("woo:testWooFeasibility.js", (typeof testWoo !== "undefined") && testWoo.feasibility);
   twRequireLib("woo:testWooEnPivot.js", (typeof testWoo !== "undefined") && testWoo.enPivot);
   twRequireLib("woo:testWooLlm.js", (typeof testWoo !== "undefined") && testWoo.llm);
   twRequireLib("woo:testWooCompiler.js", (typeof testWoo !== "undefined") && testWoo.compiler);
@@ -131,14 +133,17 @@ try {
   if (unmatched.length || unresolved.length) {
     /* 추출 실패·값 abstain: Foundry 큐 금지 · 재입력/원문 안내 */
     if (plan.retryInput) {
+      var epReason = plan._meta ? String(plan._meta.enPivot || "") : "";
       jsonOut({
         ok: false,
         passed: false,
         retryInput: true,
+        enPivotReason: epReason,
         unmatched: unmatched,
         matchedSlots: [],
         plan: clientPlan,
-        error: unmatched.join(" ")
+        error: unmatched.join(" "),
+        debugTrace: (testWoo.dbg && testWoo.dbg.take) ? testWoo.dbg.take() : []
       });
     } else if (unresolved.length) {
       var promptHints = [];

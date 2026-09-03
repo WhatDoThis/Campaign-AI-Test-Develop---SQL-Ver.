@@ -1,7 +1,7 @@
 /*
  * testWooCompiler.js (CNF plan → SQL 컴파일러)
  * ==================================================
- * litmus 동기 __v=168 (compile haystack slots+nl · compact yms spanRangeSqlText).
+ * litmus 동기 __v=169 (bindPlanParams fillSqlParamGaps — planLabel↔planCode 형제 보정).
  * LLM이 낸 CNF plan을 fragment sql_text로 조합해 최종 audience SQL 생성.
  * summary·chips는 compile 결과에서만 만든다. Oracle은 EXCEPT→MINUS.
  * #168-B/#172: NL 바인딩은 fragContract.resolveNlParams 공유.
@@ -19,7 +19,7 @@
  *
  * [Dependencies]
  * =========
- * - testWoo.fragContract.resolveNlParams — nlMap/_bucket 해석 (#172). 라이브 enum 우선
+ * - testWoo.fragContract.fillSqlParamGaps — sql {{}} 누락 시 형제 param·nlMap 보정 (#451)
  * - testWoo.toolkit.refreshDomain — bind 직전 DISTINCT 스냅샷 (없으면 스킵)
  * - testWoo.fragContract.promoteEqPlaceholderToIn — `=` → IN (#175-1)
  * - testWoo.fragments.getByName — fragment sql_text·param_domain 로드
@@ -107,7 +107,9 @@ testWoo.compiler = (function () {
         } catch (eR) { /* stale snapshot */ }
       }
       var resolved = {};
-      if (testWoo.fragContract && testWoo.fragContract.resolveNlParams)
+      if (testWoo.fragContract && testWoo.fragContract.resolveNeedParams)
+        resolved = testWoo.fragContract.resolveNeedParams(domain, hay, need) || {};
+      else if (testWoo.fragContract && testWoo.fragContract.resolveNlParams)
         resolved = testWoo.fragContract.resolveNlParams(domain, hay, needLookup) || {};
       for (nk in need) {
         if (!need.hasOwnProperty(nk)) continue;
@@ -123,6 +125,8 @@ testWoo.compiler = (function () {
           }
         }
       }
+      if (testWoo.fragContract && testWoo.fragContract.fillSqlParamGaps)
+        testWoo.fragContract.fillSqlParamGaps(domain, need, params, hay);
       var kept = {};
       for (pk in params) {
         if (!params.hasOwnProperty(pk)) continue;
@@ -143,6 +147,8 @@ testWoo.compiler = (function () {
 
   // 1. CNF plan → SQL + summary
   function _nlHaystack(plan) {
+    if (testWoo.fragContract && testWoo.fragContract.planHaystack)
+      return testWoo.fragContract.planHaystack(plan);
     var blobs = [];
     var nl = _trim(plan && plan.nl_request ? plan.nl_request : "");
     if (nl) blobs.push(nl);
@@ -531,4 +537,4 @@ testWoo.compiler = (function () {
     paramKeyFromPlan: paramKeyFromPlan
   };
 })();
-testWoo.compiler.__v = "168";
+testWoo.compiler.__v = "169";

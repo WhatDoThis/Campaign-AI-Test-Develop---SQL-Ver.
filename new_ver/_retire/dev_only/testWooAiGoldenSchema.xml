@@ -1,0 +1,13 @@
+<srcSchema _cs="Test Woo AI Golden Test (woo)" mappingType="sql" name="testWooAiGolden" namespace="woo"
+           label="Test Woo AI Golden Test" labelSingular="Test Woo AI Golden Test" xtkschema="xtk:srcSchema">
+
+  <element autopk="true" label="Test Woo AI Golden Test" name="testWooAiGolden" sqltable="testWooAiGolden">
+    <attribute label="NL Text"              name="nl_text"              type="memo"/>
+    <attribute label="Expected Fragments"   name="expected_fragments"   type="memo"/>
+    <attribute label="Expected Count Min"   name="expected_count_min"   type="long"/>
+    <attribute label="Expected Count Max"   name="expected_count_max"   type="long"/>
+    <attribute label="Last Run At"          name="last_run_at"          type="datetime"/>
+    <attribute label="Last Result"          length="32" name="last_result" type="string"/>
+    <attribute label="Note"                 name="note"                 type="memo"/>
+  </element>
+</srcSchema>

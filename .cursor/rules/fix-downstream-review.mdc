@@ -9,6 +9,8 @@ alwaysApply: true
 
 ## Mandatory loop (same turn)
 
+0. **PROBE first** (증상 2회+ 또는 Explorer≠Studio) — `.cursor/skills/campaign-ai-studio/incident-diagnosis/SKILL.md`  
+   REPRO packet · 가설+반증 · **동일 증상 3회째 FIX 금지**
 1. **Locate** — 증상·진단로그·실패 gate/error로 **실패 지점**과 **입력 NL/상태** 고정
 2. **Fix** — 최소 diff. root cause 1줄로 명시
 3. **Trace downstream** — 수정 함수/모듈의 **caller + sibling consumer** grep·읽기
@@ -28,6 +30,8 @@ alwaysApply: true
 
 ## Anti-patterns (금지)
 
+- **가설 미확정 FIX** — errId/Explorer 비교 없이 “아마 UI/cache” 패치 (#439 flash ≠ #440 WKF_NO_AI_ACTIVITY)
+- **동일 REPRO 2회 FAIL 후 같은 레이어 재패치** — PROBE 재시작 또는 HUMAN REPRO packet
 - Stage A만 PASS 확인하고 Generate “완료”
 - compiler만 고치고 `validatePlan` / chip UI / Foundry queue 미확인
 - Foundry domain heal만 하고 `sql_text` placeholder·compiler·gates 불일치 방치

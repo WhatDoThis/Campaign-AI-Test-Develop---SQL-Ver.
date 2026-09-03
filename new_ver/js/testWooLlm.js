@@ -1,7 +1,7 @@
 /*
  * testWooLlm.js (LLM Pass0·Pass1 파이프라인)
  * ==================================================
- * litmus 동기 __v=201 (형제 축 conceptHeal · span gap inline heal).
+ * litmus 동기 __v=206 (#455 postEmbedding 제거).
  * EnPivot(전체 문장 1콜, 캐시만 스킵) 후 Pass1. 추출 실패 시 재입력(Pass0 우회 금지).
  * 최종 SQL은 쓰지 않음. 동기 HttpClientRequest만 사용.
  *
@@ -11,11 +11,11 @@
  * - normalizeAtomicSlots — EnPivot 슬롯 통과(중복·빈 텍스트만 제거)
  * - selectPlan — Pass1 후보→CNF plan JSON
  * - generatePlan — EnPivot→M1/M2/M2G/M2C/M3 매칭→Pass1. retryInput·unresolved 시 SQL 없음. opts.clarifyPick은 이번 요청만
+ * - _healUnmatchedFromLibrary — Pass1 unmatchedSlots 서가 재조회·plan.include 병합
  * - chat — 동기 chat/completions (EnPivot translateAndExtract)
  * - parseJson — LLM 봉투→JSON 객체
  * - postChat — chat/completions 호출·오류 메타 부착
- * - postEmbedding — embeddings 호출·오류 메타 부착
- * - explainDedupDiff — dedup near 차이 설명(판정 무관)
+ * - explainDedupDiff — dedup near 시 LLM 설명(판정 무관)
  * - reasoningOff — reasoning 비활성 body 조각
  *
  * [Dependencies]
@@ -25,7 +25,7 @@
  * - testWoo.fragments.searchSlots·listLexiconCards·healDomain·saveParamDomain
  * - testWoo.fragContract.matchEnPivotSlot·healSlotConceptFromCatalog·splitCoordSlots·slotCoverParts — 매칭·형제축 heal·및/and 분할·leftover
  * - HttpClientRequest + MemoryBuffer — serverConf urlPermission 필요
- * - Foundry `_normalizeSlots` — normalizeAtomicSlots 재사용
+ * - testWoo.fragContract.paramsForHealedLibraryHit — heal.library {{param}} 바인딩
  *
  * [Invariants]
  * =========
@@ -1477,7 +1477,16 @@ testWoo.llm = (function () {
     var slots = llmSlots;
     if (!skipPass0 && testWoo.fragContract && testWoo.fragContract.mergeLexiconSlots)
       slots = testWoo.fragContract.mergeLexiconSlots(lexSlots, llmSlots);
+    else if (skipPass0 && lexSlots.length && testWoo.fragContract &&
+             testWoo.fragContract.mergeLexiconSlots)
+      slots = testWoo.fragContract.mergeLexiconSlots(llmSlots, lexSlots);
     else if (!slots || !slots.length) slots = lexSlots.length ? lexSlots : llmSlots;
+    try {
+      if (typeof twDbg === "function" && skipPass0 && lexSlots.length &&
+          slots.length > llmSlots.length)
+        twDbg("merge", "enPivot+lex remainder lex=" + lexSlots.length +
+          " pivot=" + llmSlots.length + " merged=" + slots.length);
+    } catch (eLx) { /* skip */ }
     try {
       if (typeof twDbg === "function" && lexSlots.length && llmSlots.length && !skipPass0)
         twDbg("merge", "lex=" + lexSlots.length + " vs pivot=" + llmSlots.length +
@@ -1826,6 +1835,7 @@ testWoo.llm = (function () {
     _healPlanDomains(plan);
     _dropBindableUnmatched(plan);
     _resplitUnmatched(plan, pack);
+    _healUnmatchedFromLibrary(plan, nlRequest);
     return plan;
   }
 
@@ -1860,6 +1870,88 @@ testWoo.llm = (function () {
       if (typeof twDbg === "function")
         twDbg("unmatched.split", texts.join(" | "));
     } catch (eD) { /* skip */ }
+  }
+
+  // Pass1 unmatched(EnPivot 밖 잔여·Foundry publish 직후) — 서가 libraryLookup으로 plan에 병합.
+  function _healUnmatchedFromLibrary(plan, nlRequest) {
+    if (!plan || !plan.unmatched || !plan.unmatched.length) return;
+    if (!testWoo.feasibility || !testWoo.feasibility.libraryLookup) {
+      try {
+        if (typeof twDbg === "function")
+          twDbg("heal.library", "skip feasibility unavailable");
+      } catch (eSk) { /* skip */ }
+      return;
+    }
+    if (!testWoo.fragments || !testWoo.fragments.getByName) return;
+    var before = plan.unmatched.length;
+    var kept = [];
+    var keptSlots = [];
+    var slotByText = {};
+    var us = plan.unmatchedSlots || [];
+    var ui;
+    for (ui = 0; ui < us.length; ui++) {
+      if (us[ui] && us[ui].text) slotByText[String(us[ui].text)] = us[ui];
+    }
+    var i, phrase, slotObj, lib, full, item, fragName, seenFrag = {};
+    _walkFragments(plan, function (it) {
+      if (it && it.fragment) seenFrag[String(it.fragment)] = 1;
+    });
+    for (i = 0; i < plan.unmatched.length; i++) {
+      phrase = String(plan.unmatched[i] || "");
+      if (!phrase) continue;
+      slotObj = slotByText[phrase] || { text: phrase, searchKeywords: [phrase] };
+      lib = null;
+      try {
+        lib = testWoo.feasibility.libraryLookup(slotObj, { statuses: _catalogStatuses() });
+      } catch (eL) { lib = null; }
+      if (!lib || !lib.ok || !lib.name) {
+        kept.push(phrase);
+        keptSlots.push(slotObj);
+        continue;
+      }
+      fragName = String(lib.name);
+      if (seenFrag[fragName]) {
+        kept.push(phrase);
+        keptSlots.push(slotObj);
+        continue;
+      }
+      full = null;
+      try { full = testWoo.fragments.getByName(fragName); } catch (eG) { full = null; }
+      var bound = null;
+      if (full && testWoo.fragContract && testWoo.fragContract.paramsForHealedLibraryHit) {
+        var card = full;
+        try {
+          if (testWoo.fragments.toCard) card = testWoo.fragments.toCard(full);
+        } catch (eC) { card = full; }
+        bound = testWoo.fragContract.paramsForHealedLibraryHit(
+          full, card, slotObj, nlRequest, lib);
+      }
+      if (!bound) {
+        kept.push(phrase);
+        keptSlots.push(slotObj);
+        try {
+          if (typeof twDbg === "function")
+            twDbg("heal.library", "\u00AB" + phrase + "\u00BB skip params incomplete");
+        } catch (eSk2) { /* skip */ }
+        continue;
+      }
+      item = {
+        fragment: fragName,
+        label: full && full.label ? String(full.label) : "",
+        params: bound
+      };
+      if (!plan.include) plan.include = [];
+      plan.include.push({ any: [item] });
+      seenFrag[fragName] = 1;
+      try {
+        if (typeof twDbg === "function")
+          twDbg("heal.library", "\u00AB" + phrase + "\u00BB \u2192 " + fragName);
+      } catch (eDbg) { /* skip */ }
+    }
+    plan.unmatched = kept;
+    plan.unmatchedSlots = keptSlots;
+    if (before > kept.length && testWoo.compiler && testWoo.compiler.bindPlanParams)
+      testWoo.compiler.bindPlanParams(plan, String(nlRequest || plan.nl_request || ""));
   }
 
   // 같은 축+_source frag가 plan에 있으면 도메인 값만 heal. 남는 명사는 unmatched 유지.
@@ -2235,48 +2327,6 @@ testWoo.llm = (function () {
       var em = wrap.error.message || wrap.error.code || "unknown";
       throw _httpError("[testWoo.llm.postChat] API error: " + em,
         _numOrNull(wrap.error.code));
-    }
-    return wrap;
-  }
-
-  // 임베딩 엔드포인트는 chat endpoint(옵션 testWooAiLlmEndpoint)의 호스트를 재사용한다.
-  // 하드코딩하면 프로바이더 교체·프록시 환경에서 어긋나고, 호스트가 chat 과 달라지는 경우
-  // serverConf.xml urlPermission 에 그 호스트를 별도로 추가해야 한다.
-  var CHAT_PATH_RE = /\/chat\/completions\/?$/i;
-
-  // #155: 패턴 불일치 시 chat URL 폴백 금지(확정 400/404). null → embed() 가 null 폴백.
-  function _embedEndpoint(chatEndpoint) {
-    var url = String(chatEndpoint || "");
-    if (!url)
-      throw new Error("[testWoo.llm.postEmbedding] endpoint empty (option testWooAiLlmEndpoint)");
-    if (CHAT_PATH_RE.test(url)) return url.replace(CHAT_PATH_RE, "/embeddings");
-    logWarning("[testWoo.llm._embedEndpoint] endpoint 가 /chat/completions 형태가 아니라 " +
-      "임베딩 경로를 유도할 수 없습니다 — null 반환 host=" + _hostOf(url));
-    return null;
-  }
-
-  function postEmbedding(cfg, inputArray) {
-    if (!cfg.llm.apiKey) throw new Error("[testWoo.llm.postEmbedding] apiKey missing");
-    var embedUrl = _embedEndpoint(cfg.llm.endpoint);
-    if (!embedUrl) return null;
-    var body = { model: cfg.llm.embedModel, input: inputArray };
-    var raw = _postJson(
-      { apiKey: cfg.llm.apiKey, endpoint: embedUrl, useProxy: cfg.llm.useProxy },
-      body,
-      { "Authorization": "Bearer " + cfg.llm.apiKey }
-    );
-    var wrap;
-    try {
-      wrap = JSON.parse(String(raw));
-    } catch (e) {
-      throw new Error("[testWoo.llm.postEmbedding] parse failed: " + e.message);
-    }
-    if (wrap && wrap.error) {
-      var em = wrap.error.message || wrap.error.code || "unknown";
-      throw _httpError(
-        "[testWoo.llm.postEmbedding] API error: " + em,
-        _numOrNull(wrap.error.code)
-      );
     }
     return wrap;
   }
@@ -2738,11 +2788,10 @@ testWoo.llm = (function () {
     chat: _chat,
     parseJson: _parseJson,
     postChat: postChat,
-    postEmbedding: postEmbedding,
     explainDedupDiff: explainDedupDiff,
     reasoningOff: reasoningOff,
     _postJson: _postJson,
     _readResponseBody: _readResponseBody
   };
 })();
-testWoo.llm.__v = "201";
+testWoo.llm.__v = "206";

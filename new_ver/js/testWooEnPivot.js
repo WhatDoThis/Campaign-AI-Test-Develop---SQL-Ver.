@@ -5,7 +5,7 @@
  * - 동일 문장 재입력만 해시 캐시(TTL 1일 · 키에 __v 포함, 배포 후 구추출 재사용 금지).
  * concept는 (schema+xpath)에 이미 있으면 LLM 제안을 덮어쓰지 않는다.
  * 컬럼 도메인 값은 1회 번역해 nlMap 키를 {db, en[]} 으로 확장한다(키 삭제 금지).
- * litmus __v=179 (형제 축 concept heal. 및/and 슬롯 분할).
+ * litmus __v=180 (guard.MAX_SLOTS env 연동 — 8슬롯 상한 제거).
  *
  * [Main Functions]
  * ===========
@@ -22,6 +22,7 @@
  * =========
  * - testWoo.fragContract.collectLexicon·splitByLexicon·isNoiseResidue·matchEnPivotSlot·healSlotConceptFromCatalog
  * - testWoo.llm.chat·parseJson — 기존 어댑터만 (json_object·외부 번역 API 금지)
+ * - testWoo.env.getEnv().guard.MAX_SLOTS — enPivot 슬롯 상한(기본 40)
  * - generatePlan이 extractSlots를 Pass0 앞에 호출. loadLibrary는 Llm보다 앞
  *
  * [Invariants]
@@ -37,13 +38,28 @@ testWoo.enPivot = (function () {
 
   var CACHE_TTL_MS = 86400000;
   var MAX_CARDS = 80;
-  var MAX_SLOTS = 8;
   var KIND_OK = { categorical: 1, range: 1, boolean: 1, other: 1 };
   var POL_OK = { include: 1, exclude: 1 };
   var _nlCache = {};
 
   function _trim(s) {
     return String(s == null ? "" : s).replace(/^\s+|\s+$/g, "");
+  }
+
+  function _maxSlots() {
+    var n = 40;
+    try {
+      if (testWoo.env && testWoo.env.getEnv) {
+        var g = testWoo.env.getEnv().guard;
+        if (g && g.MAX_SLOTS != null) {
+          var v = Number(g.MAX_SLOTS);
+          if (!isNaN(v) && v > 0) n = v;
+        }
+      }
+    } catch (eM) { /* default 40 */ }
+    if (n > 40) n = 40;
+    if (n < 1) n = 1;
+    return n;
   }
 
   function _now() {
@@ -389,7 +405,7 @@ testWoo.enPivot = (function () {
       "If you cannot recover any targeting condition, return slots:[] (do not guess SQL).",
       "Do not write SQL or fragment ids.",
       "kind: categorical|range|boolean|other. polarity: include|exclude.",
-      "At most 8 slots. OUTPUT JSON ONLY. No prose, no markdown, no second JSON.",
+      "At most " + _maxSlots() + " slots. OUTPUT JSON ONLY. No prose, no markdown, no second JSON.",
       'Schema: {"en":"<English sentence>","slots":[{"surface":"...","concept":"...","en_literal":"...","kind":"categorical","polarity":"include","is_new":false}]}',
       "CANDIDATE_CARDS: " + JSON.stringify(_slimCards(candidateCards || []))
     ].join("\n");
@@ -417,7 +433,7 @@ testWoo.enPivot = (function () {
     var list = _isArray(parsed.slots) ? parsed.slots : [];
     var slots = [];
     var i, ns;
-    for (i = 0; i < list.length && slots.length < MAX_SLOTS; i++) {
+    for (i = 0; i < list.length && slots.length < _maxSlots(); i++) {
       ns = _normSlot(list[i]);
       if (!ns.surface) continue;
       if (_isNonConditionSlot(ns)) continue;
@@ -710,4 +726,4 @@ testWoo.enPivot = (function () {
     putNlCache: putNlCache
   };
 })();
-testWoo.enPivot.__v = "179";
+testWoo.enPivot.__v = "180";

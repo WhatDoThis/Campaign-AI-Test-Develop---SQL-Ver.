@@ -1,7 +1,7 @@
 <%
 response.setContentType("application/json;charset=utf-8");
 /*
- * testWooAiRegister.jssp (SQL 등록 · R6 커밋)
+ * testWooAiSqlRegister.jssp (SQL 등록 · R6 커밋)
  * ==================================================
  * plan 재컴파일·gates 통과 후 WKF가 있으면 락→주입→saveAiSql→해제.
  * WKF 없으면 이력만. 락 실패·주입 실패 시 AiSql 부분 기록 없음.
@@ -107,8 +107,13 @@ try {
     if (wfName) {
       loadLibrary("woo:testWooWorkflowClone.js");
       loadLibrary("woo:testWooWorkflowUi.js");
+      loadLibrary("woo:testWooOperatorPrefs.js");
       twRequireLib("woo:testWooWorkflowClone.js", (typeof testWoo !== "undefined") && testWoo.wfClone);
       twRequireLib("woo:testWooWorkflowUi.js", (typeof testWoo !== "undefined") && testWoo.workflowUi);
+      twRequireLib(
+        "woo:testWooOperatorPrefs.js",
+        (typeof testWoo !== "undefined") && testWoo.opPrefs
+      );
 
       if (!wfId && testWoo.workflowUi.lookupIdByName) {
         wfId = String(testWoo.workflowUi.lookupIdByName(wfName) || "");
@@ -235,6 +240,18 @@ try {
             }
             try { testWoo.wfClone.releaseLock(wfId); } catch (eRel3) {
               try { logWarning("[Register] releaseLock: " + eRel3); } catch (eL) {}
+            }
+            try {
+              var bp = testWoo.opPrefs.setBindPick(wfName, String(aiSqlId));
+              if (!bp || !bp.ok) {
+                try {
+                  logWarning("[Register] setBindPick failed: " +
+                    String(bp && bp.error ? bp.error : "unknown"));
+                } catch (eBp) {}
+              }
+            } catch (eOp) {
+              try { logWarning("[Register] opPrefs bind: " + String(eOp.message || eOp)); }
+              catch (eLo) {}
             }
             jsonOut({
               ok: true,

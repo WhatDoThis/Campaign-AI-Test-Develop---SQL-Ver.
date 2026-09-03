@@ -1,4 +1,8 @@
 /*
+ * RETIRED #455 — Stage dedup L0·L1·L3만 사용. ACC에서 woo:testWooEmbedding.js 제거.
+ * 원본: new_ver/js/testWooEmbedding.js (2026-09-03)
+ */
+/*
  * testWooEmbedding.js (Fragment 임베딩)
  * ==================================================
  * litmus 동기 __v=159 (#160 배포정합).
@@ -81,8 +85,6 @@ testWoo.embedding = (function () {
   function embed(textArray) {
     if (!textArray || !textArray.length) return null;
     var cfg = testWoo.cfg.getConfig();
-    // 플래그는 cfg.llm.embedEnabled 다(testWooConfig 가 env llm 섹션에서 싣는다).
-    // cfg.foundry.embedEnabled 는 존재하지 않아 임베딩이 항상 비활성으로 새던 경로였다.
     if (!cfg.llm.embedEnabled) return null;
     if (!cfg.llm.apiKey || !cfg.llm.embedModel) {
       logWarning("[testWoo.embedding.embed] embed disabled or options missing");
@@ -123,7 +125,6 @@ testWoo.embedding = (function () {
     frag.emb_source_hash = hash;
     frag.emb_model = testWoo.cfg.getConfig().llm.embedModel;
     frag.emb_dim = vecs[0].length;
-    /* #155: publish()가 emb_updated_at 을 DB에 기록. 캐시 히트 경로도 시각 갱신하지 않음 */
     frag.emb_updated_at = formatDate(
       new Date(),
       "%4Y/%2M/%2D %02H:%02N:%02S"

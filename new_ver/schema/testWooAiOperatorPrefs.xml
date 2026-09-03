@@ -1,0 +1,61 @@
+<srcSchema _cs="Test Woo AI Operator Prefs (woo)" mappingType="sql" name="testWooAiOperatorPrefs"
+           namespace="woo" label="Test Woo AI Operator Prefs" labelSingular="Operator Prefs"
+           xtkschema="xtk:srcSchema">
+
+  <!--
+    testWooAiOperatorPrefs — 로그인(operator)당 1행 Studio 개인 설정
+    sqltable: testWooAiOperatorPrefs · UK: operator_login
+    소비: testWooOperatorPrefs.js · BindPick(최근 WKF·Apply) · NL recent · inject 롤백
+
+    컬럼 | 용도 | 예시
+    @id | PK (autopk) | 44533
+    operator_login | ACC 로그인 ID · 행 식별 | hiwoo
+    bind_wkf_name | 최근 WKF internalName · WF Apply·Studio 단축 | WKF214
+    bind_ai_sql_id | 해당 WKF에 마지막 Register ai_sql_id | 44628
+    nl_recent_1 .. nl_recent_10 | 최근 NL 질문 텍스트(고정 슬롯 1=최신, max 96자) | iOS 사용하고 학생요금제…
+    nl_recent_at_1 .. nl_recent_at_10 | 슬롯별 저장 시각 Unix ms(long) | 1788333625888
+    inject_backup_wkf | Register inject 직전 WKF internalName(롤백용) | WKF214
+    inject_backup_activity | inject 대상 aiStudioSql @name | aiStudioSql
+    inject_backup_ai_sql_id | inject 직전 ai-sql-id | 44541
+    inject_backup_script | inject 직전 userScript 본문(memo) | SELECT …
+    modified_at | 행 마지막 갱신 시각 | 2026-09-02 16:20:44
+  -->
+  <element autopk="true" label="Test Woo AI Operator Prefs" name="testWooAiOperatorPrefs"
+           sqltable="testWooAiOperatorPrefs">
+    <dbindex name="idx_operator_login" unique="true">
+      <keyfield xpath="@operator_login"/>
+    </dbindex>
+
+    <attribute label="Operator Login" length="64" name="operator_login" type="string"/>
+    <attribute label="Bind WKF Name" length="64" name="bind_wkf_name" type="string"/>
+    <attribute label="Bind AI SQL Id" length="32" name="bind_ai_sql_id" type="string"/>
+
+    <attribute label="NL Recent 1" length="96" name="nl_recent_1" type="string"/>
+    <attribute label="NL Recent At 1" name="nl_recent_at_1" type="long"/>
+    <attribute label="NL Recent 2" length="96" name="nl_recent_2" type="string"/>
+    <attribute label="NL Recent At 2" name="nl_recent_at_2" type="long"/>
+    <attribute label="NL Recent 3" length="96" name="nl_recent_3" type="string"/>
+    <attribute label="NL Recent At 3" name="nl_recent_at_3" type="long"/>
+    <attribute label="NL Recent 4" length="96" name="nl_recent_4" type="string"/>
+    <attribute label="NL Recent At 4" name="nl_recent_at_4" type="long"/>
+    <attribute label="NL Recent 5" length="96" name="nl_recent_5" type="string"/>
+    <attribute label="NL Recent At 5" name="nl_recent_at_5" type="long"/>
+    <attribute label="NL Recent 6" length="96" name="nl_recent_6" type="string"/>
+    <attribute label="NL Recent At 6" name="nl_recent_at_6" type="long"/>
+    <attribute label="NL Recent 7" length="96" name="nl_recent_7" type="string"/>
+    <attribute label="NL Recent At 7" name="nl_recent_at_7" type="long"/>
+    <attribute label="NL Recent 8" length="96" name="nl_recent_8" type="string"/>
+    <attribute label="NL Recent At 8" name="nl_recent_at_8" type="long"/>
+    <attribute label="NL Recent 9" length="96" name="nl_recent_9" type="string"/>
+    <attribute label="NL Recent At 9" name="nl_recent_at_9" type="long"/>
+    <attribute label="NL Recent 10" length="96" name="nl_recent_10" type="string"/>
+    <attribute label="NL Recent At 10" name="nl_recent_at_10" type="long"/>
+
+    <attribute label="Inject Backup WKF" length="64" name="inject_backup_wkf" type="string"/>
+    <attribute label="Inject Backup Activity" length="64" name="inject_backup_activity" type="string"/>
+    <attribute label="Inject Backup SQL Id" length="32" name="inject_backup_ai_sql_id" type="string"/>
+    <attribute label="Inject Backup Script" name="inject_backup_script" type="memo"/>
+
+    <attribute label="Modified At" name="modified_at" type="datetime"/>
+  </element>
+</srcSchema>

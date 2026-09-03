@@ -1,0 +1,9 @@
+# new_ver — ACC STG ZIP / 배포에서 제외 (Git 보관)
+#
+# 분류 정본: docs/main/(공용)new_ver_ACC배포분류.md
+
+html/                    # Studio JS 원본 — 배포본은 jssp/testWooAiStudioJs.jssp
+_retire/                 # WF embed · 제작용 · reference (ACC 콘솔 orphan 삭제 대상)
+
+# DEFERRED (repo에 파일 있을 경우만 · STG 미배포):
+#   schema/testWooAiCodemap.xml

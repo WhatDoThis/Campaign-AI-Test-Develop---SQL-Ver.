@@ -1,7 +1,7 @@
 /*
  * testWooMatch.js (조건 매칭 엔진)
  * ==================================================
- * litmus 동기 __v=160 (#160 orphan WKF Match 제외 주석).
+ * litmus 동기 __v=163. load 시 getConfig 미호출 · 런타임 _jaccardThreshold.
  * dedup=Jaccard≥0.9(name 집합). discover=값복합키 SAME/CONFLICT/MISSING.
  * UI 단정·Option ON은 Studio — 본 모듈은 판정만.
  *
@@ -36,11 +36,39 @@ testWoo.match = (function () {
 
   /** 집합 키: fragment.name (dedup 불변 · 삭제 금지) */
   var MATCH_KEY = "name";
-  /** Jaccard 임계 — dedup 전용 · 변경 금지 */
-  var JACCARD_THRESHOLD = 0.9;
-  var MATCH_SQL_LIMIT = 500;
-  /** discover Top-N (#154 · #147R 흡수) */
-  var DISCOVER_TOP_N = 10;
+
+  function _matchCfg() {
+    var m = null;
+    try {
+      if (testWoo.cfg && testWoo.cfg.getConfig) m = testWoo.cfg.getConfig().match;
+    } catch (eC) {}
+    if (m) return m;
+    try {
+      if (testWoo.env && testWoo.env.getEnv) m = testWoo.env.getEnv().match;
+    } catch (eE) {}
+    return m || {};
+  }
+
+  function _jaccardThreshold() {
+    var m = _matchCfg();
+    var n = Number(m.jaccardThreshold);
+    if (isNaN(n) || n < 0) return 0.9;
+    return n;
+  }
+
+  function _matchSqlLimit() {
+    var m = _matchCfg();
+    var n = parseInt(m.sqlLimit, 10);
+    if (isNaN(n) || n <= 0) return 500;
+    return n;
+  }
+
+  function _discoverTopN() {
+    var m = _matchCfg();
+    var n = parseInt(m.discoverTopN, 10);
+    if (isNaN(n) || n <= 0) return 10;
+    return n;
+  }
 
   function _trim(s) {
     return String(s == null ? "" : s).replace(/^\s+|\s+$/g, "");
@@ -460,7 +488,7 @@ testWoo.match = (function () {
     if (!testWoo.repo || !testWoo.repo.listAiSqlForMatch) {
       throw new Error("[testWoo.match.matchByPlan] repo.listAiSqlForMatch missing");
     }
-    return testWoo.repo.listAiSqlForMatch(MATCH_SQL_LIMIT);
+    return testWoo.repo.listAiSqlForMatch(_matchSqlLimit());
   }
 
   function _querySqlHash(plan) {
@@ -478,8 +506,8 @@ testWoo.match = (function () {
     var threshold =
       opts && opts.threshold != null
         ? Number(opts.threshold)
-        : JACCARD_THRESHOLD;
-    if (isNaN(threshold) || threshold < 0) threshold = JACCARD_THRESHOLD;
+        : _jaccardThreshold();
+    if (isNaN(threshold) || threshold < 0) threshold = _jaccardThreshold();
 
     var setA = fragmentNameSetFromPlan(plan);
     var queryCount = _setSize(setA);
@@ -613,7 +641,7 @@ testWoo.match = (function () {
         queryValueCount: mapQ.valuedCount,
         scope: "global",
         mode: "discover",
-        topN: DISCOVER_TOP_N,
+        topN: _discoverTopN(),
         campaign_id: _trim(campaignId),
         excludedReason: mapQ.hasRange ? "range_query" : "no_values"
       };
@@ -710,8 +738,8 @@ testWoo.match = (function () {
 
     var items = _enrichItems(scored);
     _sortDiscover(items);
-    if (items.length > DISCOVER_TOP_N) {
-      items = items.slice(0, DISCOVER_TOP_N);
+    if (items.length > _discoverTopN()) {
+      items = items.slice(0, _discoverTopN());
     }
 
     return {
@@ -723,7 +751,7 @@ testWoo.match = (function () {
       queryValueCount: mapQ.valuedCount,
       scope: "global",
       mode: "discover",
-      topN: DISCOVER_TOP_N,
+      topN: _discoverTopN(),
       campaign_id: _trim(campaignId)
     };
   }
@@ -739,8 +767,9 @@ testWoo.match = (function () {
 
   return {
     MATCH_KEY: MATCH_KEY,
-    JACCARD_THRESHOLD: JACCARD_THRESHOLD,
-    DISCOVER_TOP_N: DISCOVER_TOP_N,
+    /* load 시 getConfig 호출 금지 — libVersions·구 Env 에서도 모듈 로드 (#427) */
+    JACCARD_THRESHOLD: 0.9,
+    DISCOVER_TOP_N: 10,
     fragmentNameSetFromUsed: fragmentNameSetFromUsed,
     fragmentNameSetFromPlan: fragmentNameSetFromPlan,
     valueKeySetFromPlan: valueKeySetFromPlan,
@@ -750,4 +779,4 @@ testWoo.match = (function () {
     matchByPlan: matchByPlan
   };
 })();
-testWoo.match.__v = "160";
+testWoo.match.__v = "163";

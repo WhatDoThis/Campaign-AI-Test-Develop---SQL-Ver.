@@ -1,76 +1,37 @@
-<!--
-woo:testWooAiRequestQueue (Foundry 비동기 요청 큐 · 스키마 정의서)
-==================================================================
-Stage A 에서 매칭되지 않은 슬롯을 배치 처리하기 위한 큐. 한 행이 하나의 NL 요청이며
-슬롯별 Triage 판정 → fragment 생성 → 운영 승인까지의 상태를 여기서 추적한다.
-자동 재큐잉 없음. 승인 후 사용자가 같은 NL 을 다시 요청해야 SQL 이 나온다.
-
-[Main Functions]
-===========
-- Generate 시 미매칭 슬롯 적재 (foundry.enabled 일 때만)
-- 배치 처리 상태 전이 및 스테일 큐 복구 (processing 장기 점유 회수)
-- 슬롯별 Triage 판정·증거 로그·토큰 사용량 보관
-
-[Enumerations]
-=========
-- requestQueueStatus (default queued) : 처리 상태
-  · queued                 처리 대기
-  · processing             배치가 점유 중. staleProcessingMinutes 초과 시 회수 대상
-  · awaiting_approval      fragment 생성·게이트 통과. 운영 승인 대기
-  · awaiting_clarification 되묻기 필요 (clarify_answers 수신 대기)
-  · infeasible             전체 슬롯이 DB 로 표현 불가. 정상 종료이며 재시도 대상 아님
-  · partially_infeasible   일부 슬롯만 불가. partial_preview 로 부분 실행 제안
-  · done                   승인 완료
-  · failed                 오류 종료. last_error / err_id 확인
-  · needs_human_design     라이브러리 재설계 필요 (자동 생성 한계)
-  · throttled              HTTP 402/429. 재시도 금지하고 다음 배치로 미룸
-
-[Keys / Indexes]
-=========
-- idx_status_created : status + created_at. 배치의 queued 순차 조회 경로
-
-[Attributes]
-=========
-요청 원문
-- nl_text             (memo)          원문 자연어 요청 전체
-- slots_json          (memo)          Pass0 슬롯 분해 결과 배열
-- missing_slots_json  (memo)          미매칭 슬롯 배열. 처리 완료 시 [] 로 비운다
-- plan_json           (memo)          Generate 시점의 부분 조합 계획
-
-처리 상태
-- status              (enum 24)       위 requestQueueStatus
-- attempt_count       (short, 0)      배치 점유 횟수. 스테일 복구 시 낙관적 잠금 비교에 사용
-- last_error          (memo)          마지막 오류 또는 운영자 안내 문구
-- err_id              (string 32)     서버 로그 대조용 오류 식별자 (FF/FFPERM/FFDATA 접두)
-- updated_at          (datetime)      상태 전이 시각. 스테일 판정 기준
-
-Triage 산출물
-- slot_results        (memo)          슬롯별 판정 배열 JSON (verdict / confidence / alternatives)
-- evidence_log        (memo)          toolkit 실호출 로그 JSON. LLM 자기신고가 아닌 기계 근거
-- partial_preview     (memo)          부분 실행 미리보기 JSON
-- clarify_answers     (memo)          되묻기 응답 JSON. 현재 읽기만 하며 기록 경로는 미구현
-
-비용·귀속
-- tokens_used         (long, 0)       요청 단위 누적 토큰
-- cost_estimate       (double)        비용 추정. 현재 기록 경로 미구현 (예약 필드)
-- created_by          (string 64)     요청 운영자 로그인
-- workflow_name       (string 64)     호출한 WF 인터널네임(WKF94 등). 정수 @id 아님
-- created_at          (datetime)      적재 시각
-
-[Dependencies]
-=========
-- Producers: testWooRepository.js enqueueRequest, jssp/testWooAiGenerate.jssp
-- Consumers: testWooFoundry.js (processBatch/processQueueItem), testWooFeasibility.js,
-  jssp/testWooAiFragmentReview.jssp
-- Forms: input_form/testWooAiRequestQueue.xml, navtree [WOO] Request Queue
--->
 <srcSchema _cs="Test Woo AI Request Queue (woo)" mappingType="sql" name="testWooAiRequestQueue" namespace="woo"
            label="Test Woo AI Request Queue" labelSingular="Test Woo AI Request Queue" xtkschema="xtk:srcSchema">
+
+  <!--
+    testWooAiRequestQueue — Foundry 비동기 fragment 생성 큐
+    sqltable: testWooAiRequestQueue · idx: status+created_at
+    소비: testWooFoundry.js · testWooAiQueueStatus.jssp · Generate queued 경로
+
+    enum status | queued · processing · awaiting_approval · infeasible ·
+                  partially_infeasible · done · failed · needs_human_design · throttled
+
+    컬럼 | 용도 | 예시
+    @id | PK · queueId | 29894
+    nl_text | 원본 NL(memo) | 5G 쓰는 40대
+    slots_json | EnPivot/lex 슬롯 JSON(memo) | [{"surface":"40대"}]
+    missing_slots_json | 미매칭 슬롯 JSON(memo) | []
+    plan_json | 부분 plan JSON(memo) | {}
+    slot_results | 슬롯별 Foundry 결과 JSON(memo) | [{…}]
+    evidence_log | triage/probe 증거(memo) | []
+    clarify_answers | 재질의 응답 JSON(memo) | {}
+    partial_preview | partial SQL 미리보기(memo) | SELECT …
+    status | requestQueueStatus | done
+    attempt_count | 처리 시도 횟수 | 2
+    last_error | 마지막 오류 메시지(memo) | LLM timeout
+    err_id | 오류 추적 ID | TW1788…
+    tokens_used | LLM 토큰 사용량 | 4500
+    created_by | 요청자 로그인 | hiwoo
+    workflow_name | 요청 WKF(선택) | WKF214
+    created_at / updated_at | 생성·갱신 시각 | 2026-09-02 15:00:00
+  -->
   <enumeration basetype="string" default="queued" name="requestQueueStatus">
     <value label="Queued"                  name="queued"/>
     <value label="Processing"              name="processing"/>
     <value label="Awaiting Approval"       name="awaiting_approval"/>
-    <value label="Awaiting Clarification"  name="awaiting_clarification"/>
     <value label="Infeasible"              name="infeasible"/>
     <value label="Partially Infeasible"    name="partially_infeasible"/>
     <value label="Done"                    name="done"/>
@@ -98,7 +59,6 @@ Triage 산출물
     <attribute label="Last Error"         name="last_error"          type="memo"/>
     <attribute label="Error ID"           length="32"  name="err_id"            type="string"/>
     <attribute label="Tokens Used"        name="tokens_used"         type="long" default="0"/>
-    <attribute label="Cost Estimate"      name="cost_estimate"       type="double"/>
     <attribute label="Created By"         length="64"  name="created_by"        type="string"/>
     <attribute label="Workflow Name"      length="64"  name="workflow_name"     type="string"/>
     <attribute label="Created At"         name="created_at"          type="datetime"/>

@@ -1,7 +1,7 @@
 /*
  * testWooWorkflowUi.js (WF 캔버스 ↔ Studio SOAP · R6 주입)
  * ==================================================
- * litmus 동기 __v=165. 템플릿 sqlDM @name=aiStudioSql → userScript (스키마 memo).
+ * litmus 동기 __v=166 (inject backup → testWoo.opPrefs.saveInjectBackup).
  * 구 WKF customActivity 는 script. SOAP ShellProbe/Pick/Bind.
  * 본문은 SOAP 인자로 받지 않고 registered testWooAiSql.@sql_query 만 Write.
  *
@@ -22,12 +22,13 @@
  * - 구 customActivity 는 script. ai-sql-id 병행
  * - testWoo.repo.getAiSqlById — 주입 SQL 출처 (status=registered)
  * - xtk:workflow data — commitInject queryDef+Write (Spawn 금지)
- * - XtkOption testWooAiInjectBackup — 마지막 본문+ID 스냅샷
+ * - testWoo.opPrefs.saveInjectBackup — inject 롤백 스냅샷(스키마)
+ * - XtkOption testWooAiInjectBackup — 레거시 폴백
  */
 
 if (typeof testWoo === "undefined") testWoo = {};
 if (!testWoo.workflowUi) testWoo.workflowUi = {};
-testWoo.workflowUi.__v = "165";
+testWoo.workflowUi.__v = "166";
 
 var TESTWOO_AI_ACTIVITY_NAME = "aiStudioSql";
 var TESTWOO_AI_ACTIVITY_NAME_OLD = "customActivity";
@@ -359,6 +360,24 @@ function _twWfSaveBackup(snap) {
     setOption(TESTWOO_AI_INJECT_BACKUP_OPT, payload);
   } catch (eOpt) {
     logWarning("[testWoo.WorkflowUi] backup option: " + eOpt);
+  }
+  if (typeof testWoo !== "undefined" && testWoo.opPrefs &&
+      testWoo.opPrefs.saveInjectBackup) {
+    try {
+      var opRes = testWoo.opPrefs.saveInjectBackup({
+        workflowName: snap.workflowName,
+        activityName: snap.activityName,
+        aiSqlId: snap.aiSqlId,
+        script: snap.script
+      });
+      if (!opRes || !opRes.ok) {
+        logWarning("[testWoo.WorkflowUi] opPrefs backup: " +
+          String(opRes && opRes.error ? opRes.error : "unknown"));
+      }
+    } catch (eOp) {
+      logWarning("[testWoo.WorkflowUi] opPrefs backup: " +
+        String(eOp.message || eOp));
+    }
   }
 }
 

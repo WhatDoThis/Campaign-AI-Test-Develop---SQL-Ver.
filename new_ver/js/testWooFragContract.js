@@ -4,7 +4,7 @@
  * Stage A / libraryLookup / Foundry publish / Dedup / Compiler가
  * 각자 복제하던 축·색인·커버·샘플바인딩을 한곳에서 제공한다.
  * 같은 tags/name 축 frag는 값 사전 공백이어도 재사용하고, 별칭은 검증 후 merge한다.
- * NL 매칭은 M1 원문⊂문장 → M2 en[] → M3 concept(axis 동치). {db,en} 바인딩은 db만. litmus __v=206.
+ * NL 매칭은 M1 원문⊂문장 → M2 en[] → M3 concept(axis 동치). {db,en} 바인딩은 db만. litmus __v=212.
  * 축 정합 = 카탈로그 _source.concept·xpath·conceptAliases·tags·name (도메인명 하드코딩 없음).
  * 모호 슬롯은 promptHints(합집합+멤버 ≤5). 클릭은 NL 보강. 감사시각은 슬롯당 GROUP BY 1회.
  * 닫힌 enum이 있으면 후보=enum만. 별칭 db가 enum에 없으면 별칭 키(라이브 값)를 씀.
@@ -31,7 +31,8 @@
  * - spanRangeSqlText — _range span params + relative sql_text → absolute 날짜 SQL
  * - promoteEqPlaceholderToIn — `col = {{p}}` → `col IN ({{p}})` (>= <= != 유지)
  * - coversSlot / libraryHitPredicate / slotCoverParts / splitCoordSlots / splitCompoundSlots — 재사용·및/and·다축 분할. leftover는 identity
- * - resolveNlParams — NL→params (Compiler bind 공유). `_group` 히트는 members[] (후보 교집합)
+ * - specForParamKey / resolveNeedParams — {{channelCode}}↔xpath channel enum·nlMap 병합 (#454)
+ * - paramsForHealedLibraryHit — heal.library M3 축 히트 후 {{param}} 바인딩
  * - upsertGroup — `_group` 별칭 기록(members는 후보 교집합, nlMap 키 유지)
  * - groupHintForParams — params 멤버 집합 ↔ `_group` 별칭 (칩 표시용. SQL 변경 없음)
  * - displayHintForParams — nlMap 별칭(학생요금) ↔ 바인딩 db (칩 표시)
@@ -1580,6 +1581,34 @@ testWoo.fragContract = (function () {
     return /및|\band\b|[가-힣]와\s|[가-힣]과\s/.test(s);
   }
 
+  // Foundry publish가 넣은 자기 색인(synonyms·sample_questions) — 2글자 KO 슬롯 identity.
+  // param_domain·tags 는 제외(형제 필터 오염 방지).
+  function _slotTokInCardIndex(card, tok) {
+    if (!card || tok == null) return false;
+    var t = String(tok || "").toLowerCase();
+    if (t.length < 2) return false;
+    var syn = String(card.synonyms || "").split(/[,;]+/);
+    var si, st;
+    for (si = 0; si < syn.length; si++) {
+      st = _trim(syn[si]).toLowerCase();
+      if (st && st === t) return true;
+    }
+    var sq = card.sample_questions;
+    if (typeof sq === "string") {
+      try { sq = JSON.parse(sq); } catch (eSq) { sq = [sq]; }
+    }
+    if (sq && typeof sq.length === "number") {
+      var qi, q;
+      for (qi = 0; qi < sq.length; qi++) {
+        q = _trim(sq[qi]);
+        if (!q) continue;
+        if (q.toLowerCase() === t) return true;
+        if (q.toLowerCase().indexOf(t) >= 0) return true;
+      }
+    }
+    return false;
+  }
+
   // leftover는 및/and 가 있을 때만. 값 번역(July/teens)은 같은 필터이지 신규 축이 아님.
   function slotCoverParts(card, slot, domainRaw) {
     var slotObj = (slot && typeof slot === "object") ? slot :
@@ -1595,6 +1624,11 @@ testWoo.fragContract = (function () {
     for (di = 0; di < dist.length; di++) {
       if (_hayHasTok(hay, blob, dist[di])) { identityHit = true; break; }
     }
+    if (!identityHit) {
+      for (di = 0; di < hay.length; di++) {
+        if (_slotTokInCardIndex(card, hay[di])) { identityHit = true; break; }
+      }
+    }
     var covered = [];
     var leftoverKo = [];
     var leftoverEn = [];
@@ -1603,6 +1637,7 @@ testWoo.fragContract = (function () {
     function _axisOrDist(tok) {
       var x = String(tok || "").toLowerCase();
       if (axis && x === String(axis).toLowerCase()) return true;
+      if (_slotTokInCardIndex(card, x)) return true;
       return _hayHasTok(dist, dist.join(" "), x);
     }
     for (i = 0; i < hay.length; i++) {
@@ -1778,6 +1813,149 @@ testWoo.fragContract = (function () {
     });
   }
 
+  function _xpathAttrKey(domain) {
+    return _sourceColumnName(domain && domain._source);
+  }
+
+  // sql {{channelCode}} ↔ domain.channel(xpath) 등 구조적 동치 키
+  function paramKeyVariants(domainRaw, pk) {
+    var domain = normalizeParamDomain(domainRaw);
+    var keys = [];
+    var seen = {};
+    function add(k) {
+      k = String(k || "");
+      if (!k || seen[k]) return;
+      seen[k] = 1;
+      keys.push(k);
+    }
+    var k = String(pk || "");
+    var si, sibs;
+    add(k);
+    add(_aliasParamKeyLocal(k));
+    sibs = _siblingParamKeys(domain, k);
+    for (si = 0; si < sibs.length; si++) add(sibs[si]);
+    var xp = _xpathAttrKey(domain);
+    if (xp) {
+      add(xp);
+      add(_aliasParamKeyLocal(xp));
+      var xpLow = xp.toLowerCase();
+      var kLow = k.toLowerCase();
+      if (kLow === xpLow + "code" || kLow === xpLow + "_code") add(xp);
+      if (/code$/i.test(k) && kLow.indexOf(xpLow) === 0) add(xp);
+    }
+    return keys;
+  }
+
+  function _unionEnumInto(list, spec) {
+    if (!spec) return;
+    var ei, nk, dbv, dup, li;
+    if (spec.enum && _isArray(spec.enum)) {
+      for (ei = 0; ei < spec.enum.length; ei++) {
+        dbv = entryDb(spec.enum[ei]);
+        if (dbv == null || dbv === "") continue;
+        dup = false;
+        for (li = 0; li < list.length; li++) {
+          if (String(list[li]) === String(dbv)) { dup = true; break; }
+        }
+        if (!dup) list.push(dbv);
+      }
+    }
+    if (spec.nlMap && typeof spec.nlMap === "object") {
+      for (nk in spec.nlMap) {
+        if (!spec.nlMap.hasOwnProperty(nk)) continue;
+        dbv = entryDb(spec.nlMap[nk]);
+        if (dbv == null || typeof dbv === "object") {
+          if (String(nk)) {
+            dup = false;
+            for (li = 0; li < list.length; li++) {
+              if (String(list[li]) === String(nk)) { dup = true; break; }
+            }
+            if (!dup) list.push(String(nk));
+          }
+          continue;
+        }
+        dup = false;
+        for (li = 0; li < list.length; li++) {
+          if (String(list[li]) === String(dbv)) { dup = true; break; }
+        }
+        if (!dup) list.push(dbv);
+      }
+    }
+  }
+
+  function specForParamKey(domainRaw, pk) {
+    var domain = normalizeParamDomain(domainRaw);
+    var variants = paramKeyVariants(domain, pk);
+    var out = {};
+    var union = [];
+    var vi, vk, spec, sk;
+    for (vi = 0; vi < variants.length; vi++) {
+      vk = variants[vi];
+      spec = domain[vk];
+      if (!spec || typeof spec !== "object") continue;
+      for (sk in spec) {
+        if (!spec.hasOwnProperty(sk)) continue;
+        if (sk === "enum" || sk === "nlMap") continue;
+        if (out[sk] == null) out[sk] = spec[sk];
+        else if (sk === "required" && spec[sk]) out[sk] = true;
+      }
+      _unionEnumInto(union, spec);
+    }
+    if (union.length) out.enum = union;
+    if (out.nlMap && typeof out.nlMap !== "object") delete out.nlMap;
+    var mergedMap = null;
+    for (vi = 0; vi < variants.length; vi++) {
+      vk = variants[vi];
+      spec = domain[vk];
+      if (!spec || !spec.nlMap || typeof spec.nlMap !== "object") continue;
+      if (!mergedMap) mergedMap = {};
+      for (sk in spec.nlMap) {
+        if (!spec.nlMap.hasOwnProperty(sk)) continue;
+        if (mergedMap[sk] == null) mergedMap[sk] = spec.nlMap[sk];
+      }
+    }
+    if (mergedMap) out.nlMap = mergedMap;
+    return out;
+  }
+
+  function expandParamNeed(domainRaw, needKeys) {
+    var domain = normalizeParamDomain(domainRaw);
+    var need = needKeys || {};
+    var out = {};
+    var pk, variants, vi;
+    for (pk in need) {
+      if (!need.hasOwnProperty(pk)) continue;
+      variants = paramKeyVariants(domain, pk);
+      for (vi = 0; vi < variants.length; vi++) out[variants[vi]] = 1;
+    }
+    return out;
+  }
+
+  function resolveNeedParams(domainRaw, haystack, needKeys) {
+    var domain = normalizeParamDomain(domainRaw);
+    var need = needKeys || {};
+    var expanded = expandParamNeed(domain, need);
+    var resolved = resolveNlParams(domain, haystack || "", expanded) || {};
+    var out = {};
+    var pk, variants, vi, vk;
+    for (pk in need) {
+      if (!need.hasOwnProperty(pk)) continue;
+      if (resolved[pk] != null && resolved[pk] !== "") {
+        out[pk] = resolved[pk];
+        continue;
+      }
+      variants = paramKeyVariants(domain, pk);
+      for (vi = 0; vi < variants.length; vi++) {
+        vk = variants[vi];
+        if (resolved[vk] != null && resolved[vk] !== "") {
+          out[pk] = resolved[vk];
+          break;
+        }
+      }
+    }
+    return out;
+  }
+
   function _paramCandidates(domain, pk) {
     var out = [];
     var seen = {};
@@ -1803,14 +1981,10 @@ testWoo.fragContract = (function () {
         add(entryDb(spec.nlMap[nk]));
       }
     }
-    var spec = (domain && domain[pk]) || {};
-    var alt = _aliasParamKeyLocal(pk);
-    var altSpec = (alt && alt !== pk && domain) ? domain[alt] : null;
+    var spec = specForParamKey(domain, pk);
     addFromSpec(spec);
-    addFromSpec(altSpec);
     if (out.length) return out;
     addNl(spec);
-    addNl(altSpec);
     return out;
   }
 
@@ -2660,6 +2834,175 @@ testWoo.fragContract = (function () {
     return params;
   }
 
+  function _sqlParamKeys(sqlText) {
+    var need = {};
+    var re = /\{\{(\w+)\}\}/g;
+    var m;
+    while ((m = re.exec(String(sqlText || "")))) need[m[1]] = 1;
+    return need;
+  }
+
+  function _paramNeedFilled(params, key) {
+    if (!params) return false;
+    if (params[key] != null && params[key] !== "") return true;
+    var alt = _aliasParamKeyLocal(key);
+    return !!(alt && params[alt] != null && params[alt] !== "");
+  }
+
+  function _allSqlParamsFilled(need, params) {
+    var k;
+    for (k in need) {
+      if (!need.hasOwnProperty(k)) continue;
+      if (!_paramNeedFilled(params, k)) return false;
+    }
+    return true;
+  }
+
+  function _mergeResolvedParams(params, resolved, need) {
+    var pk, alt;
+    resolved = resolved || {};
+    for (pk in resolved) {
+      if (!resolved.hasOwnProperty(pk)) continue;
+      if (need && !need[pk]) continue;
+      if (params[pk] == null || params[pk] === "") params[pk] = resolved[pk];
+    }
+    for (pk in need) {
+      if (!need.hasOwnProperty(pk)) continue;
+      if (_paramNeedFilled(params, pk)) continue;
+      alt = _aliasParamKeyLocal(pk);
+      if (alt && resolved[alt] != null && resolved[alt] !== "")
+        params[pk] = resolved[alt];
+    }
+    return params;
+  }
+
+  function _applyMatchToParams(params, m) {
+    if (!m || m.value == null) return params;
+    if (m.param && m.param !== "_bucket") {
+      if (params[m.param] == null || params[m.param] === "")
+        params[m.param] = m.value;
+    } else if (typeof m.value === "object" && !_isArray(m.value)) {
+      var vk;
+      for (vk in m.value) {
+        if (!m.value.hasOwnProperty(vk)) continue;
+        if (params[vk] == null || params[vk] === "") params[vk] = m.value[vk];
+      }
+    }
+    return params;
+  }
+
+  function _slotNegated(slotObj) {
+    var s = String((slotObj && slotObj.text) || "") + " " +
+      String((slotObj && slotObj.en_literal) || "");
+    return /미동의|거부|아닌|제외|미(?=[가-힣])|no\s|not\s|without\s|non-/i.test(s);
+  }
+
+  // byte[0,1] 닫힌 enum — 축 identity 히트·부정 없음 → 0이 아닌 값
+  function _byteAffirmEnum(spec) {
+    if (!spec || !spec.enum || spec.enum.length !== 2) return null;
+    if (String(spec.type || "").toLowerCase() !== "byte") return null;
+    var a = spec.enum[0];
+    var b = spec.enum[1];
+    var na = Number(a);
+    var nb = Number(b);
+    if (!isNaN(na) && na !== 0 && (isNaN(nb) || nb === 0)) return a;
+    if (!isNaN(nb) && nb !== 0 && (isNaN(na) || na === 0)) return b;
+    return null;
+  }
+
+  // 카드 색인 토큰 ↔ param nlMap 키(en) 교차
+  function _indexNlMapValue(card, spec, slotObj) {
+    if (!spec || !spec.nlMap) return null;
+    var tokens = [];
+    var seen = {};
+    function addTok(raw) {
+      var t = _trim(raw).toLowerCase();
+      if (t.length < 2 || seen[t]) return;
+      seen[t] = 1;
+      tokens.push(t);
+    }
+    addTok(slotObj && slotObj.text);
+    if (slotObj && slotObj.en_literal) {
+      var ep = String(slotObj.en_literal).split(/[^0-9a-zA-Z가-힣]+/);
+      var ei;
+      for (ei = 0; ei < ep.length; ei++) addTok(ep[ei]);
+    }
+    var syn = String(card.synonyms || "").split(/[,;]+/);
+    var si;
+    for (si = 0; si < syn.length; si++) addTok(syn[si]);
+    var nk, nkL, ti;
+    for (nk in spec.nlMap) {
+      if (!spec.nlMap.hasOwnProperty(nk)) continue;
+      nkL = _trim(nk).toLowerCase();
+      for (ti = 0; ti < tokens.length; ti++) {
+        if (tokens[ti] === nkL || tokens[ti].indexOf(nkL) >= 0 ||
+            nkL.indexOf(tokens[ti]) >= 0)
+          return entryDb(spec.nlMap[nk]);
+      }
+    }
+    return null;
+  }
+
+  // heal.library — M3 축 히트 fragment의 {{param}} 채움. 불완전이면 null.
+  function paramsForHealedLibraryHit(full, card, slotObj, nlRequest, libMatched) {
+    if (!full) return null;
+    var cardRef = card || full;
+    var domain = normalizeParamDomain(full.param_domain);
+    var need = _sqlParamKeys(full.sql_text);
+    var pk;
+    var hasNeed = false;
+    for (pk in need) {
+      if (need.hasOwnProperty(pk)) { hasNeed = true; break; }
+    }
+    if (!hasNeed) return {};
+
+    var params = {};
+    var libM = libMatched && libMatched.matched ? libMatched.matched : libMatched;
+    _applyMatchToParams(params, libM);
+
+    var hays = [];
+    if (slotObj && slotObj.text) hays.push(String(slotObj.text));
+    if (slotObj && slotObj.en_literal) hays.push(String(slotObj.en_literal));
+    if (nlRequest) hays.push(String(nlRequest));
+    _mergeResolvedParams(params, resolveNlParams(domain, hays.join(" \n "), need), need);
+    fillSqlParamGaps(domain, need, params, hays.join(" \n "));
+
+    var ep = matchEnPivotSlot(domain, slotObj, cardRef);
+    if (ep && !ep.ambiguous) _applyMatchToParams(params, ep);
+
+    if (!_allSqlParamsFilled(need, params) &&
+        libraryHitPredicate(cardRef, slotObj, domain)) {
+      var spec, v;
+      var neg = _slotNegated(slotObj);
+      for (pk in need) {
+        if (!need.hasOwnProperty(pk)) continue;
+        if (_paramNeedFilled(params, pk)) continue;
+        spec = domain[pk] || domain[_aliasParamKeyLocal(pk)] || {};
+        v = _indexNlMapValue(cardRef, spec, slotObj);
+        if (v != null && typeof v !== "object") {
+          params[pk] = v;
+          continue;
+        }
+        if (!neg) {
+          v = _byteAffirmEnum(spec);
+          if (v != null) params[pk] = v;
+        }
+      }
+    }
+
+    if (!_allSqlParamsFilled(need, params)) return null;
+    var kept = {};
+    for (pk in need) {
+      if (!need.hasOwnProperty(pk)) continue;
+      if (params[pk] != null && params[pk] !== "") kept[pk] = params[pk];
+      else {
+        var alt = _aliasParamKeyLocal(pk);
+        if (alt && params[alt] != null && params[alt] !== "") kept[pk] = params[alt];
+      }
+    }
+    return kept;
+  }
+
   function _numericVals(params) {
     var out = [];
     if (!params || typeof params !== "object") return out;
@@ -2674,6 +3017,247 @@ testWoo.fragContract = (function () {
         out.push(n);
     }
     return out;
+  }
+
+  function _siblingParamKeys(domain, pk) {
+    var keys = [String(pk || "")];
+    var alt = _aliasParamKeyLocal(pk);
+    if (alt && alt !== pk) keys.push(alt);
+    var k = String(pk || "");
+    if (/Code$/.test(k)) keys.push(k.replace(/Code$/, "Label"));
+    else if (/Label$/.test(k)) keys.push(k.replace(/Label$/, "Code"));
+    if (k.indexOf("_") >= 0) {
+      if (/code$/i.test(k)) keys.push(k.replace(/code$/i, "label"));
+      else if (/label$/i.test(k)) keys.push(k.replace(/label$/i, "code"));
+    }
+    var out = [];
+    var seen = {};
+    var i;
+    for (i = 0; i < keys.length; i++) {
+      if (!keys[i] || seen[keys[i]]) continue;
+      seen[keys[i]] = 1;
+      out.push(keys[i]);
+    }
+    return out;
+  }
+
+  function _deriveParamFromSibling(domain, needKey, sibKey, sibVal, haystack) {
+    if (sibVal == null || sibVal === "" || typeof sibVal === "object") return null;
+    var sv = String(sibVal);
+    var spec = domain[needKey] || {};
+    var map = spec.nlMap;
+    var nk, ent, dbv;
+    if (map && typeof map === "object") {
+      for (nk in map) {
+        if (!map.hasOwnProperty(nk)) continue;
+        if (String(nk) !== sv && String(entryDb(map[nk])) !== sv) continue;
+        ent = map[nk];
+        if (ent != null && typeof ent === "object" && ent[needKey] != null)
+          return ent[needKey];
+        dbv = entryDb(ent);
+        return _finestValue(domain, needKey, nk, dbv);
+      }
+    }
+    spec = domain[sibKey] || {};
+    map = spec.nlMap;
+    if (map && typeof map === "object") {
+      for (nk in map) {
+        if (!map.hasOwnProperty(nk)) continue;
+        if (String(nk) !== sv && String(entryDb(map[nk])) !== sv) continue;
+        ent = map[nk];
+        if (ent != null && typeof ent === "object" && ent[needKey] != null)
+          return ent[needKey];
+        dbv = entryDb(ent);
+        if (needKey !== sibKey)
+          return _finestValue(domain, needKey, nk, dbv);
+      }
+    }
+    if (domain._bucket && domain._bucket.nlMap) {
+      for (nk in domain._bucket.nlMap) {
+        if (!domain._bucket.nlMap.hasOwnProperty(nk)) continue;
+        ent = domain._bucket.nlMap[nk];
+        if (!ent || typeof ent !== "object") continue;
+        if (ent[needKey] != null &&
+            (String(nk) === sv || (ent[sibKey] != null && String(ent[sibKey]) === sv)))
+          return ent[needKey];
+      }
+    }
+    if (haystack && _boundHas(haystack, sv, null, true)) {
+      dbv = _finestValue(domain, needKey, sv, sv);
+      if (dbv != null && dbv !== "") return dbv;
+    }
+    return null;
+  }
+
+  // sql_text {{}} placeholder 대비 Pass1 형제키(planLabel↔planCode 등)·nlMap 보정
+  function fillSqlParamGaps(domainRaw, needKeys, paramsRaw, haystack) {
+    var domain = normalizeParamDomain(domainRaw);
+    var need = needKeys || {};
+    var params = paramsRaw && typeof paramsRaw === "object" ? paramsRaw : {};
+    var pk, alt, sibs, si, sk, derived, nkMap, fromNl, spec;
+    for (pk in need) {
+      if (!need.hasOwnProperty(pk)) continue;
+      if (params[pk] != null && params[pk] !== "") continue;
+      alt = _aliasParamKeyLocal(pk);
+      if (alt && params[alt] != null && params[alt] !== "") {
+        params[pk] = params[alt];
+        continue;
+      }
+      sibs = _siblingParamKeys(domain, pk);
+      for (si = 0; si < sibs.length; si++) {
+        sk = sibs[si];
+        if (sk === pk) continue;
+        if (params[sk] == null || params[sk] === "") continue;
+        derived = _deriveParamFromSibling(domain, pk, sk, params[sk], haystack);
+        if (derived != null && derived !== "") {
+          params[pk] = derived;
+          break;
+        }
+      }
+      if (params[pk] != null && params[pk] !== "") continue;
+      nkMap = {};
+      nkMap[pk] = 1;
+      fromNl = resolveNeedParams(domain, haystack || "", nkMap);
+      if (fromNl && fromNl[pk] != null && fromNl[pk] !== "")
+        params[pk] = fromNl[pk];
+      else if (alt && fromNl && fromNl[alt] != null && fromNl[alt] !== "")
+        params[pk] = fromNl[alt];
+    }
+    var resolvedAll = resolveNeedParams(domain, haystack || "", need) || {};
+    for (pk in need) {
+      if (!need.hasOwnProperty(pk)) continue;
+      spec = specForParamKey(domain, pk);
+      if (!_paramFailsEnumSnap(spec, params[pk])) continue;
+      if (resolvedAll[pk] != null && resolvedAll[pk] !== "")
+        params[pk] = resolvedAll[pk];
+    }
+    for (pk in need) {
+      if (!need.hasOwnProperty(pk)) continue;
+      if (params[pk] == null || params[pk] === "") continue;
+      spec = specForParamKey(domain, pk);
+      params[pk] = normalizeParamForCatalog(spec, params[pk], haystack);
+    }
+    return params;
+  }
+
+  function _paramFailsEnumSnap(spec, val) {
+    if (val == null || val === "" || typeof val === "object") return false;
+    var c = _enumSnapCandidates(spec);
+    return c.length > 0 && !_valueInSnapEnum(c, val);
+  }
+
+  function planHaystack(plan) {
+    var blobs = [];
+    var nl = plan && plan.nl_request ? String(plan.nl_request).replace(/^\s+|\s+$/g, "") : "";
+    if (nl) blobs.push(nl);
+    if (plan && plan._meta && plan._meta.slots) {
+      var si, st;
+      for (si = 0; si < plan._meta.slots.length; si++) {
+        st = plan._meta.slots[si] && plan._meta.slots[si].text;
+        if (st && String(st).replace(/^\s+|\s+$/g, "")) blobs.push(String(st));
+      }
+    }
+    return blobs.join(" \n ");
+  }
+
+  function _enumSnapCandidates(spec) {
+    var enumList = [];
+    if (!spec) return enumList;
+    var ei, nk;
+    if (spec.enum && _isArray(spec.enum)) {
+      for (ei = 0; ei < spec.enum.length; ei++) {
+        var ev = spec.enum[ei];
+        if (ev == null || ev === "") continue;
+        var dbv = entryDb(ev);
+        if (dbv != null && dbv !== "") enumList.push(dbv);
+      }
+    }
+    if (spec.nlMap && typeof spec.nlMap === "object") {
+      for (nk in spec.nlMap) {
+        if (!spec.nlMap.hasOwnProperty(nk)) continue;
+        var dbn = entryDb(spec.nlMap[nk]);
+        if (dbn != null && dbn !== "") enumList.push(dbn);
+        enumList.push(String(nk));
+      }
+    }
+    return enumList;
+  }
+
+  function _valueInSnapEnum(list, val) {
+    var i;
+    for (i = 0; i < list.length; i++) {
+      if (String(list[i]) === String(val)) return true;
+    }
+    return false;
+  }
+
+  // Pass1 축약값(매장)·enum 불일치 → haystack nlMap longest-match db
+  function normalizeParamForCatalog(spec, val, haystack) {
+    if (val == null || val === "" || typeof val === "object") return val;
+    if (_isArray(val)) return val;
+    var hay = String(haystack || "");
+    var candidates = _enumSnapCandidates(spec);
+    if (_valueInSnapEnum(candidates, val)) return val;
+    var map = spec && spec.nlMap;
+    if (!map || typeof map !== "object") return val;
+    var bestDb = null;
+    var bestLen = 0;
+    var nk, dbv;
+    for (nk in map) {
+      if (!map.hasOwnProperty(nk)) continue;
+      if (!hay || !_boundHas(hay, nk, null, true)) continue;
+      dbv = entryDb(map[nk]);
+      if (dbv == null || typeof dbv === "object") continue;
+      if (String(nk).length >= bestLen) {
+        bestLen = String(nk).length;
+        bestDb = dbv;
+      }
+    }
+    if (bestDb != null) return bestDb;
+    var sv = String(val);
+    for (nk in map) {
+      if (!map.hasOwnProperty(nk)) continue;
+      if (String(nk).indexOf(sv) < 0) continue;
+      if (!hay || !_boundHas(hay, nk, null, true)) continue;
+      dbv = entryDb(map[nk]);
+      if (dbv != null && typeof dbv !== "object") return dbv;
+    }
+    return val;
+  }
+
+  function catalogProvesParamValue(spec, val, haystack, domainRaw, pk) {
+    if (val == null || val === "" || typeof val === "object") return false;
+    if (!haystack) return false;
+    var hay = String(haystack || "");
+    var sv = String(val);
+    var nk, dbv, useSpec, domain, need, fromNl;
+    useSpec = spec || {};
+    if (domainRaw && pk) {
+      domain = normalizeParamDomain(domainRaw);
+      useSpec = specForParamKey(domain, pk);
+    }
+    if (useSpec && useSpec.nlMap) {
+      for (nk in useSpec.nlMap) {
+        if (!useSpec.nlMap.hasOwnProperty(nk)) continue;
+        if (!_boundHas(hay, nk, null, true)) continue;
+        dbv = entryDb(useSpec.nlMap[nk]);
+        if (dbv != null && String(dbv) === sv) return true;
+        if (String(nk) === sv) return true;
+      }
+    }
+    if (useSpec && useSpec.enum && _isArray(useSpec.enum)) {
+      for (nk = 0; nk < useSpec.enum.length; nk++) {
+        dbv = entryDb(useSpec.enum[nk]);
+        if (dbv != null && String(dbv) === sv) return true;
+      }
+    }
+    if (domainRaw && pk) {
+      need = {};
+      need[pk] = 1;
+      fromNl = resolveNeedParams(domain, hay, need) || {};
+      if (fromNl[pk] != null && String(fromNl[pk]) === sv) return true;
+    }
+    return false;
   }
 
   // params가 _range/enum/type과 맞는지. 컬럼명·연령대 규칙 하드코딩 없음.
@@ -3653,6 +4237,13 @@ testWoo.fragContract = (function () {
     spanRangeSqlText: spanRangeSqlText,
     promoteEqPlaceholderToIn: promoteEqPlaceholderToIn,
     resolveNlParams: resolveNlParams,
+    specForParamKey: specForParamKey,
+    resolveNeedParams: resolveNeedParams,
+    planHaystack: planHaystack,
+    fillSqlParamGaps: fillSqlParamGaps,
+    normalizeParamForCatalog: normalizeParamForCatalog,
+    catalogProvesParamValue: catalogProvesParamValue,
+    paramsForHealedLibraryHit: paramsForHealedLibraryHit,
     upsertGroup: upsertGroup,
     groupHintForParams: groupHintForParams,
     displayHintForParams: displayHintForParams,
@@ -3664,4 +4255,4 @@ testWoo.fragContract = (function () {
     scoreCard: scoreCard
   };
 })();
-testWoo.fragContract.__v = "206";
+testWoo.fragContract.__v = "212";

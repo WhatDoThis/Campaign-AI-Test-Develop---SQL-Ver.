@@ -1,7 +1,7 @@
 /*
  * testWooEnv.js (내장 튜닝·가드레일 상수)
  * ==================================================
- * litmus 동기 __v=160 (debug.enabled — 파이프라인 트레이스).
+ * litmus 동기 __v=166 (#455 embedEnabled·embedModel 제거).
  * Git 관리 상수. 배포 후 JS 라이브러리만 재등록하면 튜닝 반영.
  * 시크릿은 XtkOption 3개만 — 나머지는 ENV 객체.
  * #164: maxNewFragments=10 · tokenBudget=200000 · toolkit.totalCallBudget=384.
@@ -19,7 +19,7 @@
  * [Options]
  * =========
  * - 시크릿 3개는 testWooConfig.js가 XtkOption에서 읽음(apiKey/model/endpoint)
- * - llm.embedEnabled 기본 false — 스모크·승인 전 임베딩 과금 차단
+ * - llm — chat 전용 (embedding API 제거 #455)
  */
 var testWoo = testWoo || {};
 testWoo.env = (function () {
@@ -84,11 +84,6 @@ testWoo.env = (function () {
       provider: "openrouter",
       useProxy: false,
       pass0Examples: "",
-      embedModel: "openai/text-embedding-3-small",
-      // 임베딩은 dedup L2 rerank 정렬에만 쓰이고 최종 verdict 에 영향이 없다(L0 해시/L3 대칭차집합이 결정).
-      // 게다가 publish 가 emb_* 를 저장하지 않아 캐시가 100% 미스이며 check() 마다 최대 9건을 재임베딩한다.
-      // 영속화(#155 Task 3) 코드는 반영됨. true 복구는 HUMAN 스모크+사용자 승인 후에만.
-      embedEnabled: false,
       pass0MaxTokens: 2048,
       pass1MaxTokens: 8192,
       triageMaxTokens: 4096,
@@ -194,14 +189,71 @@ testWoo.env = (function () {
     },
 
     /* ------------------------------------------------------------------
-     * populationCountSql — 전체 모집단 COUNT SQL. 두 곳에서 분모로 쓰인다.
-     *   1) G-C 게이트: fragment 결과가 모집단의 95% 이상이면 실패(필터 효과 없음)
-     *   2) dedup near 판정: symmetricDiff / 모집단 비율
-     * 비우면 두 검사 모두 생략된다(G-C 는 결과 0건만 검사, dedup 은 near+사람 위임).
-     * 예: SELECT COUNT(*) FROM testWooSampleCustomer
-     * 물리 컬럼명은 ACC 버전·DBMS 마다 다르므로 COUNT(DISTINCT col) 대신 COUNT(*) 권장.
+     * match — dedup Jaccard · discover 상한 (UI ON/OFF는 Option testWooAiMatchEnabled)
+     * jaccardThreshold: dedup 동일 판정. 권장 0.9
+     * sqlLimit: listAiSqlForMatch queryDef lineCount. 권장 500
+     * discoverTopN: discover 모드 Top-N. 권장 10
      * ------------------------------------------------------------------ */
-    populationCountSql: ""
+    match: {
+      jaccardThreshold: 0.9,
+      sqlLimit: 500,
+      discoverTopN: 10
+    },
+
+    /* ------------------------------------------------------------------
+     * ui — Studio·StudioContext 목록/제목 상한
+     * titleMax: woo:testWooAiSql @title length
+     * listLimit / listLimitMax: queryDef 기본·상한
+     * ------------------------------------------------------------------ */
+    ui: {
+      titleMax: 200,
+      listLimit: 200,
+      listLimitMax: 500
+    },
+
+    /* ------------------------------------------------------------------
+     * [A] options.keys — XtkOption 이름 레지스트리 (값은 ACC 콘솔만)
+     * Config.getStr(K.llmApiKey) 등이 이 문자열로 getOption 호출
+     * ------------------------------------------------------------------ */
+    options: {
+      keys: {
+        llmApiKey: "testWooAiLlmApiKey",
+        llmModel: "testWooAiLlmModel",
+        llmEndpoint: "testWooAiLlmEndpoint",
+        campaignTemplateId: "testWooAiCampaignTemplateId",
+        wkfTemplateId: "testWooAiWkfTemplateId",
+        wkfTemplateName: "testWooAiWkfTemplateName",
+        wkfMaxPerCampaign: "testWooAiWkfMaxPerCampaign",
+        autoApprove: "testWooAiAutoApprove",
+        injectBackup: "testWooAiInjectBackup",
+        matchEnabled: "testWooAiMatchEnabled"
+      }
+    },
+
+    /* ------------------------------------------------------------------
+     * [B] nms — internalName contract + fallback id (Option 미설정 dev용)
+     * lgu-test 예: 30030 / 42102 — Explorer @id 와 맞출 것
+     * ------------------------------------------------------------------ */
+    nms: {
+      campaignTemplateName: "OPEmptyTemplate_AI",
+      campaignTemplateId: 30030,
+      wkfTemplateName: "wfEmptyTemplate_AI",
+      wkfTemplateId: 42102,
+      wkfMaxPerCampaign: 15,
+      wkfMaxHardCap: 20,
+      aiActivityName: "aiStudioSql"
+    },
+
+    /* ------------------------------------------------------------------
+     * [C] mart — PoC sample mart (운영 전환 시 이 블록만 교체)
+     * ------------------------------------------------------------------ */
+    mart: {
+      grainKeyCandidates: ["sCustomer_id"],
+      populationCountSql: "SELECT COUNT(*) FROM testWooSampleCustomer",
+      foundryExampleSchema: "woo:testWooSampleCustomer",
+      foundryExampleSqlTable: "testWooSampleCustomer",
+      sampleTablePrefix: "testWooSample"
+    }
   };
 
   // 1. ENV 상수 반환
@@ -211,7 +263,7 @@ testWoo.env = (function () {
 
   return { getEnv: getEnv, ENV: ENV };
 })();
-testWoo.env.__v = "160";
+testWoo.env.__v = "166";
 
 testWoo.dbg = (function () {
   "use strict";

@@ -525,7 +525,7 @@
           var parts = [];
           var keys = [
             "common", "env", "cfg", "fragContract", "fragments", "llm", "enPivot",
-            "compiler", "gates", "repo", "lifecycle", "embedding", "foundry", "match",
+            "compiler", "gates", "repo", "lifecycle", "foundry", "match",
             "probe", "dedup", "toolkit", "feasibility", "studioContext", "wfClone",
             "workflowUi"
           ];
@@ -1007,7 +1007,16 @@
               if (res.promptHints && res.promptHints.length) renderNlHints(res.promptHints);
               else clearNlHints();
             } else if (res.retryInput) {
-              $("hint").textContent = res.unmatched.join(" ");
+              var _epR = String(res.enPivotReason || "");
+              var _hintMsg = res.unmatched.join(" ");
+              if (_epR === "llm_unavailable") {
+                _hintMsg = "LLM 설정을 확인하세요 (testWooAiLlmApiKey·testWooEnv.js·testWooConfig.js 재배포).";
+              } else if (_epR === "llm_fail") {
+                _hintMsg = "EnPivot LLM 호출 실패 — ACC 로그·API Key·네트워크를 확인하세요.";
+              } else if (_epR === "llm") {
+                _hintMsg = "조건 슬롯을 추출하지 못했습니다. 문장을 더 구체적으로 입력해 주세요.";
+              }
+              $("hint").textContent = _hintMsg;
               clearNlHints();
             } else if (afterFoundry || res.afterFoundry) {
               $("hint").textContent =
@@ -1042,6 +1051,14 @@
         _syncRegButton();
         if (!state.passed) {
           showErr(res.error || "validation failed");
+          if (res.results) {
+            var gfi, gfr;
+            for (gfi = 0; gfi < res.results.length; gfi++) {
+              gfr = res.results[gfi];
+              if (gfr && gfr.ok === false && gfr.reason)
+                _diag("gate fail: " + String(gfr.gate || "?") + " " + String(gfr.reason));
+            }
+          }
           renderSummaryHint(res.summary, false);
         } else {
           renderSummaryHint(res.summary, true);
@@ -1179,7 +1196,7 @@
     setBusy(true); clearErr();
     var title = String(state.nl || "").substring(0, TITLE_MAX);
     _diag("register start overwrite=" + (_overwriteArmed ? "1" : "0"));
-    post("testWooAiRegister.jssp", {
+    post("testWooAiSqlRegister.jssp", {
       plan: state.plan,
       workflow_name: _activeWorkflowName(),
       workflow_id: _activeWorkflowId(),

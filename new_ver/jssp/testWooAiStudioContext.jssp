@@ -13,7 +13,7 @@ response.setContentType("application/json;charset=utf-8");
  * - listWkfs / createWkf — Campaign 하위 WKF(Max 15, sqlCount=반영 SQL 건수)
  * - listRegisteredSql — 최근 반영 SQL + WKF/Program 점프 메타 · orphan(resolve 실패)
  * - selectWkf / releaseLock — soft-lock 획득·해제(CSRF)
- * - libVersions — 로드된 testWoo.* 모듈 __v JSON (expectedByMod: fragContract=206 · llm=201 · enPivot=179 · workflowUi=165)
+ * - libVersions — 로드된 testWoo.* 모듈 __v JSON (repo __v 정본 · ACC JS+Context 동시 배포)
  *
  * [Dependencies]
  * =========
@@ -37,6 +37,12 @@ try {
   }
 
   function _twLoadWfClone() {
+    try {
+      loadLibrary("woo:testWooEnv.js");
+    } catch (eEnv) {}
+    try {
+      loadLibrary("woo:testWooConfig.js");
+    } catch (eCfg) {}
     loadLibrary("woo:testWooWorkflowClone.js");
     twRequireLib(
       "woo:testWooWorkflowClone.js",
@@ -49,6 +55,14 @@ try {
     twRequireLib(
       "woo:testWooRepository.js",
       (typeof testWoo !== "undefined") && testWoo.repo
+    );
+  }
+
+  function _twLoadOpPrefs() {
+    loadLibrary("woo:testWooOperatorPrefs.js");
+    twRequireLib(
+      "woo:testWooOperatorPrefs.js",
+      (typeof testWoo !== "undefined") && testWoo.opPrefs
     );
   }
 
@@ -81,7 +95,6 @@ try {
     _twTryLoad("woo:testWooGates.js");
     _twTryLoad("woo:testWooRepository.js");
     _twTryLoad("woo:testWooLifecycle.js");
-    _twTryLoad("woo:testWooEmbedding.js");
     _twTryLoad("woo:testWooFoundry.js");
     _twTryLoad("woo:testWooMatch.js");
     _twTryLoad("woo:testWooProbe.js");
@@ -91,15 +104,16 @@ try {
     _twTryLoad("woo:testWooWorkflowUi.js");
     _twTryLoad("woo:testWooStudioContext.js");
     _twTryLoad("woo:testWooWorkflowClone.js");
-    // 모듈별 기대 __v. 기본 159. heal 경로만 올림(전체 강제 재배포 방지).
+    _twTryLoad("woo:testWooOperatorPrefs.js");
+    // 모듈별 기대 __v — 각 woo:testWoo*.js 의 testWoo.*.__v 와 동일해야 함
     var expectedByMod = {
-      llm: "201", toolkit: "164", enPivot: "179",
-      fragContract: "206", fragments: "166", compiler: "168",
-      foundry: "179", dedup: "160", feasibility: "166", gates: "164",
-      match: "160",
-      env: "160", cfg: "160", common: "160",
-      repo: "164", workflowUi: "165",
-      studioContext: "160", wfClone: "161"
+      common: "160", env: "166", cfg: "165",
+      fragContract: "212", fragments: "166", compiler: "169",
+      llm: "206", enPivot: "180", toolkit: "164",
+      foundry: "181", dedup: "161", feasibility: "167", gates: "168",
+      match: "163", probe: "161",
+      repo: "164", lifecycle: "160",
+      studioContext: "161", wfClone: "172", workflowUi: "166", opPrefs: "169"
     };
     var expectedDefault = "159";
     function _twLibV(mod) {
@@ -122,7 +136,6 @@ try {
       gates: _twLibV("gates"),
       repo: _twLibV("repo"),
       lifecycle: _twLibV("lifecycle"),
-      embedding: _twLibV("embedding"),
       foundry: _twLibV("foundry"),
       match: _twLibV("match"),
       probe: _twLibV("probe"),
@@ -131,7 +144,8 @@ try {
       feasibility: _twLibV("feasibility"),
       studioContext: _twLibV("studioContext"),
       wfClone: _twLibV("wfClone"),
-      workflowUi: _twLibV("workflowUi")
+      workflowUi: _twLibV("workflowUi"),
+      opPrefs: _twLibV("opPrefs")
     };
     var mismatch = [];
     for (var lk in libs) {
@@ -170,7 +184,11 @@ try {
     _twLoadWfClone();
     var progIdC = String(p.program_id || p.folder_id || "");
     var camp = testWoo.wfClone.createCampaign(progIdC, p.label);
-    jsonOut({ ok: true, campaign: camp });
+    jsonOut({
+      ok: true,
+      campaign: camp,
+      template_diagnostics: testWoo.wfClone.getTemplateDiagnostics()
+    });
   } else if (action === "listwkfs") {
     _twLoadWfClone();
     var cidL = String(p.campaign_id || p.operation_id || "");
@@ -261,6 +279,8 @@ try {
     jsonOut({
       ok: true,
       workflow: created,
+      create_diagnostics: testWoo.wfClone.getLastWkfCreateDiag(),
+      template_diagnostics: testWoo.wfClone.getTemplateDiagnostics(),
       open_mode: "fallback",
       open_hint:
         "Explorer\uC5D0\uC11C \uD574\uB2F9 WKF\uB97C \uC5F4\uC5B4 \uC8FC\uC138\uC694 (name=" +
@@ -288,6 +308,15 @@ try {
         logWarning("[testWooAiStudioContext.selectWkf] lock soft-fail: " + lockWarn);
       } catch (eLw) {}
     }
+    try {
+      _twLoadOpPrefs();
+      testWoo.opPrefs.setBindWkf(wnameS);
+    } catch (eNav) {
+      try {
+        logWarning("[testWooAiStudioContext.selectWkf] setBindWkf: " +
+          String(eNav.message || eNav));
+      } catch (eLn) {}
+    }
     jsonOut({
       ok: true,
       workflow_id: widS,
@@ -308,11 +337,29 @@ try {
     var widR = String(p.workflow_id || "");
     testWoo.wfClone.releaseLock(widR);
     jsonOut({ ok: true, released: true, workflow_id: widR });
+  } else if (action === "resolvewkfbyname") {
+    requireStudioCsrf(p);
+    _twLoadWfClone();
+    var wnR = String(p.workflow_name || "").replace(/^\s+|\s+$/g, "");
+    if (!wnR) {
+      throw new Error("workflow_name required");
+    }
+    var metaR = testWoo.wfClone.resolveWorkflowsByName([wnR]);
+    var mR = metaR[wnR];
+    if (!mR || !mR.id) {
+      jsonOut({
+        ok: false,
+        error: "WKF_NOT_FOUND",
+        workflow_name: wnR
+      });
+    } else {
+      jsonOut({ ok: true, workflow: mR });
+    }
   } else {
     throw new Error(
       "unknown action: " +
         action +
-        " (libVersions|listAiFolders|listCampaigns|createCampaign|listWkfs|listRegisteredSql|createWkf|selectWkf|releaseLock)"
+        " (libVersions|listAiFolders|listCampaigns|createCampaign|listWkfs|listRegisteredSql|createWkf|selectWkf|releaseLock|resolveWkfByName)"
     );
   }
 } catch (e) {

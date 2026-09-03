@@ -1,7 +1,7 @@
 /*
  * testWooFoundry.js (Fragment Foundry 배치 처리)
  * ==================================================
- * litmus 동기 __v=179 (library_cache_hit span yms → heal domain write · cache hit gate).
+ * litmus 동기 __v=180 (library_cache_hit span yms → heal domain write · cache hit gate).
  * 큐 슬롯별 triage → feasible만 SQL 생성 → dedup → publish.
  * 색인·샘플바인딩·재사용 게이트는 testWoo.fragContract에 위임.
  *
@@ -26,7 +26,7 @@
  * - testWoo.toolkit·llm·repo·probe·dedup·lifecycle·gates·fragments·compiler
  * - woo:testWooAiRequestQueue — xtk.queryDef·xtk.session#Write
  * - woo:testWooAiFragment — 축 재사용 시 param_domain merge Write · 색인 감사/수리
- * - testWooAiAutoApprove Option — ON=active, OFF=verified+승인대기
+ * - testWoo.cfg.getConfig — options.autoApprove · mart few-shot
  *
  * [Invariants]
  * =========
@@ -45,40 +45,58 @@ testWoo.foundry = (function () {
 
   var QUEUE_SCHEMA = "woo:testWooAiRequestQueue";
   var FRAG_SCHEMA = "woo:testWooAiFragment";
-  var OPT_AUTO_APPROVE = "testWooAiAutoApprove";
   var STALE_SCAN_LIMIT = 50;
   var DEFAULT_STALE_MS = 30 * 60 * 1000;
 
+  function _martCfg() {
+    try {
+      if (testWoo.cfg && testWoo.cfg.getConfig) return testWoo.cfg.getConfig().mart;
+    } catch (eM) {}
+    try {
+      if (testWoo.env && testWoo.env.getEnv) return testWoo.env.getEnv().mart;
+    } catch (eE) {}
+    return {};
+  }
+
+  function _fragmentSchemaExample() {
+    var m = _martCfg();
+    var grain = "sCustomer_id";
+    if (m.grainKeyCandidates && m.grainKeyCandidates.length) {
+      grain = String(m.grainKeyCandidates[0]);
+    }
+    var tbl = String(m.foundryExampleSqlTable || "testWooSampleCustomer");
+    return '{"name":"woo__customer__age","label":"연령대 조건",' +
+      '"description":"age axis; physical sqlColumn from describe_schema","keyColumn":"' + grain + '","scopeKey":"",' +
+      '"tags":["age"],' +
+      '"params":[{"name":"ageMin","type":"int"},{"name":"ageMax","type":"int"}],' +
+      '"paramDomain":{"_bucket":{"nlMap":{"<nl>":{"ageMin":20,"ageMax":30}}}},' +
+      '"sqlText":"SELECT DISTINCT ' + grain + " FROM " + tbl + ' WHERE iAge >= {{ageMin}} AND iAge < {{ageMax}}",' +
+      '"rationale":"axis=age; one filter column; range AND on same column; values in paramDomain"}';
+  }
+
+  function _finalTurnNudge() {
+    return "FINAL TURN — no more tool calls are allowed. " +
+      "Output the JSON object matching the schema above NOW. No prose. " +
+      "Use only the evidence already gathered.\n" + _fragmentSchemaExample();
+  }
+
+  function _jsonNudge() {
+    return "No parseable fragment JSON was found in your last message. " +
+      "Output the JSON object matching the schema above NOW. No prose, no tool calls.\n" +
+      _fragmentSchemaExample();
+  }
+
   // 4차: 기본 ON. "0"/"false"/"off"/"no" 만 OFF (민감·회귀용 킬스위치)
   function isAutoApprove() {
-    var raw = "";
     try {
-      raw = String(getOption(OPT_AUTO_APPROVE) || "");
-    } catch (eO) {
-      raw = "";
-    }
-    raw = String(raw).replace(/^\s+|\s+$/g, "").toLowerCase();
-    if (raw === "0" || raw === "false" || raw === "off" || raw === "no") return false;
+      if (testWoo.cfg && testWoo.cfg.getConfig) {
+        return !!testWoo.cfg.getConfig().options.autoApprove;
+      }
+    } catch (eC) {}
     return true;
   }
   var SCHEMA_HINT = "스키마 배포가 선행되지 않았습니다. " +
     "woo:testWooAiRequestQueue 재등록 → Update database structure 후 다시 실행하세요.";
-  // F-0 출력 계약 — _fragDocFromLlm 이 읽는 키와 1:1. 프롬프트·되먹임·강제 턴에 재사용.
-  // #167: 축 양식 + {{param}} + paramDomain. #168-A V2: 특정 물리컬럼/enum 리터럴 금지.
-  var FRAGMENT_SCHEMA_EXAMPLE =
-    '{"name":"woo__customer__age","label":"연령대 조건",' +
-    '"description":"age axis; physical sqlColumn from describe_schema","keyColumn":"sCustomer_id","scopeKey":"",' +
-    '"tags":["age"],' +
-    '"params":[{"name":"ageMin","type":"int"},{"name":"ageMax","type":"int"}],' +
-    '"paramDomain":{"_bucket":{"nlMap":{"<nl>":{"ageMin":20,"ageMax":30}}}},' +
-    '"sqlText":"SELECT DISTINCT sCustomer_id FROM testWooSampleCustomer WHERE iAge >= {{ageMin}} AND iAge < {{ageMax}}",' +
-    '"rationale":"axis=age; one filter column; range AND on same column; values in paramDomain"}';
-  var FINAL_TURN_NUDGE = "FINAL TURN — no more tool calls are allowed. " +
-    "Output the JSON object matching the schema above NOW. No prose. " +
-    "Use only the evidence already gathered.\n" + FRAGMENT_SCHEMA_EXAMPLE;
-  var JSON_NUDGE = "No parseable fragment JSON was found in your last message. " +
-    "Output the JSON object matching the schema above NOW. No prose, no tool calls.\n" +
-    FRAGMENT_SCHEMA_EXAMPLE;
 
   function _trim(s) {
     return String(s == null ? "" : s).replace(/^\s+|\s+$/g, "");
@@ -291,7 +309,7 @@ testWoo.foundry = (function () {
       // 같은 messages 를 재사용하면서 다음 시도의 툴 사용까지 막는다.
       var lastTurn = (t === turns - 1);
       var reqMsgs = lastTurn ?
-        msgs.concat([{ role: "user", content: FINAL_TURN_NUDGE }]) : msgs;
+        msgs.concat([{ role: "user", content: _finalTurnNudge() }]) : msgs;
       // lastTurn tool_choice:"none" 에는 parallel_tool_calls 금지
       // (OpenRouter→Azure Claude 400: tool_choice.none.disable_parallel_tool_use).
       var body = {
@@ -366,7 +384,7 @@ testWoo.foundry = (function () {
           throw new Error("[testWoo.foundry.runToolLoop] fragment JSON missing after final turn" +
             " (contentLen=0)");
         }
-        msgs.push({ role: "user", content: JSON_NUDGE });
+        msgs.push({ role: "user", content: _jsonNudge() });
         continue;
       }
 
@@ -428,7 +446,7 @@ testWoo.foundry = (function () {
       "FORBIDDEN: markdown fences, prose, tables, warning text, or a second top-level JSON.",
       "If the slot mentions two axes (e.g. age+gender), still emit ONLY the axis for THIS slot text — never both JSON objects.",
       "OUTPUT JSON SCHEMA (keys must match exactly):",
-      FRAGMENT_SCHEMA_EXAMPLE,
+      _fragmentSchemaExample(),
       "SQL RULES (enforced by gates — violation fails the attempt):",
       "- SELECT list must be keyColumn ONLY. No commas, no extra columns, no *.",
       "- Must NOT start with WITH.",
@@ -597,13 +615,17 @@ testWoo.foundry = (function () {
 
   function _tableLeafFromSql(sql) {
     var s = String(sql || "");
-    var m = /testWooSample(\w+)/i.exec(s);
-    if (m) return String(m[1] || "").toLowerCase();
+    var m = _martCfg();
+    var prefix = String(m.sampleTablePrefix || "testWooSample");
+    var re = new RegExp(prefix + "(\\w+)", "i");
+    var hit = re.exec(s);
+    if (hit) return String(hit[1] || "").toLowerCase();
     m = /\bFROM\s+(\w+)/i.exec(s);
     if (m) {
       var t = String(m[1] || "");
-      if (t.indexOf("testWooSample") === 0)
-        return t.substring("testWooSample".length).toLowerCase();
+      if (t.indexOf(prefix) === 0) {
+        return t.substring(prefix.length).toLowerCase();
+      }
       return t.toLowerCase();
     }
     return "";
@@ -683,7 +705,7 @@ testWoo.foundry = (function () {
       "\n위 게이트 실패 항목을 고친 fragment를 다시 만드세요. " +
       "probe_sql 로 재검증한 뒤(total > 0 && total === distinctKey && nullKey === 0) " +
       "최종 JSON만 출력합니다. 같은 SQL을 반복 제출하지 마세요.\n" +
-      FRAGMENT_SCHEMA_EXAMPLE;
+      _fragmentSchemaExample();
   }
 
   function _shapeFeedback(err) {
@@ -692,7 +714,7 @@ testWoo.foundry = (function () {
       "Do NOT output feasibility/triage JSON (verdict, valueProbes, schemasScanned). " +
       "Required keys: name, keyColumn, sqlText. scopeKey must be \"\" for recipient-level.\n" +
       "If the slot is gender → woo__customer__gender only. If age → woo__customer__age only.\n" +
-      FRAGMENT_SCHEMA_EXAMPLE;
+      _fragmentSchemaExample();
   }
 
   // F-3/C-1: 응답 없는 tool_calls 가 남으면 다음 요청이 400 으로 거절된다.
@@ -2339,7 +2361,6 @@ testWoo.foundry = (function () {
             });
           }
           fragmentId = testWoo.lifecycle.publish(fragDoc);
-          if (testWoo.embedding) testWoo.embedding.ensureEmbedding(fragDoc);
           created++;
           published = true;
           resolvedBy = "publish";
@@ -2834,4 +2855,4 @@ testWoo.foundry = (function () {
     repairIndexPollution: repairIndexPollution
   };
 })();
-testWoo.foundry.__v = "179";
+testWoo.foundry.__v = "181";

@@ -1,0 +1,22 @@
+<!--
+woo:testWooAiStudioLauncher (RETIRED #424 — PoC-0 view 정본)
+====================================================================
+#421–422 launcher 경로 폐기. ACC Input forms 에 등록돼 있으면 Console 에서 삭제.
+-->
+<form _cs="Test Woo AI Studio Launcher (woo)" img="xtk:form.png"
+      label="Test Woo AI Studio" name="testWooAiStudioLauncher"
+      namespace="woo" xtkschema="xtk:form"
+      nothingToEdit="true" nothingToSave="true" colcount="1">
+
+  <enter>
+    <set expr="$(serverUrl) + '/woo/testWooAiStudio.jssp?embed=1&amp;v=212&amp;__sessiontoken=' + $(sessionToken) + '&amp;__securitytoken=' + $(securityToken)"
+         xpath="/tmp/@twStudioUrl"/>
+  </enter>
+
+  <input colspan="1" label="Studio URL (diag)" readOnly="true" xpath="/tmp/@twStudioUrl"/>
+  <container colspan="1" height="700" name="twStudioShell" nolabel="true">
+    <input colspan="1" nolabel="true" sessionToken="true" type="UrlViewer" urlMode="true"
+           urlExpr="[/tmp/@twStudioUrl]"/>
+  </container>
+
+</form>

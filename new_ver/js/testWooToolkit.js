@@ -16,7 +16,7 @@
  * - resetRequest — 요청 단위 카운터·invoke 캐시 초기화
  * - setPhaseBudget — triage|generate 단계 예산
  * - markPhase — 현재 phase 표시
- * - resetBudget — (deprecated) 전체 예산 리셋
+ * - resetRequest — 요청 단위 예산·증거 로그 리셋
  * - getEvidenceLog — 누적 evidence 배열
  * - getEvidenceLogSince — offset 이후 evidence
  * - classifyField — schema+xpath → tier + toolCalls (메타데이터 판정). enum 속성명은 로컬/FQN 모두 매칭
@@ -260,11 +260,6 @@ testWoo.toolkit = (function () {
     return _evidenceLog.length;
   }
 
-  // deprecated — resetRequest의 별칭. 신규 호출부는 resetRequest/markPhase를 쓴다.
-  function resetBudget() {
-    resetRequest();
-  }
-
   function getEvidenceLog() {
     return _evidenceLog.slice(0);
   }
@@ -355,6 +350,26 @@ testWoo.toolkit = (function () {
     return result;
   }
 
+  function _martGrainKeys() {
+    try {
+      if (testWoo.cfg && testWoo.cfg.getConfig) {
+        var m = testWoo.cfg.getConfig().mart;
+        if (m && m.grainKeyCandidates && m.grainKeyCandidates.length) {
+          return m.grainKeyCandidates;
+        }
+      }
+    } catch (eC) {}
+    try {
+      if (testWoo.env && testWoo.env.getEnv) {
+        var mart = testWoo.env.getEnv().mart;
+        if (mart && mart.grainKeyCandidates && mart.grainKeyCandidates.length) {
+          return mart.grainKeyCandidates;
+        }
+      }
+    } catch (eE) {}
+    return [];
+  }
+
   function env() {
     var dbms = "";
     try { dbms = String(application.getDBMSType() || ""); } catch (e) {}
@@ -363,11 +378,7 @@ testWoo.toolkit = (function () {
       dbmsType: dbms,
       allowedNamespaces: ns,
       maxProbeRows: 100,
-      // 물리 컬럼명. SQL 에 그대로 넣을 수 있는 형태여야 한다(논리명 금지).
-      // 허용 namespace 안에 실재하는 키만 넣는다 — Triage 프롬프트에 그대로 들어가므로
-      // 닿을 수 없는 키(nms:recipient 의 iRecipientId)를 남기면 그 키로 SQL 을 만들다
-      // 게이트에서 실패하며 턴을 소진한다. namespaces 를 넓히면 함께 되돌린다.
-      grainKeyCandidates: ["sCustomer_id"]
+      grainKeyCandidates: _martGrainKeys()
     };
   }
 
@@ -1681,7 +1692,6 @@ testWoo.toolkit = (function () {
     resetRequest: resetRequest,
     setPhaseBudget: setPhaseBudget,
     markPhase: markPhase,
-    resetBudget: resetBudget,
     getEvidenceLog: getEvidenceLog,
     getEvidenceLogSince: getEvidenceLogSince,
     classifyField: classifyField,

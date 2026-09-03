@@ -1,8 +1,8 @@
 /*
  * testWooDedup.js (Fragment 중복 판정)
  * ==================================================
- * litmus 동기 __v=160 (#172 FragContract).
- * Foundry publish 전 후보 SQL을 기존 fragment와 L0~L4 단계로 비교.
+ * litmus 동기 __v=161 (#455 embedding L2 제거 — L0·L1·L3 dedup).
+ * Foundry publish 전 후보 SQL을 기존 fragment와 L0~L3 단계로 비교.
  * near 비율 분모는 모집단 COUNT, 후보 row 수가 아니다.
  * L3/probe 샘플 바인딩은 fragContract.sampleBindSql 유일 구현.
  *
@@ -17,8 +17,7 @@
  * - testWoo.fragContract.sampleBindSql — {{param}} 타입 인지 샘플 치환 (#172)
  * - testWoo.lifecycle — normalizeSql·contentHash
  * - testWoo.probe — L3 set equivalence 실행
- * - testWoo.embedding — L2 rerank(embedEnabled 시)
- * - testWoo.llm — L4 near 차이 설명
+ * - testWoo.llm — near 차이 설명(L4)
  * - testWoo.cfg — foundry.dedup 임계·populationCountSql
  * - sqlGetInt — 모집단 COUNT
  */
@@ -108,7 +107,6 @@ testWoo.dedup = (function () {
           <node expr="@key_column"/><node expr="@scope_key"/><node expr="@sql_text"/>
           <node expr="@param_domain"/>
           <node expr="@content_hash"/><node expr="@status"/><node expr="@is_current"/>
-          <node expr="@emb_vector"/><node expr="@emb_source_hash"/>
         </select>
         <where>
           <condition expr={"@key_column = '" + escK + "'"}/>
@@ -133,9 +131,7 @@ testWoo.dedup = (function () {
         sql_text: String(r.@sql_text),
         param_domain: String(r.@param_domain || ""),
         content_hash: String(r.@content_hash),
-        status: String(r.@status),
-        emb_vector: String(r.@emb_vector || ""),
-        emb_source_hash: String(r.@emb_source_hash || "")
+        status: String(r.@status)
       };
       if (!row.param_domain && testWoo.fragContract && testWoo.fragContract.logCode)
         testWoo.fragContract.logCode("DEDUP_ASYMMETRIC", "peer " + row.name + " empty param_domain");
@@ -243,29 +239,12 @@ testWoo.dedup = (function () {
     if (!l1top.length)
       return { verdict: "novel", matches: [], scores: report };
 
-    // L2 embedding rerank
-    var l2pool = l1top.slice(0, 8);
-    var candVec = null;
-    if (testWoo.embedding) {
-      candVec = testWoo.embedding.ensureEmbedding(candidate);
-    }
-    var l2scored = [];
-    if (candVec) {
-      for (var j = 0; j < l2pool.length; j++) {
-        var fr = l2pool[j].frag;
-        var fv = testWoo.embedding.ensureEmbedding(fr);
-        var cs = fv ? testWoo.embedding.cosine(candVec, fv) : 0;
-        l2scored.push({ frag: fr, l1: l2pool[j].score, l2: cs });
-        report.l2.push({ id: fr.id, name: fr.name, cosine: cs });
-      }
-      l2scored.sort(function (a, b) { return b.l2 - a.l2; });
-    } else {
-      for (var k = 0; k < l2pool.length; k++) {
-        l2scored.push({ frag: l2pool[k].frag, l1: l2pool[k].score, l2: 0 });
-      }
+    // L1 Jaccard 순 → L3 (L2 embedding 제거 #455 — verdict는 L0·L3만 결정)
+    var l3candidates = [];
+    for (var lj = 0; lj < l1top.length && l3candidates.length < 3; lj++) {
+      l3candidates.push({ frag: l1top[lj].frag, l1: l1top[lj].score, l2: 0 });
     }
 
-    var l3candidates = l2scored.slice(0, 3);
     var cfg = testWoo.cfg.getConfig();
     var nearThreshold = cfg.foundry.dedupNearThreshold || 0.01;
     var population = _population();
@@ -348,4 +327,4 @@ testWoo.dedup = (function () {
 
   return { check: check, tokensOf: tokensOf, jaccard: jaccard };
 })();
-testWoo.dedup.__v = "160";
+testWoo.dedup.__v = "161";

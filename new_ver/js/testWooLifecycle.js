@@ -1,9 +1,9 @@
 /*
  * testWooLifecycle.js (Fragment·SQL 생애주기)
  * ==================================================
- * litmus 동기 __v=159 (#160 배포정합).
+ * litmus 동기 __v=160 (#455 emb_* Write 제거).
  * fragment contentHash·버전 발행·revoke·impact 조회.
- * publish 시 dedup 판정·emb_* 벡터를 함께 기록.
+ * publish 시 dedup 판정 기록.
  *
  * [Main Functions]
  * ===========
@@ -11,7 +11,7 @@
  * - contentHash — fragment 본문 해시
  * - sqlContentHash — 정규화 SQL만 해시(Register dedup)
  * - nextVersion — name 기준 다음 version 번호
- * - publish — fragment Write(active/verified·dedup·emb_*)
+ * - publish — fragment Write(active/verified·dedup)
  * - revoke — is_current=0·revoked_reason 기록
  * - hardDelete — fragment 물리 삭제
  * - listImpact — fragment 사용 중 ai_sql 목록
@@ -24,7 +24,6 @@
  * [Invariants]
  * =========
  * - LLM이 SQL을 쓰지 않음 — publish는 Foundry·수동 승인 경로만
- * - emb_* 필드는 값 있을 때만 세팅(빈 문자열 덮어쓰기 금지)
  */
 var testWoo = testWoo || {};
 testWoo.lifecycle = (function () {
@@ -171,23 +170,6 @@ testWoo.lifecycle = (function () {
     doc.@dedup_match_id = fragDoc.dedup_match_id != null ? Number(fragDoc.dedup_match_id) : 0;
     doc.@dedup_diff_count = fragDoc.dedup_diff_count != null ?
       Number(fragDoc.dedup_diff_count) : -1;
-    if (fragDoc.supersedes_id) doc.@supersedes_id = fragDoc.supersedes_id;
-    /* #155: emb_* — 있을 때만 Write (빈값 덮어쓰기 금지) */
-    if (fragDoc.emb_vector) {
-      doc.@emb_vector = String(fragDoc.emb_vector);
-      if (fragDoc.emb_model) doc.@emb_model = String(fragDoc.emb_model);
-      var embDim = Number(fragDoc.emb_dim);
-      if (!isNaN(embDim) && embDim > 0 && embDim <= 32767) {
-        doc.@emb_dim = embDim;
-      }
-      if (fragDoc.emb_source_hash) {
-        doc.@emb_source_hash = String(fragDoc.emb_source_hash);
-      }
-      doc.@emb_updated_at =
-        fragDoc.emb_updated_at && String(fragDoc.emb_updated_at)
-          ? String(fragDoc.emb_updated_at)
-          : nowStr();
-    }
     xtk.session.Write(doc);
     if (testWoo.fragments && testWoo.fragments.clearCache) testWoo.fragments.clearCache();
     return newId;
@@ -332,4 +314,4 @@ testWoo.lifecycle = (function () {
     compileHash: compileHash
   };
 })();
-testWoo.lifecycle.__v = "159";
+testWoo.lifecycle.__v = "160";

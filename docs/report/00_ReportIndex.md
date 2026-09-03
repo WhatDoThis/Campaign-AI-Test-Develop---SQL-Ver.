@@ -8,9 +8,10 @@
 | `11_고도화_추적표.md` | 고도화 ID 전수 · 판정 · 구/신 차수 매핑 |
 | `01_개발가이드.md` | Test Woo 배포·ACC 제약 |
 | `10_Fragment_생애주기_설계.md` | Fragment 승인·게이트 설계 |
+| `12_STG_스키마_정리.md` | STG schema DELETE/KEEP · ACC 체크리스트 |
 | `02`~`09_SQL생성추가*.md` | Foundry/Pass0/LLM 디버깅 이력 |
 
-## upgrade_plan (`00`~`14`)
+## upgrade_plan (`00`~`15`)
 
 | 파일 | 용도 |
 |---|---|
@@ -29,6 +30,8 @@
 | `upgrade_plan/12_[완료]_배포정합_완료선.md` | #160/161 · 완료선 · R8 |
 | `upgrade_plan/13_미구현_Match_임bedding_HUMAN.md` | C1~C6 · Match/embed ON · HUMAN |
 | `upgrade_plan/14_미구현_DEFERRED_로드맵.md` | #178 · S-1 · 금지·선택 |
+| `upgrade_plan/15_JS_환경값_중앙화_2단계.md` | Env 3계층 · JS Ph1~3 · dead code · 검수 체크리스트 |
+| `16_ACC_Option_설정가이드.md` | XtkOption·Env contract/fallback · litmus · lgu-test 체크리스트 |
 | `upgrade_plan/[별도]_고도화_개발아이디어_관리자작성본.md` | 관리자 원문 (삭제 금지) |
 
 > **구 16~44번** 개별 가이드는 2026-08-26 통합으로 **`02`~`14`에 흡수·삭제**됨.  
@@ -46,5 +49,6 @@
 | 파일 | 용도 |
 |---|---|
 | `docs/main/PRD.md` | 단일 PRD |
+| `docs/main/(공용)모듈_기능맵.md` | js/jssp 모듈·기능·파이프라인 순서 (시연·발표) |
 | `docs/main/Info_mask.md` | 설정 마스킹 샘플 |
 | `docs/main/(민감)Info.md` | 실제 접속 — git 제외 |

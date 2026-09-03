@@ -16,6 +16,7 @@ Before implementing:
 2. Read relevant section of `docs/report/01_개발가이드.md`
 3. For Adobe API questions → `.cursor/skills/campaign-ai-studio/adobe-references.md`
 4. For API/CNF contracts → `.cursor/skills/campaign-ai-studio/pipeline-contracts.md`
+5. For **bug/incident before fix** → `.cursor/skills/campaign-ai-studio/incident-diagnosis/SKILL.md`
 
 ## Subagent routing
 

@@ -1,7 +1,7 @@
 /*
  * testWooFeasibility.js (슬롯 실현가능성 Triage)
  * ==================================================
- * litmus 동기 __v=166 (libraryLookup M3-only skip · 값 M1/M2만 hit).
+ * litmus 동기 __v=167 (libraryLookup — index identity 축-only M3 허용).
  * Foundry SQL 생성 전 슬롯별 feasible 여부 판정.
  * #169: Triage 진입 전 Stage A 라이브러리 조회(서가 우선). 미스만 스키마 탐색.
  * 축·커버·도메인 매칭은 testWoo.fragContract.libraryHitPredicate에 위임.
@@ -342,8 +342,28 @@ testWoo.feasibility = (function () {
         }
         continue;
       }
-      // ok / ttl_expired: 값 M1/M2/M2G 매칭만 서가 skip — M3(축만)은 Foundry triage/generate 계속
+      // ok / ttl_expired: M1/M2/M2G는 값 매칭. M3(축만)은 libraryHitPredicate(자기 색인) 통과 시만 서가 hit.
       var matched = _enPivotDomainMatch(domain, slotObj);
+      var predOk = testWoo.fragContract && testWoo.fragContract.libraryHitPredicate &&
+        testWoo.fragContract.libraryHitPredicate(card, slotObj, domain);
+      if (predOk && (!matched || !matched.layer || matched.layer === "M3")) {
+        if (!matched || !matched.layer) {
+          matched = {
+            layer: "M3", param: "", nl: slotText, value: null,
+            ambiguous: false, hits: []
+          };
+        }
+        return {
+          ok: true,
+          fragmentId: Number(full.id),
+          name: String(full.name || ""),
+          domain: domain,
+          matched: matched,
+          matchLayer: matched.layer,
+          freshness: fresh.status,
+          resolvedBy: "library_cache_hit"
+        };
+      }
       if (!matched || !matched.layer || matched.layer === "M3") continue;
       return {
         ok: true,
@@ -738,4 +758,4 @@ testWoo.feasibility = (function () {
     meetsConfidence: meetsConfidence
   };
 })();
-testWoo.feasibility.__v = "166";
+testWoo.feasibility.__v = "167";

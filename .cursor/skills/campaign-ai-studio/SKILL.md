@@ -16,7 +16,8 @@ LG U+ Adobe Campaign **AI 대상자 추출 시스템**. 마케터 자연어 → 
 5. For Rhino constraints → [acc-rhino-constraints.md](acc-rhino-constraints.md)
 6. For **DB access / seed / no sqlExec** → [acc-data-access.md](acc-data-access.md)
 7. For architecture snapshot → [architecture.md](architecture.md)
-8. **After any bug fix** → [pipeline-downstream-review.md](pipeline-downstream-review.md) + `.cursor/rules/fix-downstream-review.mdc` (fix → trace hops → respond)
+8. **Bug / incident (before fix)** → [incident-diagnosis/SKILL.md](incident-diagnosis/SKILL.md) — REPRO·PROBE·롤백 판정
+9. **After any bug fix** → [pipeline-downstream-review.md](pipeline-downstream-review.md) + `.cursor/rules/fix-downstream-review.mdc` (fix → trace hops → respond)
 
 ## Non-negotiable design
 

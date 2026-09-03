@@ -10,7 +10,7 @@
 | `testWooAiValidate.jssp` | Generate | `{ action:"catalog" }` | `{ ok, categories }` |
 | `testWooAiValidate.jssp` | Generate | `{ action:"listSql", workflow_name }` | `{ ok, workflow_name, items:[{id,title,status,…}] }` |
 | `testWooAiValidate.jssp` | Generate | `{ action:"getSql", ai_sql_id }` | `{ ok, item:{id,plan_json,sql_query,…} }` |
-| `testWooAiRegister.jssp` | Register | `{ plan, title, nl_request, … }` | `{ ok, passed, ai_sql_id, status, sql, summary }` |
+| `testWooAiSqlRegister.jssp` | Register | `{ plan, title, nl_request, … }` | `{ ok, passed, ai_sql_id, status, sql, summary }` |
 
 Transport: `application/x-www-form-urlencoded`, field `payload` = UTF-8 JSON.
 

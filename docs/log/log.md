@@ -1,6 +1,84 @@
 # Log
 
 ## Log Index
+455. 2026-09-03 embedding 제거 — dedup L0·L1·L3 · Stage SCORE 22/100
+454. 2026-09-03 specForParamKey — channelCode↔channel xpath enum 병합 · fragContract=212 gates=168
+453. 2026-09-02 gates refreshDomain·planHaystack — channelCode enum rebind · fragContract=211 gates=167
+452. 2026-09-02 normalizeParamForCatalog — channelCode 매장 enum snap · gates=166
+451. 2026-09-02 fillSqlParamGaps — planLabel↔planCode gate · enum nlMap 키 · v=231
+450. 2026-09-02 btnTwGotoWkf navToWkfList 회귀 → showOpenHint · v=230
+449. 2026-09-02 createWkf reference loop 제거 · 단일 model clone · wfClone=172 · v=229
+448. 2026-09-02 createWkf orphan rollback · diag · wfClone=171 · v=228
+447. 2026-09-02 opPrefs last_* 제거 · WKF부터 열기 UX · v=227
+446. 2026-09-02 schema 컬럼 정의 주석 — new_ver/schema (sample 제외)
+445. 2026-09-02 AI_Studio_Tamplate 정본 canvas·afterClone repair · v=226
+444. 2026-09-02 createWkf xtk.workflow.load+blind clone — patch_canvas · v=225
+443. 2026-09-02 createWkf model clone+canvas patch — WKF_NO_AI_ACTIVITY · v=224
+442. 2026-09-02 UI err/hint 진단로그 — showErr·배너 깜빡임 추적 · v=223
+441. 2026-09-02 incident-diagnosis Skill — REPRO·PROBE·롤백 알고리즘
+440. 2026-09-02 createWkf reference data clone — aiStudioSql WKF_NO_AI_ACTIVITY
+439. 2026-09-02 createWkf selectWkf 통합 — err flash 완화 · v=222
+438. 2026-09-02 createCampaign default WKF ensure · Config 선로드 · v=221
+437. 2026-09-02 recentNl legacy ts·createCampaign template_diagnostics · v=220
+436. 2026-09-02 opPrefs listRecentNl sqlSelect 전행 — rowId만·items=0 복구
+435. 2026-09-02 opPrefs fetch select+for each·dup sql id UPDATE · v=167
+434. 2026-09-02 opPrefs fetch getIfExists — duplicate login INSERT 수정 · v=219
+433. 2026-09-02 opPrefs Write 복구 — GetNewIds·검증·Register/Context 연동
+432. 2026-09-02 enPivot 8슬롯 상한·Generate feasibility·lex 잔여 병합
+431. 2026-09-02 opPrefs — BindPick·NlRecent legacy Option migrate 제거
+430. 2026-09-02 EnPivot llm_fail — testWooEnv options.keys 누락 복구
+429. 2026-09-02 auth #407–428 롤백 — #406 직후·nav plain URL · v=217
+428. 2026-09-02 API auth escalation-first · navtree securitytoken · v=216
+427. 2026-09-02 크리티컬 — AUTH redirect 금지 · Match load · enPivot 진단
+426. 2026-09-02 Env match·ui — testWooMatch LOAD_ERR · litmus v=214
+425. 2026-09-02 libVersions expectedByMod — repo __v 전면 동기화
+424. 2026-09-02 API auth — XHR __securitytoken · launcher retire
+423. 2026-09-02 auth reset — shell soft-open · PoC-0 navtree · payload sessionToken
+422. 2026-09-02 launcher enter macro — $(sessionToken) URL · NO_TOKEN diag
+421. 2026-09-02 Tools launcher — UrlViewer sessionToken form (navtree view 폐기)
+420. 2026-09-02 auth stale cookie — query token 우선 · Set-Cookie · COOKIE_STALE
+419. 2026-09-02 auth escalation-first — webapp 선행 clear 제거
+418. 2026-09-02 Generate webapp 거부 — session-first auth · logonEscalation webapp 제거
+417. 2026-09-02 Tools auth — navtree __sessiontoken·logonEscalation 우선
+416. 2026-09-02 auth token 구분 — JSSPContext·session vs security token
+415. 2026-09-02 logon target 상대경로 — external redirect 차단 수정
+414. 2026-09-02 Studio QUERY_TOKEN fix — __securitytoken URL bind (#408 restore)
+413. 2026-09-02 navtree GapAdmin 제거 — #388 retire 미커밋 복원
+412. 2026-09-02 Register rename·auth rollback — testWooAiSqlRegister.jssp
+411. 2026-09-02 QUERY_TOKEN — navtree $(sessionToken)·bind 실패 처리
+410. 2026-09-02 install.jsp revert — Rich Client 설치页 ≠ web login
+409. 2026-09-02 Studio web login — install.jsp (lgu-test logon.jsp≠) [reverted #410]
+408. 2026-09-02 Studio 셸 auth — __securitytoken 쿼리·logon target 절대URL
+407. 2026-09-02 Studio 로그인 루프 — sessionToken payload·AUTH redirect 차단
+406. 2026-09-01 OperatorPrefs v2 — NL 10슬롯 컬럼·nav·inject backup
+405. 2026-09-01 OperatorPrefs schema — BindPick·NL recent Option 폐기
+404. 2026-09-01 Option 정본·Env contract/fallback — 설정가이드·diagnostics source
+403. 2026-09-01 wfClone — Option id vs Env internalName 검증·aiStudioSql 생성 검사
+402. 2026-09-01 heal.library pushConsent param missing — paramsForHealedLibraryHit
+401. 2026-09-01 Generate JSSP — Feasibility 미로드로 heal.library no-op
+400. 2026-09-01 Foundry 후 2글자 슬롯(푸시·휴면) Stage A 미매칭
+399. 2026-09-01 testWooProbe — PROBE_TIMEOUT_MS ReferenceError (G-A gate)
+398. 2026-09-01 libVersions — probe expected 160 (allMatch litmus)
+397. 2026-09-01 구 템플릿·마이그레이션 가드 제거 — 신규 템플릿 전용
+396. 2026-09-01 JS Env 중앙화 Phase 1~3 — Env/Config·dead code·Tools-only Studio
+395. 2026-09-01 upgrade_plan 15 — JS 코드정리 후보 §2-b·Phase 3 추가
+394. 2026-09-01 upgrade_plan 15 — JS 환경값 중앙화 2단계 체크리스트
+393. 2026-09-01 모듈 기능맵 — 시연 NL 시드 검증 조합
+392. 2026-09-01 NmsProgramAiFolderPatch — xtk:folder 삽입 위치 주석 복원
+391. 2026-09-01 STG schema/input_form/navtree 정리 doc·repo
+390. 2026-09-01 schema 정리 — 미사용 컬럼·주석 제거 · Golden retire
+389. 2026-09-01 기능맵 GapAdmin·autoApprove · WF embed 제거 가이드
+388. 2026-09-01 sample schema/sample · GapAdmin retire
+387. 2026-09-01 new_ver ACC 분류 — WF embed retire · Tools-only STG
+386. 2026-09-01 STG 패키징 정리 doc · recentNl sessionStorage litmus PASS
+385. 2026-08-31 recentNl sessionStorage 정본·조건 컬럼 쉬운설명 doc (v=202)
+384. 2026-08-31 Studio v=201 — WKF 점프 compose 보존·draft/이전질문 누적
+383. 2026-08-31 Studio recentNl — push 레이스·Option 1024 trim (v=200)
+382. 2026-08-31 workflowUi 166 — WF 로드 dead path 제거 · queryDef 정본
+381. 2026-08-31 모듈 기능맵 — C·D 용도 중심 간소화
+380. 2026-08-31 모듈 기능맵 — D. Named right 권한목록
+379. 2026-08-31 모듈 기능맵 — Option 인벤토리·시연 NL·Pass 설명
+378. 2026-08-31 모듈 기능맵 — js/jssp 시연·발표 참고본
 377. 2026-08-28 푸시 동의 — 마케팅 축 오매칭 heal (fragContract 206)
 376. 2026-08-28 N~M대 — 20~30대는 20~40 (fragContract 205)
 375. 2026-08-27 sqlDM userScript — AI Studio SQL 주입 xpath (workflowUi 165)
@@ -380,6 +458,653 @@
 1. 2026-07-31 old_ver 시스템 구조 분석 문서 작성
 
 ## Log Body
+
+455. 2026-09-03 embedding 제거 — dedup L0·L1·L3 · Stage SCORE 22/100
+Purpose: Stage 이관 전 embedding 사용성 SCORE — 유지 22/100 vs 삭제 78/100 → 코드 제거. Studio/Generate/Match 무관·L2는 verdict 미변경·OFF 상태=현행과 동일.
+Changes:
+- `_retire/js/testWooEmbedding.js` — 모듈 retire · ACC `woo:testWooEmbedding.js` 제거 대상
+- testWooDedup.js 161 — L2 embedding rerank 제거 · L1 top3→L3
+- testWooLlm.js 206 — postEmbedding·_embedEndpoint 제거
+- testWooLifecycle.js 160 — emb_* Write 제거
+- testWooFoundry.js 181 — ensureEmbedding 제거
+- testWooEnv.js 166 · testWooConfig.js 165 — embedEnabled·embedModel 제거
+- testWooAiStudioContext.jssp — embedding litmus 제거 · dedup/llm/foundry/lifecycle/env/cfg 동기
+- testWooAiStudioJs.jssp · testWooAiStudio.js — lib 목록 embedding 제거
+- testWooFoundryBatch.js — embedding loadLibrary 제거
+- schema emb_* 컬럼 — orphan 유지(ACC DDL 변경 없음)
+Changed files: new_ver/_retire/js/testWooEmbedding.js, new_ver/js/testWooDedup.js, testWooLlm.js, testWooLifecycle.js, testWooFoundry.js, testWooEnv.js, testWooConfig.js, new_ver/jssp/testWooAiStudioContext.jssp, testWooAiStudioJs.jssp, testWooAiStudio.js, new_ver/workflow/testWooFoundryBatch.js, new_ver/_retire/README.md, docs/log/log.md
+
+454. 2026-09-03 specForParamKey — channelCode↔channel xpath enum 병합 · fragContract=212 gates=168
+Purpose: #453 배포·Foundry domainChanged 후에도 `PLAN param not in enum: woo__app__channel.channelCode=매장` — sql {{channelCode}} vs param_domain `channel`(xpath @channel) 키 불일치로 enum/nlMap lookup miss.
+Changes:
+- testWooFragContract.js 212 — paramKeyVariants·specForParamKey·resolveNeedParams · fillSqlParamGaps/catalogProves 병합 spec
+- testWooGates.js 168 — _specForParam → fragContract.specForParamKey
+- testWooCompiler.js — bindPlanParams resolveNeedParams
+- testWooAiStudioContext.jssp — expectedByMod fragContract=212 gates=168
+Changed files: new_ver/js/testWooFragContract.js, testWooGates.js, testWooCompiler.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+453. 2026-09-02 gates refreshDomain·planHaystack — channelCode enum rebind · fragContract=211 gates=167
+Purpose: #452 배포 후에도 `PLAN param not in enum: woo__app__channel.channelCode=매장` — gates가 compiler 대비 stale domain·짧은 haystack·Pass1 축약값 rebind 없음.
+Changes:
+- testWooFragContract.js 211 — planHaystack export · fillSqlParamGaps enum fail 시 resolveNlParams rebind · catalogProvesParamValue+domain/pk
+- testWooGates.js 167 — validatePlan _checkItem refreshDomain · planHaystack · enum normalized write-back
+- testWooCompiler.js — _nlHaystack → fragContract.planHaystack 위임
+- testWooAiStudioContext.jssp — expectedByMod fragContract=211 gates=167
+Changed files: new_ver/js/testWooFragContract.js, testWooGates.js, testWooCompiler.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+452. 2026-09-02 normalizeParamForCatalog — channelCode 매장 enum snap · gates=166
+Purpose: #451 배포 후에도 `param not in enum: woo__app__channel.channelCode=매장` — Pass1 축약값 vs nlMap 키(매장 유입) 불일치.
+Changes:
+- testWooFragContract.js 210 — normalizeParamForCatalog·catalogProvesParamValue · fillSqlParamGaps tail snap
+- testWooGates.js 166 — enum 검사 전 catalog snap·haystack catalogProves
+- testWooAiStudioContext.jssp — expectedByMod fragContract=210 gates=166
+Changed files: new_ver/js/testWooFragContract.js, testWooGates.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+451. 2026-09-02 fillSqlParamGaps — planLabel↔planCode gate · enum nlMap 키 · v=231
+Purpose: 기능맵 #8 Generate 7/7 매칭 후 validation failed — Pass1 planLabel vs sql {{planCode}} 불일치·nlMap alias enum 거절.
+Changes:
+- testWooFragContract.js 209 — fillSqlParamGaps·형제 Code/Label·_bucket nlMap 보정
+- testWooCompiler.js 169 — bindPlanParams에서 fillSqlParamGaps 호출
+- testWooGates.js 165 — compile 전 param gap 보정 · enum에 nlMap 키 허용
+- testWooAiStudioJs.jssp · testWooAiStudio.jssp — v=231 gate fail diag
+- testWooAiStudioContext.jssp — expectedByMod fragContract=209 compiler=169 gates=165
+Changed files: new_ver/js/testWooFragContract.js, testWooCompiler.js, testWooGates.js, new_ver/jssp/testWooAiStudioJs.jssp, testWooAiStudio.jssp, testWooAiStudioContext.jssp, docs/log/log.md
+
+450. 2026-09-02 btnTwGotoWkf navToWkfList 회귀 → showOpenHint · v=230
+Purpose: #447 WKF부터 열기 분리 시 [WKF로 이동]이 navToWkfList(선택 브레드크럼)에 잘못 연결 — Register 후 Explorer 열기 불가.
+Changes:
+- testWooAiStudioJs.jssp — btnTwGotoWkf onclick showOpenHint 복원 · _refreshOpenButtons 반영 후에만 활성(_wfSchemaBound)
+- testWooAiStudio.jssp — v=230
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
+
+449. 2026-09-02 createWkf reference loop 제거 · 단일 model clone · wfClone=172 · v=229
+Purpose: Studio「새 WKF 생성」1회에 reference clone 다중 INSERT(3+ orphan) · 손상 visualState 복사로 Explorer memo XML-110018 재발 방지.
+Changes:
+- testWooWorkflowClone.js __v=172 — createWkfFromTemplate=CreateInstanceFromModel 1회+bundled patch only · ref loop 제거
+- _createWkfFromReference — GetNewIds · insert 후 rollback · visualState 빈 CDATA만 · ai 필수 precheck
+- _wfActivitiesFromTemplateModel — bundled _templateActivitiesXml 정본만
+- testWooAiStudioContext.jssp — wfClone expected 172
+- testWooAiStudio.jssp · testWooAiStudioJs.jssp — v=229
+Changed files: new_ver/js/testWooWorkflowClone.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, docs/log/log.md
+
+448. 2026-09-02 createWkf orphan rollback · diag · wfClone=171 · v=228
+Purpose: Studio「새 WKF 생성」1회 클릭 시 동일 라벨 orphan 다건(WKF216–218) 생성 방지 · 실패 시 rollback · 진단 로그 노출.
+Changes:
+- testWooWorkflowClone.js __v=171 — _rollbackWkf · _refEntityCloneable pre-skip · blind campaign sibling 제거 · data-only _wfApplyCanvas · getLastWkfCreateDiag
+- testWooCommon.js — WKF_NO_AI_ACTIVITY/WKF_MAX errOut에 create_diagnostics 첨부
+- testWooAiStudioContext.jssp — createwkf create_diagnostics · wfClone expected 171
+- testWooAiStudioJs.jssp — _logWkfCreateDiag · _wkfCreateInflight · v=228
+- testWooAiStudio.jssp — litmus v=228
+Changed files: new_ver/js/testWooWorkflowClone.js, new_ver/js/testWooCommon.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
+
+447. 2026-09-02 opPrefs last_* 제거 · WKF부터 열기 UX · v=227
+Purpose: 미사용 last_* nav 컬럼 정리 · bind=최근 WKF 단축 · Explorer 안내 버튼을 WKF-first 탐색으로 교체.
+Changes:
+- testWooAiOperatorPrefs.xml — last_program/campaign/wkf_* attribute 제거
+- testWooOperatorPrefs.js — setLastNav/getLastNav 제거 · setBindWkf · __v=169
+- testWooAiStudioContext.jssp — selectWkf setBindWkf · resolveWkfByName · opPrefs=169
+- testWooAiValidate.jssp — getBindPick hasPick wkf-only
+- testWooAiStudio.jssp — btnTwRecentWkf · WKF부터 열기 · v=227
+- testWooAiStudioJs.jssp — startWkfFirstFlow · jumpRecentWkf · _loadRecentWkfBtn
+Changed files: new_ver/schema/testWooAiOperatorPrefs.xml, new_ver/js/testWooOperatorPrefs.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiValidate.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, docs/log/log.md
+
+446. 2026-09-02 schema 컬럼 정의 주석 — new_ver/schema (sample 제외)
+Purpose: ACC 스키마 XML 상단에 컬럼명/용도/예시 정의서형 주석 추가(행별 주석 없음).
+Changes:
+- testWooAiOperatorPrefs/Sql/Fragment/RequestQueue/GapLog/WkfLock/FolderExt/ProgramExt.xml — 상단 <!-- --> 블록
+Changed files: new_ver/schema/testWooAiOperatorPrefs.xml, testWooAiSql.xml, testWooAiFragment.xml, testWooAiRequestQueue.xml, testWooAiGapLog.xml, testWooAiWkfLock.xml, testWooFolderExt.xml, testWooProgramExt.xml, docs/log/log.md
+
+445. 2026-09-02 AI_Studio_Tamplate 정본 canvas·afterClone repair · v=226
+Purpose: AI_Studio_Tamplate.xml 대조 — sqlDM script 래퍼·activities 직속·afterClone empty WKF gap. patch/clone 정본 반영.
+Changes:
+- testWooWorkflowClone.js — _templateActivitiesXml · _repairCampaignWkfAi · _wfApplyCanvas root+data · clone activities 직접 insert · __v=170
+- testWooAiStudioContext.jssp — wfClone=170 · testWooAiStudio.jssp v=226
+Changed files: new_ver/js/testWooWorkflowClone.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
+
+444. 2026-09-02 createWkf xtk.workflow.load+blind clone — patch_canvas · v=225
+Purpose: v=224 refAttempts candidates=0·patch_canvas=fail — queryDef-only canvas 탐지/Write 한계. xtk.workflow.load 기반 clone·patch·probe.
+Changes:
+- testWooWorkflowClone.js — _loadWfEntity · blind clone try · _patchAiActivityCanvas full Write · probe_model · __v=169
+- testWooAiStudioJs.jssp — createWkf fail loadWkfs keepErr (err flash cleared 버그)
+- testWooAiStudioContext.jssp — wfClone=169 · testWooAiStudio.jssp v=225
+Changed files: new_ver/js/testWooWorkflowClone.js, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
+
+443. 2026-09-02 createWkf model clone+canvas patch — WKF_NO_AI_ACTIVITY · v=224
+Purpose: v=223 diag로 CreateInstanceFromModel fallback·aiStudioSql 없음 확인 — reference 후보 확대·empty shell patch.
+Changes:
+- testWooWorkflowClone.js — _listWkfCloneReferenceCandidates(wkf_model_id) · _patchAiActivityCanvas · reference_attempts · __v=168
+- testWooCommon.js — WKF_NO_AI_ACTIVITY errOut에 wkf_id·reference_attempts
+- testWooAiStudioContext.jssp — wfClone=168
+- testWooAiStudioJs.jssp — createWkf fail refAttempts diag · clearErr 중복 로그 제거
+- testWooAiStudio.jssp — v=224
+Changed files: new_ver/js/testWooWorkflowClone.js, new_ver/js/testWooCommon.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
+
+442. 2026-09-02 UI err/hint 진단로그 — showErr·배너 깜빡임 추적 · v=223
+Purpose: #err·#hint에 잠깐 뜨는 경고/에러가 #twDiagLog에 남지 않아 원인 추적 불가 — UI 메시지를 진단로그에 영구 기록.
+Changes:
+- testWooAiStudioJs.jssp — showErr/clearErr → UI err:/cleared · _setHintBanner(err/warn) · XHR empty/parse err · Foundry queue err
+- testWooAiStudio.jssp — litmus v=223
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
+
+441. 2026-09-02 incident-diagnosis Skill — REPRO·PROBE·롤백 알고리즘
+Purpose: 추측 패치 누적·원인 오판 시 agent 절차 고정. 2026-09-02 캠페인/WKF incident 감사 포함.
+Changes:
+- .cursor/skills/campaign-ai-studio/incident-diagnosis/SKILL.md — REPRO→PROBE→FIX→VERIFY→ADJUDICATE · 롤백 매트릭스
+- fix-downstream-review.mdc — PROBE first · anti-pattern 가설 미확정 FIX
+- campaign-ai-studio/SKILL.md · AGENTS.md — incident-diagnosis 링크
+Changed files: .cursor/skills/campaign-ai-studio/incident-diagnosis/SKILL.md, .cursor/skills/campaign-ai-studio/SKILL.md, .cursor/rules/fix-downstream-review.mdc, AGENTS.md, docs/log/log.md
+
+440. 2026-09-02 createWkf reference data clone — aiStudioSql WKF_NO_AI_ACTIVITY
+Purpose: [새 WKF 생성] CreateInstanceFromModel(42102)는 WKF 껍데기만 생성·aiStudioSql 없음(#439 UI flash≠근본). 캠페인 sibling/template bundled WKF data clone 우선.
+Changes:
+- testWooWorkflowClone.js — _createWkfFromReference · _resolveWkfCloneReferenceId · createWkfFromTemplate reference_clone 우선 · __v=167
+- testWooAiStudioContext.jssp — wfClone=167
+- testWooAiStudioJs.jssp — createWkf source diag
+Changed files: new_ver/js/testWooWorkflowClone.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudioJs.jssp, docs/log/log.md
+
+439. 2026-09-02 createWkf selectWkf 통합 — err flash 완화 · v=222
+Purpose: createWkf 성공 후 수동 ctx.workflow·_afterWkfBound 분기 → selectWkf(lock·hint) 통일 · 목록 깜빡임 optimistic.
+Changes:
+- testWooAiStudioJs.jssp — _submitCreateWkf clearErr 선행 · optimistic wkf row · selectWkf
+- testWooAiStudio.jssp — v=222
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
+
+438. 2026-09-02 createCampaign default WKF ensure · Config 선로드 · v=221
+Purpose: Studio 캠페인 생성 시 Explorer와 달리 default WKF·Workflows 탭 없음 — Option 미적용·템플릿 clone 미복제.
+Changes:
+- testWooWorkflowClone.js — _ensureCfgLoaded · @isModel 검증 · planning program-id · wkfCount 진단 · _ensureDefaultWkf · __v=166
+- testWooAiStudioContext.jssp — _twLoadWfClone Config 선로드 · wfClone=166
+- testWooAiStudioJs.jssp — createCampaign wkf/defaultWkf 진단
+- testWooAiStudio.jssp — v=221
+Changed files: new_ver/js/testWooWorkflowClone.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
+
+437. 2026-09-02 recentNl legacy ts·createCampaign template_diagnostics · v=220
+Purpose: nl_recent_at 32bit 잘림(1617253876) → 04-01 오표시 · 캠페인 템플릿 적용 진단 부재.
+Changes:
+- testWooAiStudioJs.jssp — _normalizeRecentNlTs(>=1700000000만 초→ms) · createCampaign template diag
+- testWooAiStudioContext.jssp — createCampaign/createWkf template_diagnostics
+- testWooAiStudio.jssp — v=220
+Changed files: new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
+
+436. 2026-09-02 opPrefs listRecentNl sqlSelect 전행 — rowId만·items=0 복구
+Purpose: v167 배포 후 init `items=0 rowId=44533` — id SQL만 성공·queryDef는 nl_recent 미반환.
+Changes:
+- testWooOperatorPrefs.js — _resolveRow · _fetchRowBySql/_fetchRowByIdSql · _rowFromSql · peekFetchSource · __v=168
+- testWooAiValidate.jssp — listRecentNl fetchSource
+- testWooAiStudioJs.jssp — recentNl diag src=
+- testWooAiStudioContext.jssp — opPrefs=168
+Changed files: new_ver/js/testWooOperatorPrefs.js, new_ver/jssp/testWooAiValidate.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+435. 2026-09-02 opPrefs fetch select+for each·dup sql id UPDATE · v=167
+Purpose: v166 배포 후에도 getIfExists 조회 miss — listRecentNl items=0·push INSERT UK 위반 지속(hiwoo row 44533).
+Changes:
+- testWooOperatorPrefs.js — _fetchRow select lineCount=1 + for each(testWooAiOperatorPrefs) · _rowFromQueryRes · _fetchRowIdBySql · dup retry sql id · __v=167
+- testWooAiStudioContext.jssp — libVersions opPrefs=167
+Changed files: new_ver/js/testWooOperatorPrefs.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+434. 2026-09-02 opPrefs fetch getIfExists — duplicate login INSERT 수정 · v=219
+Purpose: pushRecentNl/setBindPick이 hiwoo 행 존재 시에도 INSERT → UK 위반 · listRecentNl 빈 배열 · UI는 optimistic만 표시.
+Changes:
+- testWooOperatorPrefs.js — _fetchRow getIfExists( rs[0] 제거) · dup-login UPDATE 재시도 · nl_recent_at 초 · __v=166
+- testWooAiValidate.jssp — listRecentNl rowId · peekRowId
+- testWooAiStudioJs.jssp — _warnOpPrefs hint+diag · at 초 표시 · opPrefs libVersions
+- testWooAiStudioContext.jssp — libVersions opPrefs=166
+- testWooAiStudio.jssp — v=219
+Changed files: new_ver/js/testWooOperatorPrefs.js, new_ver/jssp/testWooAiValidate.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
+
+433. 2026-09-02 opPrefs Write 복구 — GetNewIds·검증·Register/Context 연동
+Purpose: OperatorPrefs Explorer 빈 테이블·이previous 질문 재오픈 시 소실 — Write 미검증·setLastNav/setBindPick/inject 미연동.
+Changes:
+- testWooOperatorPrefs.js — twBindOperator·GetNewIds·Write 후 verify · nl_recent_at 0 제거 · __v=165
+- testWooAiValidate.jssp — pushRecentNl login/rowId · twBindOperator
+- testWooAiSqlRegister.jssp — inject 후 setBindPick · opPrefs 선로드
+- testWooAiStudioContext.jssp — selectWkf setLastNav
+- testWooWorkflowUi.js — saveInjectBackup opPrefs · __v=166
+- testWooAiStudioJs.jssp — recentNl sessionStorage·진단 · bindPick 진단
+- testWooAiStudio.jssp — v=218
+Changed files: new_ver/js/testWooOperatorPrefs.js, new_ver/js/testWooWorkflowUi.js, new_ver/jssp/testWooAiValidate.jssp, new_ver/jssp/testWooAiSqlRegister.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
+
+432. 2026-09-02 enPivot 8슬롯 상한·Generate feasibility·lex 잔여 병합
+Purpose: 11조건 NL에서 enPivot 8슬롯 cap으로 마케팅·푸시·휴면 누락 · heal.library feasibility 미로드 · lex=12 무시.
+Changes:
+- testWooEnPivot.js — guard.MAX_SLOTS env 연동(40) · prompt 동적 상한 · __v=180
+- testWooLlm.js — skipPass0 시 mergeLexiconSlots(pivot,lex) 잔여 병합 · __v=205
+- testWooAiGenerate.jssp — testWooFeasibility.js load · heal.library 활성
+- testWooAiStudioContext.jssp — libVersions enPivot=180 llm=205
+Changed files: new_ver/js/testWooEnPivot.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiGenerate.jssp, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+431. 2026-09-02 opPrefs — BindPick·NlRecent legacy Option migrate 제거
+Purpose: ACC에서 testWooAiBindPick_*·testWooAiNlRecent_* Option 삭제 — dead migrate 경로 제거.
+Changes:
+- testWooOperatorPrefs.js — LEGACY_BIND/NL·_migrateLegacyBind/Nl 삭제 · schema-only · __v=164
+- testWooAiInjectBackup migrate는 유지(전역 Option 별도)
+Changed files: new_ver/js/testWooOperatorPrefs.js, docs/log/log.md
+
+430. 2026-09-02 EnPivot llm_fail — testWooEnv options.keys 누락 복구
+Purpose: Generate «EnPivot LLM 호출 실패» — #404 Config가 E.options.keys 참조하는데 Env에 [A][B][C] 미구현 → getOption(undefined) → apiKey 공백.
+Changes:
+- testWooEnv.js — options.keys · nms · mart 추가 · populationCountSql→mart · __v=165
+- testWooAiStudioContext.jssp — libVersions env=165
+Changed files: new_ver/js/testWooEnv.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+429. 2026-09-02 auth #407–428 롤백 — #406 직후·nav plain URL · v=217
+Purpose: HUMAN 확인 — 장애 원인 guest WiFi 네트워크(테더링 복구). #407–#428 auth 실험·nav securitytoken macro 원복.
+Changes:
+- testWooCommon.js — Cookie __sessiontoken twBindOperator 단순화 · __v=160
+- testWooAiStudio.jssp · testWooAiStudioJs.jssp · testWooAiStudio.js — token query·payload·escalation 제거 · v=217
+- testWooAiNavtree.xml — plain URL (macro 없음)
+- testWooAiValidate.jssp — OperatorPrefs schema bind/recent (#405–406)
+- testWooAiStudioContext.jssp — libVersions common=160
+Changed files: new_ver/js/testWooCommon.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, new_ver/navtree/testWooAiNavtree.xml, new_ver/jssp/testWooAiValidate.jssp, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+428. 2026-09-02 API auth escalation-first · navtree securitytoken · v=216
+Purpose: v=215 진입 OK but libs NOT_AUTHENTICATED·user empty — URL에 __securitytoken 없음·stale __sessiontoken만 XHR. listRegisteredSql 실패.
+Changes:
+- testWooCommon.js — logonEscalation 선행 · twTrySessionTokenBind · logon fallback · __v=170
+- testWooAiStudio.jssp — shell escalation-first · _twIsRealLogin · v=216
+- testWooAiNavtree.xml — view url ?__securitytoken=$(securityToken)
+- testWooAiStudioJs.jssp — payload.securityToken · _loadRegisteredSql diag · v=216
+- testWooAiStudioContext.jssp — common=170
+Changed files: new_ver/js/testWooCommon.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/navtree/testWooAiNavtree.xml, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+427. 2026-09-02 크리티컬 — AUTH redirect 금지 · Match load · enPivot 진단
+Purpose: Tools 진입 logon 루프 · Generate “조건을 해석하지 못했습니다” — OperatorPrefs 무관. #396 Env match/ui 누락+부분 배포+AUTH→logon.jsp redirect.
+Changes:
+- testWooAiStudioJs.jssp — AUTH logon redirect 완전 제거 · enPivotReason 힌트 · v=215
+- testWooAiStudio.jssp — v=215
+- testWooMatch.js — load 시 getConfig 호출 제거 · __v=163
+- testWooAiGenerate.jssp — retryInput enPivotReason·debugTrace
+- testWooAiStudioContext.jssp — match=163
+Changed files: new_ver/jssp/testWooAiStudio.jssp, testWooAiStudioJs.jssp, testWooAiGenerate.jssp, testWooAiStudioContext.jssp, new_ver/js/testWooMatch.js, new_ver/html/testWooAiStudio.js, docs/log/log.md
+
+426. 2026-09-02 Env match·ui — testWooMatch LOAD_ERR · litmus v=214
+Purpose: libVersions match=? · LOAD_ERR m is undefined — #396 Env 중앙화 때 Config가 E.match 참조하나 Env에 match·ui 섹션 누락.
+Changes:
+- testWooEnv.js — match·ui 섹션 추가 · __v=161
+- testWooMatch.js — _matchCfg null-safe · __v=162
+- testWooConfig.js — match·ui fallback 기본값
+- testWooAiStudioContext.jssp — expected env=161 match=162
+- testWooAiStudioJs.jssp — okMsg v=214 · XHR diag에 auth query
+Changed files: new_ver/js/testWooEnv.js, testWooMatch.js, testWooConfig.js, new_ver/jssp/testWooAiStudioContext.jssp, testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
+
+425. 2026-09-02 libVersions expectedByMod — repo __v 전면 동기화
+Purpose: [LIB] 배너 — StudioContext expectedByMod 가 구 __v(fragContract=206, llm=201 등) 고정 · ACC JS와 불일치.
+Changes:
+- testWooAiStudioContext.jssp — expectedByMod를 repo testWoo.*.__v 정본과 일치(common=169, fragContract=208, llm=204, foundry=180, probe=161, cfg=164, …)
+Changed files: new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+424. 2026-09-02 API auth — XHR __securitytoken · launcher retire
+Purpose: #423 셸 user:hiwoo 진입 후 loadSqlList 등 API NOT_AUTHENTICATED — 셸 GET의 __securitytoken이 XHR에 미전달.
+Changes:
+- testWooAiStudio.jssp — __TW_SECURITY_TOKEN__ 주입 · v=214
+- testWooAiStudioJs.jssp — _twAuthQuerySuffix · URL token bootstrap · v=214
+- testWooCommon.js — twBindOperator JSSPContext 우선 · __v=169
+- testWooAiStudioContext.jssp — common=169
+- testWooAiStudioLauncher.xml — _retire 이동(repo 삭제)
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/js/testWooCommon.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/html/testWooAiStudio.js, new_ver/_retire/input_form/testWooAiStudioLauncher.xml, docs/log/log.md
+
+423. 2026-09-02 auth reset — shell soft-open · PoC-0 navtree · payload sessionToken
+Purpose: #418–422 auth 실험(launcher·Sign-in gate·webapp 거부)이 화면 진입을 막음 — #417 때 열리던 경로로 롤백. 셸은 항상 렌더·API만 requireRight.
+Changes:
+- testWooAiStudio.jssp — Sign-in gate 제거 · redirect 제거(토큰 strip 방지) · _twSoftBindShellLogin · __TW_SESSION_TOKEN__ · v=213
+- testWooAiStudioJs.jssp — XHR sessionToken · AUTH redirect 억제(셸 open) · v=213
+- testWooCommon.js — twSessionTokenFromPayload · __v=168
+- testWooAiNavtree.xml — PoC-0 view/viewType 복원(launcher form 제거)
+- testWooAiStudioLauncher.xml — DEPRECATED 주석
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/js/testWooCommon.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/navtree/testWooAiNavtree.xml, new_ver/input_form/testWooAiStudioLauncher.xml, docs/log/log.md
+
+422. 2026-09-02 launcher enter macro — $(sessionToken) URL · NO_TOKEN diag
+Purpose: #421 후에도 esc=0 qSec=0 qSess=0 cookieLen=0 — urlViewer sessionToken=true 만으로 토큰 미전달. form enter expr 에 macro 직접 결합.
+Changes:
+- testWooAiStudioLauncher.xml — enter $(sessionToken)+$(securityToken) · Studio URL diag 행 · embed=1
+- testWooAiStudio.jssp — qSec→JSSPContext 우선 · NO_TOKEN 안내 · v=212
+- testWooCommon.js — twBindOperator qSec jctx 우선 · __v=167
+Changed files: new_ver/input_form/testWooAiStudioLauncher.xml, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/js/testWooCommon.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+421. 2026-09-02 Tools launcher — UrlViewer sessionToken form (navtree view 폐기)
+Purpose: qSess=0 지속 — navtree view url `$(sessionToken)` macro 가 lgu-test Tools 탭에 전달 안 됨. WF embed 검증 경로(urlViewer sessionToken=true)로 Tools 진입 교체.
+Changes:
+- testWooAiStudioLauncher.xml — UrlViewer sessionToken=true · Studio v=211
+- testWooAiNavtree.xml — command form=woo:testWooAiStudioLauncher (view/viewType 제거)
+Changed files: new_ver/input_form/testWooAiStudioLauncher.xml, new_ver/navtree/testWooAiNavtree.xml, docs/log/log.md
+
+420. 2026-09-02 auth stale cookie — query token 우선 · Set-Cookie · COOKIE_STALE
+Purpose: Sign-in auth fail esc=0 jctx=0 cookieLen=39 qSess=0 — 만료 __sessiontoken 쿠키가 navtree URL 토큰보다 먼저 시도·bind 실패. redirect 후 Set-Cookie 없음.
+Changes:
+- testWooAiStudio.jssp — qSess→esc→cookie→jctx 순 · Set-Cookie/clear · COOKIE_STALE 안내 · v=211
+- testWooCommon.js — query token 우선 · twSetSessionCookie · __v=166
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/js/testWooCommon.js, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+419. 2026-09-02 auth escalation-first — webapp 선행 clear 제거
+Purpose: #418 배포 후 Sign-in 회귀 — ACC Tools JSSP는 webapp 컨텍스트로 시작하는데 선행 clear + session-first로 logonEscalation() 승격 실패.
+Changes:
+- testWooAiStudio.jssp — logonEscalation → sessiontoken → JSSPContext · webapp 최종 거부만 · v=210
+- testWooCommon.js — twBindOperator 동일 순서 · __v=165
+- testWooAiStudioContext.jssp · testWooAiStudioJs.jssp — litmus v=210
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/js/testWooCommon.js, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+418. 2026-09-02 Generate webapp 거부 — session-first auth · logonEscalation webapp 제거
+Purpose: Studio 셸은 열리나 Generate `missing right: testWooAiSqlGenerate (login=webapp)` — #417 logonEscalation("webapp")이 기술 계정으로 바인딩.
+Changes:
+- testWooCommon.js — twIsRealOperatorLogin · sessiontoken→jctx→escalation 순 · webapp/anonymous 거부 · __v=164
+- testWooAiStudio.jssp — 동일 auth 순서 · _twIsRealLogin · v=209
+- testWooAiStudioContext.jssp · testWooAiStudioJs.jssp — libVersions · v=209
+Changed files: new_ver/js/testWooCommon.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+417. 2026-09-02 Tools auth — navtree __sessiontoken·logonEscalation 우선
+Purpose: 갑자기 Sign-in 루프 — #387 WF embed retire(#396 Tools-only) 후 navtree가 sessionToken 미주입. #412 rollback이 #411 navtree $(sessionToken)도 제거. OperatorPrefs(#405–406)와 무관(셸 auth·스키마 미연동).
+Changes:
+- testWooAiNavtree.xml — view url `?__sessiontoken=$(sessionToken)` (UrlViewer sessionToken=true 동일 · #411은 __securitytoken 오명)
+- testWooAiStudio.jssp — logonEscalation 우선 · JSSPContext(request,response) · Sign-in auth diag · v=208
+- testWooCommon.js — twBindOperator escalation-first · __v=163
+- testWooAiStudioContext.jssp · testWooAiStudioJs.jssp — libVersions/common · v=208
+Changed files: new_ver/navtree/testWooAiNavtree.xml, new_ver/jssp/testWooAiStudio.jssp, new_ver/js/testWooCommon.js, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+416. 2026-09-02 auth token 구분 — JSSPContext·session vs security token
+Purpose: QUERY_TOKEN 지속 — ACC Tools URL의 __securitytoken(보안 토큰)을 logonWithToken(세션 토큰 API)에 넣어 bind 실패. OperatorPrefs 무관.
+Changes:
+- testWooAiStudio.jssp — NL.JSSPContext.checkAuthentication · logonEscalation · __sessiontoken만 logonWithToken · v=207
+- testWooCommon.js — twJsspContextAuth · twSecurityTokenFromQuery/session 분리 · twBindOperator 3단계 · __v=162
+- testWooAiStudioContext.jssp — libVersions common=162
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/js/testWooCommon.js, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+415. 2026-09-02 logon target 상대경로 — external redirect 차단 수정
+Purpose: #414 logon.jsp target 절대URL(https://host/woo/…) → ACC "Unauthorized redirection to an external site". query bind는 유지.
+Changes:
+- testWooAiStudio.jssp — logon target·clean redirect 모두 상대경로 /woo/… · _twHostBase 제거 · v=206
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, docs/log/log.md
+
+414. 2026-09-02 Studio QUERY_TOKEN fix — __securitytoken URL bind (#408 restore)
+Purpose: ACC Tools 진입 URL `?__securitytoken=` 있는데 Sign-in 고정 — #412 auth 롤백으로 query bind 삭제됨. OperatorPrefs(#406)와 무관(셸 auth 미관여).
+Changes:
+- testWooAiStudio.jssp — query __securitytoken→logonWithToken · bind OK 시 clean URL redirect · logon target 절대URL · v=205
+- testWooCommon.js — twSessionTokenFromQuery · __v=161
+- testWooAiStudioContext.jssp — libVersions common=161
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/js/testWooCommon.js, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+413. 2026-09-02 navtree GapAdmin 제거 — #388 retire 미커밋 복원
+Purpose: #388에서 GapAdmin UI retire 후 navtree view/command 삭제가 log만 있고 git HEAD 미반영. #412 auth rollback(checkout HEAD)으로 GapAdmin 메뉴가 다시 노출됨.
+Changes:
+- testWooAiNavtree.xml — Gap Admin view·command 삭제 (Studio만 유지)
+Changed files: new_ver/navtree/testWooAiNavtree.xml, docs/log/log.md
+
+412. 2026-09-02 Register rename·auth rollback — testWooAiSqlRegister.jssp
+Purpose: ACC에서 testWooAiRegister.jssp 삭제로 Register 매핑 단절. #407–#411 sessionToken/auth 실험은 롤백하고 Register만 right명과 맞춰 재등록.
+Changes:
+- #407–#411 롤백 — git checkout HEAD (Common·Env·Studio·JSSP API·navtree sessionToken 제거)
+- testWooAiRegister.jssp → testWooAiSqlRegister.jssp (right testWooAiSqlRegister 와 동일 접두)
+- testWooAiStudio.js · testWooAiStudioJs.jssp — post URL 갱신 · v=204
+- pipeline-contracts.md — Register 엔드포인트명
+Changed files: new_ver/jssp/testWooAiSqlRegister.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, .cursor/skills/campaign-ai-studio/pipeline-contracts.md, docs/log/log.md
+
+411. 2026-09-02 QUERY_TOKEN — navtree $(sessionToken)·bind 실패 처리
+Purpose: auth:QUERY_TOKEN — URL에 __securitytoken 있으나 logonWithToken 후 login 공백. ACC 클라이언트 탭은 navtree에 sessionToken 미전달.
+Changes:
+- testWooAiNavtree.xml — view url에 ?v=203&__securitytoken=$(sessionToken)
+- testWooAiStudio.jssp — _twBindSessionToken · QUERY_TOKEN_NO_LOGIN · clean URL redirect · Clean Studio URL 링크
+Changed files: new_ver/navtree/testWooAiNavtree.xml, new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
+
+410. 2026-09-02 install.jsp revert — Rich Client 설치页 ≠ web login
+Purpose: install.jsp는 "Web installation has not been configured" Rich Client 설치 랜딩 — Studio Sign-in/API redirect에 쓰면 ACC 탭에서 Installation 페이지 노출.
+Changes:
+- testWooAiStudio.jssp · testWooCommon.js · testWooEnv.js — logon.jsp 복원 · ACC 클라이언트 탭 안내
+- testWooAiStudioContext.jssp — libVersions common=163
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/js/testWooCommon.js, new_ver/js/testWooEnv.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+409. 2026-09-02 Studio web login — install.jsp (lgu-test logon.jsp≠) [reverted #410]
+Purpose: lgu-test 웹 로그인은 /nl/jsp/install.jsp?target=/woo/… — Sign-in·AUTH redirect가 logon.jsp를 가리켜 세션 안 잡힘.
+Changes:
+- testWooAiStudio.jssp — install.jsp + target 상대경로
+- testWooCommon.js — twWebLogonUrl · AUTH logonUrl · __v=162
+- testWooEnv.js — security.webLogonJsp=/nl/jsp/install.jsp
+- testWooAiStudioContext.jssp — libVersions common=162
+Changed files: new_ver/jssp/testWooAiStudio.jssp, new_ver/js/testWooCommon.js, new_ver/js/testWooEnv.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+408. 2026-09-02 Studio 셸 auth — __securitytoken 쿼리·logon target 절대URL
+Purpose: logon.jsp 후에도 Sign-in 페이지 고정 — Cookie 없이 ?__securitytoken= 만 오는 ACC 경로 미처리.
+Changes:
+- testWooAiStudio.jssp — query __securitytoken/securitytoken/sessiontoken → logonWithToken · sendRedirect · auth hint 표시 · logon target https://host/woo/…
+Changed files: new_ver/jssp/testWooAiStudio.jssp, docs/log/log.md
+
+407. 2026-09-02 Studio 로그인 루프 — sessionToken payload·AUTH redirect 차단
+Purpose: Studio 셸은 로그인인데 API XHR만 NOT_AUTHENTICATED → logon.jsp 무한 redirect.
+Changes:
+- testWooCommon.js — twBindOperator(payload.sessionToken) · requireRight(_, p) · __v=161
+- testWooAiStudio.jssp — __TW_SESSION_TOKEN__ 주입
+- testWooAiStudio.js / testWooAiStudioJs.jssp — XHR sessionToken · shell login 시 AUTH redirect 억제
+- testWooAiStudioContext|Validate|Generate|Register|Match|QueueStatus.jssp — readPayload 후 requireRight(, p)
+- testWooOperatorPrefs.js — Rhino E4X 슬롯 read explicit · __v=163
+Changed files: new_ver/js/testWooCommon.js, new_ver/js/testWooOperatorPrefs.js, new_ver/jssp/testWooAiStudio.jssp, new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiValidate.jssp, new_ver/jssp/testWooAiGenerate.jssp, new_ver/jssp/testWooAiRegister.jssp, new_ver/jssp/testWooAiMatch.jssp, new_ver/jssp/testWooAiQueueStatus.jssp, docs/log/log.md
+
+406. 2026-09-01 OperatorPrefs v2 — NL 10슬롯 컬럼·nav·inject backup
+Purpose: ACC 배포 전 schema v2 — JSON memo 대신 고정 컬럼·개인별 inject backup·Studio nav resume 필드 확정.
+Changes:
+- testWooAiOperatorPrefs.xml — nl_recent_1..10 + nl_recent_at_* · last_* nav · inject_backup_* (nl_recent_json 제거)
+- testWooOperatorPrefs.js — 슬롯 read/write · setLastNav/getLastNav · saveInjectBackup/readInjectBackup · legacy Option migrate · __v=162
+- testWooWorkflowUi.js — inject backup schema 우선 · Option fallback · __v=171
+- testWooAiRegister.jssp — opPrefs load before workflowUi
+- testWooAiValidate.jssp — opPrefs API 응답 shape 정합
+- testWooAiStudioContext.jssp — libVersions workflowUi=171
+- docs/report/16_ACC_Option_설정가이드.md §2-D·§3·libVersions
+Changed files: new_ver/schema/testWooAiOperatorPrefs.xml, new_ver/js/testWooOperatorPrefs.js, new_ver/js/testWooWorkflowUi.js, new_ver/jssp/testWooAiRegister.jssp, new_ver/jssp/testWooAiValidate.jssp, new_ver/jssp/testWooAiStudioContext.jssp, docs/report/16_ACC_Option_설정가이드.md, docs/log/log.md
+
+405. 2026-09-01 OperatorPrefs schema — BindPick·NL recent Option 폐기
+Purpose: per-login XtkOption(testWooAiBindPick_*·NlRecent_*) 무한 증식·1KB 한도 — schema 로그인당 1행으로 이전.
+Changes:
+- new_ver/schema/testWooAiOperatorPrefs.xml — operator_login UK · bind_* · nl_recent_json memo
+- new_ver/js/testWooOperatorPrefs.js — setBindPick/getBindPick/listRecentNl/pushRecentNl · legacy Option 1회 migrate · __v=161
+- new_ver/jssp/testWooAiValidate.jssp — opPrefs lazy load(4 action only) · Option setOption 제거
+- docs/report/16_ACC_Option_설정가이드.md §2-D·§3 schema
+Changed files: new_ver/schema/testWooAiOperatorPrefs.xml, new_ver/js/testWooOperatorPrefs.js, new_ver/jssp/testWooAiValidate.jssp, docs/report/16_ACC_Option_설정가이드.md, docs/log/log.md
+
+404. 2026-09-01 Option 정본·Env contract/fallback — 설정가이드·diagnostics source
+Purpose: Env nms id와 Option id 이중 표기로 헷갈림 — Option=템플릿 id 정본 · Env=contract+fallback 명시.
+Changes:
+- testWooEnv.js — [A][B] 주석 3계층·Invariants · __v=164
+- testWooConfig.js — cfg.settings.resolution·optionIsPrimary · __v=164
+- testWooWorkflowClone.js — _pickTemplateId source(option/lookup/env_fallback) · diagnostics 확장 · __v=165
+- testWooAiStudioContext.jssp — libVersions env/cfg=164 wfClone=165
+- docs/report/16_ACC_Option_설정가이드.md · 00_ReportIndex · upgrade_plan/15 §3 정리
+Changed files: new_ver/js/testWooEnv.js, new_ver/js/testWooConfig.js, new_ver/js/testWooWorkflowClone.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/report/16_ACC_Option_설정가이드.md, docs/report/00_ReportIndex.md, docs/report/upgrade_plan/15_JS_환경값_중앙화_2단계.md, docs/log/log.md
+
+403. 2026-09-01 wfClone — Option id vs Env internalName 검증·aiStudioSql 생성 검사
+Purpose: Env testWooEnv.js 신규 템플릿(30030/42102) 수정해도 ACC Option 구 id(28001/41145)가 우선 적용되어 aiStudioSql 없는 WKF 생성·Register 실패.
+Changes:
+- testWooWorkflowClone.js _pickTemplateId — Option id internalName ≠ Env name 시 name 해석 우선·불일치 throw · createWkf aiStudioSql 검증 · getTemplateDiagnostics · __v=164
+- testWooWorkflowUi.js _twWfMissingAiActivityError — 템플릿·Option 불일치 안내 · __v=170
+- testWooAiStudioContext.jssp — create/list template_diagnostics · libVersions wfClone=164 workflowUi=170
+Changed files: new_ver/js/testWooWorkflowClone.js, new_ver/js/testWooWorkflowUi.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+402. 2026-09-01 heal.library pushConsent param missing — paramsForHealedLibraryHit
+Purpose: heal.library «푸시»→woo__app__pushconsent 후 compile `[testWoo.compiler] param missing: pushConsent`.
+Changes:
+- testWooFragContract.js paramsForHealedLibraryHit — M3 축 히트 후 resolveNlParams·byte enum·색인↔nlMap · __v=208
+- testWooLlm.js heal — params 불완전 시 plan include 스kip · __v=204
+- testWooAiStudioContext.jssp libVersions fragContract=208 llm=204
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+401. 2026-09-01 Generate JSSP — Feasibility 미로드로 heal.library no-op
+Purpose: #400 배포 후에도 afterFoundry unmatched — Foundry는 library_cache_hit(woo__app__pushconsent)인데 Generate에 heal.library 없음.
+Changes:
+- testWooAiGenerate.jssp — loadLibrary/twRequireLib testWooFeasibility.js 추가
+- testWooLlm.js — feasibility 없을 때 twDbg heal.library skip · __v=203
+- testWooAiStudioContext.jssp libVersions llm=203
+Changed files: new_ver/jssp/testWooAiGenerate.jssp, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+400. 2026-09-01 Foundry 후 2글자 슬롯(푸시·휴면) Stage A 미매칭
+Purpose: Foundry Done(queue 44203) 후 afterFoundry Generate도 «푸시»·«휴면» unmatched — 2글자 KO가 identity(≥3)·libraryLookup(M3 skip)에 걸림.
+Changes:
+- testWooFragContract.js _slotTokInCardIndex — publish synonyms/sample_questions로 2글자 슬롯 커버 · __v=207
+- testWooFeasibility.js libraryLookup — libraryHitPredicate 통과 시 축-only M3 서가 hit 허용 · __v=167
+- testWooLlm.js _healUnmatchedFromLibrary — Pass1 unmatched 서가 재조회·plan.include 병합 · __v=202
+- testWooAiStudioContext.jssp libVersions fragContract=207 feasibility=167 llm=202
+Changed files: new_ver/js/testWooFragContract.js, new_ver/js/testWooFeasibility.js, new_ver/js/testWooLlm.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+399. 2026-09-01 testWooProbe — PROBE_TIMEOUT_MS ReferenceError (G-A gate)
+Purpose: Foundry queue 43902 G-A fail — _safeSqlGetInt 에 제거된 PROBE_TIMEOUT_MS 상수 잔존.
+Changes:
+- testWooProbe.js _safeSqlGetInt → _probeTimeoutMs() · __v=161
+- testWooAiStudioContext.jssp expectedByMod probe=161
+Changed files: new_ver/js/testWooProbe.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+398. 2026-09-01 libVersions — probe expected 160 (allMatch litmus)
+Purpose: Studio libVersions MISMATCH probe — ACC __v=160 vs expectedDefault 159.
+Changes:
+- testWooAiStudioContext.jssp expectedByMod probe: "160"
+Changed files: new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+397. 2026-09-01 구 템플릿·마이그레이션 가드 제거 — 신규 템플릿 전용
+Purpose: STG 신규 배포 전제 — retired 템플릿 블랙리스트·customActivity normalize 경로 제거.
+Changes:
+- testWooEnv/Config nms — aiActivityNameLegacy·retired* 4필드 삭제 · __v=163
+- testWooWorkflowClone — retired Option 가드·createWkf normalizeAiActivity 호출 제거 · __v=163
+- testWooWorkflowUi — normalizeAiActivity export 삭제 · aiStudioSql/userScript만 · __v=169
+- testWooAiStudioContext.jssp — libVersions env/cfg/wfClone/workflowUi bump
+Changed files: new_ver/js/testWooEnv.js, new_ver/js/testWooConfig.js, new_ver/js/testWooWorkflowClone.js, new_ver/js/testWooWorkflowUi.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+396. 2026-09-01 JS Env 중앙화 Phase 1~3 — Env/Config·dead code·Tools-only Studio
+Purpose: upgrade_plan 15 Phase 1~3 구현 — Env [A][B][C]·match/ui·getOption Config 게이트·SOAP 제거·Studio embed 분기 제거.
+Changes:
+- testWooEnv/Config __v=162 — nms·mart·match·ui · getConfig options 병합
+- Toolkit·Foundry·WorkflowClone·WorkflowUi·Match·Probe·StudioContext·Common — Env/cfg 소비 · foundry 180 · workflowUi 168
+- WorkflowUi SOAP/BindPick 제거 · getOption→cfg.getStr(injectBackup)
+- Studio v=203 — embed CSS/분기 제거 · SHELL_MODE=true · libVersions 동기
+Changed files: new_ver/js/testWooEnv.js, new_ver/js/testWooConfig.js, new_ver/js/testWooToolkit.js, new_ver/js/testWooFoundry.js, new_ver/js/testWooWorkflowClone.js, new_ver/js/testWooWorkflowUi.js, new_ver/js/testWooMatch.js, new_ver/js/testWooProbe.js, new_ver/js/testWooStudioContext.js, new_ver/js/testWooCommon.js, new_ver/jssp/testWooAiStudioContext.jssp, new_ver/jssp/testWooAiRegister.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/html/testWooAiStudio.js, docs/log/log.md
+
+395. 2026-09-01 upgrade_plan 15 — JS 코드정리 후보 §2-b·Phase 3 추가
+Purpose: 환경값 중앙화 외 dead code·Studio embed·repo orphan 등 리팩터링 후보를 Phase 2/3로 명시.
+Changes:
+- 15_JS_…md — §2-b R-A~D · Phase 2 SOAP 필수 · Phase 3 JSSP Tools-only · 통합 검수 S6~S8
+- 01_진행판 항목 9~10 · 00_ReportIndex·00_INDEX 설명 갱신
+Changed files: docs/report/upgrade_plan/15_JS_환경값_중앙화_2단계.md, docs/report/upgrade_plan/01_진행판.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+394. 2026-09-01 upgrade_plan 15 — JS 환경값 중앙화 2단계 체크리스트
+Purpose: STG JS 검수 결과를 Phase 1/2 리팩토링·HUMAN litmus 단일 정본으로 고정.
+Changes:
+- docs/report/upgrade_plan/15_JS_환경값_중앙화_2단계.md — Env [A][B][C] 구조 · 파일별 작업 · 통합 검수표
+- upgrade_plan/00_INDEX · 01_진행판 · 00_ReportIndex 갱신
+Changed files: docs/report/upgrade_plan/15_JS_환경값_중앙화_2단계.md, docs/report/upgrade_plan/00_INDEX.md, docs/report/upgrade_plan/01_진행판.md, docs/report/00_ReportIndex.md, docs/log/log.md
+
+393. 2026-09-01 모듈 기능맵 — 시연 NL 시드 검증 조합
+Purpose: testWooSampleSeed·Seed2 적재 데이터 기준 0건 조합 제거, 시연 문장을 1건+ 매칭으로 교체 Changes:
+
+조건 3~9개 시연 문장 30개 — Customer+Subscription+Device/Bill/App join 검증
+Changed files: docs/main/(공용)모듈_기능맵.md
+
+392. 2026-09-01 NmsProgramAiFolderPatch — xtk:folder 삽입 위치 주석 복원
+Purpose: ACC 수동 패치 시 삽입 위치·선행 조건을 파일 안에서 바로 확인.
+Changes:
+- testWooNmsProgramAiFolderPatch.xml — xtk:folder lib/formAdvancedParam @fullName 다음 안내·대안 인라인 주석
+Changed files: new_ver/input_form/testWooNmsProgramAiFolderPatch.xml, docs/log/log.md
+
+391. 2026-09-01 STG schema/input_form/navtree 정리 doc·repo
+Purpose: 스키마 조사 결과를 repo·문서·폼에 반영(주석 제거·orphan 삭제·정본 doc).
+Changes:
+- docs/report/12_STG_스키마_정리.md — DELETE/KEEP·ACC 체크리스트
+- schema/ orphan 삭제(sample 루트·Golden·WorkflowUi)
+- input_form 3종+ExtendFolder — 주석 제거·Queue err_id/tokens·Fragment last_used_at
+- navtree — 헤더·command 주석 제거
+- input_form ExtendWorkflow·Golden → _retire/
+Changed files: docs/report/12_STG_스키마_정리.md, docs/report/00_ReportIndex.md, new_ver/schema/, new_ver/input_form/, new_ver/navtree/testWooAiNavtree.xml, docs/log/log.md
+
+390. 2026-09-01 schema 정리 — 미사용 컬럼·주석 제거 · Golden retire
+Purpose: STG 스키마(sample 제외) 필드 사용처 전수 조사 후 XML 슬림화.
+Changes:
+- schema 7종 — 장문 주석 삭제 · Fragment 6컬럼·enum 1값 제거 · Queue cost_estimate·awaiting_clarification 제거
+- testWooAiGolden — active tree 제거 · _retire/dev_only/testWooAiGoldenSchema.xml
+- testWooLifecycle.js — supersedes_id Write 제거
+Changed files: new_ver/schema/{testWooAiFragment,Sql,RequestQueue,GapLog,WkfLock,FolderExt,ProgramExt}.xml, new_ver/js/testWooLifecycle.js, new_ver/_retire/dev_only/testWooAiGoldenSchema.xml, new_ver/_retire/README.md, docs/log/log.md
+
+389. 2026-09-01 기능맵 GapAdmin·autoApprove · WF embed 제거 가이드
+Changes:
+- (공용)모듈_기능맵.md — jssp 10종 · GapLog UI 없음 · FragmentReview autoApprove 설명
+- navtree — Fragments view 주석( Option testWooAiAutoApprove )
+- _retire/README.md — xtk:workflow AI Studio 버튼 수동 삭제 7단계
+Changed files: docs/main/(공용)모듈_기능맵.md, new_ver/navtree/testWooAiNavtree.xml, new_ver/_retire/README.md, docs/log/log.md
+
+388. 2026-09-01 sample schema/sample · GapAdmin retire
+Changes:
+- new_ver/schema/sample/ — testWooSample* 5종 이동 + README
+- testWooAiGapAdmin.jssp → _retire/unused_jssp/ · navtree Gap Admin view/command 삭제
+- testWooAiGapLog.xml — consumer 주석( UI 없음)
+- (공용)new_ver_ACC배포분류.md · STG_패키징_정리.md — sample 경로·GapAdmin retire 반영
+Changed files: new_ver/schema/sample/**, new_ver/schema/testWooAiGapLog.xml, new_ver/navtree/testWooAiNavtree.xml, new_ver/_retire/unused_jssp/testWooAiGapAdmin.jssp, new_ver/_retire/README.md, docs/main/(공용)new_ver_ACC배포분류.md, docs/main/(공용)STG_패키징_정리.md, docs/log/log.md
+
+387. 2026-09-01 new_ver ACC 분류 — WF embed retire · Tools-only STG
+Changes:
+- new_ver/_retire/ — wf_canvas_embed·dev_only·reference (ExtendWorkflow·SOAP·시드·smoke 등)
+- docs/main/(공용)new_ver_ACC배포분류.md — Tools vs embed·STG 필수·§3 보류
+- (공용)STG_패키징_정리.md — embed 제외·navtree Tools 반영
+Changed files: new_ver/_retire/**, new_ver/_REPO_ONLY.txt, docs/main/(공용)new_ver_ACC배포분류.md, docs/main/(공용)STG_패키징_정리.md, docs/log/log.md
+
+386. 2026-09-01 STG 패키징 정리 doc · recentNl PASS
+Purpose: 테스트→STG 이전 전 배포/미배포/콘솔삭제 목록 정리 · 이previous질문 PASS(sessionStorage).
+Changes:
+- docs/main/(공용)STG_패키징_정리.md — schema·JS 21·JSSP·WF·ZIP 제외·orphan 삭제·litmus
+- new_ver/_REPO_ONLY.txt — Git-only 경로 안내
+Changed files: docs/main/(공용)STG_패키징_정리.md, new_ver/_REPO_ONLY.txt, docs/log/log.md
+
+385. 2026-08-31 recentNl sessionStorage 정본·조건 컬럼 쉬운설명 doc (v=202)
+Purpose: 이전 질문 Option 1KB 한도로 서버 응답이 UI 덮어씀 · 테이블/컬럼 매칭 쉬운 문서.
+Changes:
+- recentNl: twStudioRecentNl sessionStorage 정본 · push 후 server items로 목록 축소 금지
+- UI: 이전 질문 (이 창 기준 최대 10개)
+- docs/main/(공용)조건_테이블_컬럼_쉬운설명.md — 케이스 A/B·Option vs 스키마 판단
+Changed files: new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiValidate.jssp, docs/main/(공용)조건_테이블_컬럼_쉬운설명.md, docs/log/log.md
+
+384. 2026-08-31 Studio v=201 — WKF 점프 compose 보존·draft/이전 질문 누적
+Purpose: 비슷한 예전 조건 WKF 이동 시 전남 compose가 서울로 덮어써지던 문제·임시 draft/이전 질문 1줄 갱신.
+Changes:
+- _jumpExistingSql navigateOnly — 비슷한 조건 클릭=WKF 이동만·compose state 유지·highlightSqlId
+- generate — 새 질문 시 cacheId/aiSqlId 초기화 → putDraft가 draft 행 추가(upsert 방지)
+- _appendNewSqlRow — 미반영 draft 라벨 우선(점프 후 state.nl 오염 방지)
+- Validate recentNl — JSON→tab행 저장(1000B에 10건 근접)
+Changed files: new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiValidate.jssp, docs/log/log.md
+
+383. 2026-08-31 Studio recentNl — push 레이스·Option 1024 trim (v=200)
+Purpose: 이전 질문이 1줄만 갱신되던 현상 — stale push 응답·Option JSON truncate·load 레이스.
+Changes:
+- _recentNlPushSeq — 늦게 도착한 pushRecentNl 응답 무시
+- _loadRecentNl — push 후 list 응답이 로컬 목록 덮어쓰기 금지
+- Validate — RECENT_NL_CLIP 96 · _trimRecentNlForOption(1000B)
+Changed files: new_ver/html/testWooAiStudio.js, new_ver/jssp/testWooAiStudioJs.jssp, new_ver/jssp/testWooAiStudio.jssp, new_ver/jssp/testWooAiValidate.jssp, docs/log/log.md
+
+382. 2026-08-31 workflowUi 166 — WF 로드 dead path 제거 · queryDef 정본
+Purpose: WF JS에서 Load/GetEntity/load 경고 스팸 제거. queryDef @id/@internalName 우선.
+Changes:
+- _twWfLoadWorkflow: queryDef 1순위 · Load/GetEntityIfMoreRecent 삭제 · load 보조(silent)
+- _twWfDataNode/_twWfEntityHasBody: wf.data 우선 · _twWfChildNames→_twWfDiagSnippet
+- expectedByMod workflowUi=166
+Changed files: new_ver/js/testWooWorkflowUi.js, new_ver/jssp/testWooAiStudioContext.jssp, docs/log/log.md
+
+381. 2026-08-31 모듈 기능맵 — C·D 용도 중심 간소화
+Purpose: 사용자가 줄인 C·D 잔여 항목만, 시스템 용도 위주로 재정리 Changes:
+
+C: Option 2열(이름·용도), ENV 안내 1줄
+D: 권한 3종 1표, JSSP/action 상세표 제거
+Changed files: docs/main/(공용)모듈_기능맵.md
+
+380. 2026-08-31 모듈 기능맵 — D. Named right 권한목록
+Purpose: C(Option) 아래 독립 섹션으로 Test Woo named right·Navtree rights·ACC sql 권한 정리 Changes:
+
+D-1~D-4: Generate/Register/LibraryManage JSSP 매핑·CSRF·역할별 권장 조합
+C-4: D절 링크로 축약
+Changed files: docs/main/(공용)모듈_기능맵.md
+
+379. 2026-08-31 모듈 기능맵 — Option 인벤토리·시연 NL·Pass 설명
+Purpose: 발표본에서 mermaid를 빼고, XtkOption 인벤토리·Pass0/Pass1 의미·샘플 마트 기준 시연 NL을 넣는다.
+Changes:
+- mermaid → 텍스트 흐름. Pass0=슬롯 분해, Pass1=후보에서 plan
+- ### C Option/right 인벤토리
+- 조건 3개×5 · 4개×5 · 5~9개×20 (시드 값, 전문 비중복)
+Changed files: docs/main/(공용)모듈_기능맵.md, docs/log/log.md
+
+378. 2026-08-31 모듈 기능맵 — js/jssp 시연·발표 참고본
+Purpose: new_ver/js·jssp 공개 API를 파이프라인 순서(00~17)로 정리해 시연·프로토타입 발표 참고 자료로 둔다.
+Changes:
+- docs/main에 js/jssp 대분류·파일별 설명·기능표(기능/용도/순서/비고) 추가
+- 00_ReportIndex docs/main 행 추가
+Changed files: docs/main/(공용)모듈_기능맵.md, docs/report/00_ReportIndex.md, docs/log/log.md
 
 377. 2026-08-28 푸시 동의 — 마케팅 축 오매칭 heal (fragContract 206)
 Purpose: «푸시 동의하고»+en consented to push 가 marketing_consent로 잠기던 것. 카탈로그 xpath/concept 전용 토큰으로 형제 축을 고친다.

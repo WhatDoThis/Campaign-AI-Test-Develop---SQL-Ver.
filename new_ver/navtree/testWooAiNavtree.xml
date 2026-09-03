@@ -44,9 +44,6 @@ Administration > Configuration > Navigation hierarchies > woo:testWooAiNav
           <orderBy>
             <node expr="@name"/>
           </orderBy>
-          <!-- 4차 자동승인: 신규 frag는 status=active · @active=1.
-               구 주석(verified AND active=0)은 승인 대기 전용이라 폐기.
-               전체 라이브러리 목록이 기본. 승인대기만 보려면 콘솔 필터 status=verified. -->
         </view>
       </nodeModel>
 
@@ -88,19 +85,15 @@ Administration > Configuration > Navigation hierarchies > woo:testWooAiNav
   </model>
 
   <views>
+    <!-- Tools view: plain URL — ACC Rich Client 세션·Cookie 경로 (#406 이전과 동일) -->
     <view label="Test Woo AI Studio" name="testWooAiStudio"
           url="__CAMPAIGN_SERVER_URL__/woo/testWooAiStudio.jssp"/>
-    <view label="Test Woo AI Gap Admin" name="testWooAiGapAdmin"
-          url="__CAMPAIGN_SERVER_URL__/woo/testWooAiGapAdmin.jssp"/>
   </views>
 
   <commands>
-    <!-- PoC-0 PASS: 비문서화 view 유지 + rights 게이트 (1차 UI-1-1) -->
+    <!-- PoC-0 PASS: view/viewType + rights -->
     <command label="Test Woo AI Studio" name="testWooAiStudio"
              view="testWooAiStudio" viewType="view"
-             rights="admin,testWooAiOperator"/>
-    <command label="Test Woo AI Gap Admin" name="testWooAiGapAdmin"
-             view="testWooAiGapAdmin" viewType="view"
              rights="admin,testWooAiOperator"/>
   </commands>
 
